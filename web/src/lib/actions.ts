@@ -8,10 +8,15 @@ import {
   currentBudgetMonth,
   dollarsToCents,
   isBudgetMonth,
+  isValidIsoDate,
 } from "@/lib/money";
 import { safeInternalPath } from "@/lib/paths";
 import { createClient } from "@/lib/supabase/server";
-import { parseYnabRegisterCsv } from "@/lib/ynab-csv";
+import {
+  parseYnabRegisterCsv,
+  ynabRowFingerprint,
+  type ParsedYnabRow,
+} from "@/lib/ynab-csv";
 
 const ACCOUNT_TYPES = new Set([
   "checking",
@@ -33,6 +38,14 @@ async function requireUser() {
 function redirectWithError(path: string, message: string, extra = "") {
   const url = `${path}?error=${encodeURIComponent(message)}${extra}`;
   redirect(url);
+}
+
+function isUniqueViolation(error: { code?: string; message?: string } | null | undefined) {
+  return error?.code === "23505" || /duplicate|unique/i.test(error?.message ?? "");
+}
+
+function escapeIlikeExact(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
 }
 
 export async function signInAction(formData: FormData) {
@@ -77,7 +90,9 @@ export async function createAccountAction(formData: FormData) {
   const { supabase, user } = await requireUser();
   const name = String(formData.get("name") ?? "").trim();
   const accountType = String(formData.get("account_type") ?? "checking");
-  if (!name) return;
+  if (!name) {
+    redirectWithError("/accounts", "Account name is required.");
+  }
   if (!ACCOUNT_TYPES.has(accountType)) {
     redirectWithError("/accounts", "Invalid account type.");
   }
@@ -88,7 +103,12 @@ export async function createAccountAction(formData: FormData) {
     account_type: accountType,
   });
   if (error) {
-    redirectWithError("/accounts", "Could not create account.");
+    redirectWithError(
+      "/accounts",
+      isUniqueViolation(error)
+        ? "An account with that name already exists."
+        : "Could not create account.",
+    );
   }
   revalidatePath("/accounts");
   revalidatePath("/budget");
@@ -98,14 +118,16 @@ export async function createCategoryAction(formData: FormData) {
   const { supabase, user } = await requireUser();
   const groupName = String(formData.get("group_name") ?? "").trim() || "Everyday";
   const categoryName = String(formData.get("category_name") ?? "").trim();
-  if (!categoryName) return;
+  if (!categoryName) {
+    redirectWithError("/budget", "Category name is required.");
+  }
 
   let groupId: string | null = null;
   const existing = await supabase
     .from("category_groups")
     .select("id")
     .eq("user_id", user.id)
-    .eq("name", groupName)
+    .ilike("name", escapeIlikeExact(groupName))
     .maybeSingle();
 
   if (existing.data?.id) {
@@ -116,11 +138,25 @@ export async function createCategoryAction(formData: FormData) {
       .insert({ user_id: user.id, name: groupName })
       .select("id")
       .single();
-    const createdId = created.data?.id;
-    if (created.error || !createdId) {
-      redirectWithError("/budget", "Could not create category group.");
+    if (created.error && isUniqueViolation(created.error)) {
+      const again = await supabase
+        .from("category_groups")
+        .select("id")
+        .eq("user_id", user.id)
+        .ilike("name", escapeIlikeExact(groupName))
+        .maybeSingle();
+      groupId = again.data?.id ?? null;
+    } else {
+      const createdId = created.data?.id;
+      if (created.error || !createdId) {
+        redirectWithError("/budget", "Could not create category group.");
+      }
+      groupId = createdId;
     }
-    groupId = createdId;
+  }
+
+  if (!groupId) {
+    redirectWithError("/budget", "Could not create category group.");
   }
 
   const { error } = await supabase.from("categories").insert({
@@ -129,7 +165,12 @@ export async function createCategoryAction(formData: FormData) {
     name: categoryName,
   });
   if (error) {
-    redirectWithError("/budget", "Could not create category.");
+    redirectWithError(
+      "/budget",
+      isUniqueViolation(error)
+        ? "That category already exists in this group."
+        : "Could not create category.",
+    );
   }
 
   revalidatePath("/budget");
@@ -141,7 +182,12 @@ export async function assignCategoryAction(formData: FormData) {
   const month = String(formData.get("month") ?? currentBudgetMonth());
   const assigned = dollarsToCents(String(formData.get("assigned") ?? "0"));
 
-  if (!categoryId || !isBudgetMonth(month)) return;
+  if (!categoryId || !isBudgetMonth(month)) {
+    redirectWithError("/budget", "Invalid assignment.");
+  }
+  if (assigned === null) {
+    redirectWithError("/budget", "Enter a valid dollar amount.");
+  }
 
   const owned = await supabase
     .from("categories")
@@ -185,12 +231,21 @@ export async function createTransactionAction(formData: FormData) {
   const memo = String(formData.get("memo") ?? "").trim();
   const occurredOn = String(formData.get("occurred_on") ?? "");
   const categoryIdRaw = String(formData.get("category_id") ?? "");
-  const amount = dollarsToCents(String(formData.get("amount") ?? "0"));
+  const amount = dollarsToCents(String(formData.get("amount") ?? ""));
   const direction = String(formData.get("direction") ?? "outflow");
 
-  if (!accountId || !occurredOn || amount === 0) return;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(occurredOn)) {
+  if (!accountId) {
+    redirect("/accounts");
+  }
+  if (amount === null || amount === 0) {
+    redirectWithError(`/accounts/${accountId}`, "Enter a valid non-zero amount.");
+  }
+  const amountValue = amount as number;
+  if (!isValidIsoDate(occurredOn)) {
     redirectWithError(`/accounts/${accountId}`, "Invalid date.");
+  }
+  if (direction !== "inflow" && direction !== "outflow") {
+    redirectWithError(`/accounts/${accountId}`, "Invalid direction.");
   }
 
   const account = await supabase
@@ -216,7 +271,8 @@ export async function createTransactionAction(formData: FormData) {
     }
   }
 
-  const amountCents = direction === "inflow" ? Math.abs(amount) : -Math.abs(amount);
+  const amountCents =
+    direction === "inflow" ? Math.abs(amountValue) : -Math.abs(amountValue);
 
   const { error } = await supabase.from("transactions").insert({
     user_id: user.id,
@@ -250,6 +306,10 @@ export type ImportActionResult = {
   message?: string;
 };
 
+function fingerprintHash(row: ParsedYnabRow): string {
+  return createHash("sha256").update(ynabRowFingerprint(row)).digest("hex");
+}
+
 export async function importYnabCsvAction(
   input: z.infer<typeof importSchema>,
 ): Promise<ImportActionResult> {
@@ -271,9 +331,10 @@ export async function importYnabCsvAction(
 
   const priorImport = await supabase
     .from("import_batches")
-    .select("id,inserted_count")
+    .select("id,inserted_count,status")
     .eq("user_id", user.id)
     .eq("content_hash", contentHash)
+    .eq("status", "completed")
     .maybeSingle();
 
   if (priorImport.data?.id) {
@@ -282,7 +343,8 @@ export async function importYnabCsvAction(
       inserted: 0,
       skipped: priorImport.data.inserted_count ?? 0,
       errors: [],
-      message: "This file was already imported. Upload a new export to add more transactions.",
+      message:
+        "This exact file was already imported successfully. Upload a newer export if you have additional transactions — duplicates are skipped automatically.",
     };
   }
 
@@ -305,6 +367,7 @@ export async function importYnabCsvAction(
       filename: parsedInput.data.filename,
       source: "ynab_csv",
       content_hash: contentHash,
+      status: "pending",
       inserted_count: 0,
       skipped_count: skipped,
       error_count: errors.length,
@@ -313,19 +376,12 @@ export async function importYnabCsvAction(
     .single();
 
   if (batch.error || !batch.data?.id) {
-    const duplicate =
-      batch.error?.code === "23505" ||
-      /duplicate|unique/i.test(batch.error?.message ?? "");
     return {
       ok: false,
       inserted: 0,
       skipped,
-      errors: duplicate
-        ? []
-        : [batch.error?.message ?? "Could not create import batch"],
-      message: duplicate
-        ? "This file was already imported. Upload a new export to add more transactions."
-        : "Import failed before inserting rows.",
+      errors: [batch.error?.message ?? "Could not create import batch"],
+      message: "Import failed before inserting rows.",
     };
   }
 
@@ -335,12 +391,35 @@ export async function importYnabCsvAction(
   const groupIds = new Map<string, string>();
   const categoryIds = new Map<string, string>();
 
-  const [{ data: existingAccounts }, { data: existingGroups }, { data: existingCategories }] =
-    await Promise.all([
-      supabase.from("accounts").select("id,name").eq("user_id", user.id),
-      supabase.from("category_groups").select("id,name").eq("user_id", user.id),
-      supabase.from("categories").select("id,name,group_id").eq("user_id", user.id),
-    ]);
+  const [
+    { data: existingAccounts, error: accountsError },
+    { data: existingGroups, error: groupsError },
+    { data: existingCategories, error: categoriesError },
+  ] = await Promise.all([
+    supabase.from("accounts").select("id,name").eq("user_id", user.id),
+    supabase.from("category_groups").select("id,name").eq("user_id", user.id),
+    supabase.from("categories").select("id,name,group_id").eq("user_id", user.id),
+  ]);
+
+  if (accountsError || groupsError || categoriesError) {
+    await supabase
+      .from("import_batches")
+      .update({ status: "failed", error_count: 1 })
+      .eq("id", batchId)
+      .eq("user_id", user.id);
+    return {
+      ok: false,
+      inserted: 0,
+      skipped,
+      errors: [
+        accountsError?.message ??
+          groupsError?.message ??
+          categoriesError?.message ??
+          "Could not load existing budget entities",
+      ],
+      message: "Import failed before inserting rows.",
+    };
+  }
 
   for (const account of existingAccounts ?? []) {
     accountIds.set(String(account.name).toLowerCase(), account.id as string);
@@ -362,16 +441,32 @@ export async function importYnabCsvAction(
   async function ensureAccount(name: string) {
     const key = name.toLowerCase();
     if (accountIds.has(key)) return accountIds.get(key)!;
+
     const created = await supabase
       .from("accounts")
       .insert({ user_id: user.id, name, account_type: "checking" })
       .select("id")
       .single();
-    if (!created.data?.id) {
-      throw new Error(created.error?.message ?? `Failed to create account ${name}`);
+
+    if (created.data?.id) {
+      accountIds.set(key, created.data.id);
+      return created.data.id;
     }
-    accountIds.set(key, created.data.id);
-    return created.data.id;
+
+    if (isUniqueViolation(created.error)) {
+      const again = await supabase
+        .from("accounts")
+        .select("id")
+        .eq("user_id", user.id)
+        .ilike("name", escapeIlikeExact(name))
+        .maybeSingle();
+      if (again.data?.id) {
+        accountIds.set(key, again.data.id);
+        return again.data.id;
+      }
+    }
+
+    throw new Error(created.error?.message ?? `Failed to create account ${name}`);
   }
 
   async function ensureCategory(groupName: string, categoryName: string) {
@@ -387,7 +482,19 @@ export async function importYnabCsvAction(
         .insert({ user_id: user.id, name: resolvedGroup })
         .select("id")
         .single();
-      groupId = createdGroup.data?.id;
+
+      if (createdGroup.data?.id) {
+        groupId = createdGroup.data.id;
+      } else if (isUniqueViolation(createdGroup.error)) {
+        const again = await supabase
+          .from("category_groups")
+          .select("id")
+          .eq("user_id", user.id)
+          .ilike("name", escapeIlikeExact(resolvedGroup))
+          .maybeSingle();
+        groupId = again.data?.id;
+      }
+
       if (!groupId) {
         throw new Error(createdGroup.error?.message ?? "Failed to create category group");
       }
@@ -404,14 +511,40 @@ export async function importYnabCsvAction(
       .select("id")
       .single();
 
-    if (!createdCategory.data?.id) {
-      throw new Error(createdCategory.error?.message ?? "Failed to create category");
+    if (createdCategory.data?.id) {
+      categoryIds.set(mapKey, createdCategory.data.id);
+      return createdCategory.data.id;
     }
-    categoryIds.set(mapKey, createdCategory.data.id);
-    return createdCategory.data.id;
+
+    if (isUniqueViolation(createdCategory.error)) {
+      const again = await supabase
+        .from("categories")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("group_id", groupId)
+        .ilike("name", escapeIlikeExact(categoryName))
+        .maybeSingle();
+      if (again.data?.id) {
+        categoryIds.set(mapKey, again.data.id);
+        return again.data.id;
+      }
+    }
+
+    throw new Error(createdCategory.error?.message ?? "Failed to create category");
   }
 
-  const payload = [];
+  const payload: Array<{
+    user_id: string;
+    account_id: string;
+    category_id: string | null;
+    occurred_on: string;
+    payee: string;
+    memo: string;
+    amount_cents: number;
+    cleared: boolean;
+    import_batch_id: string;
+    import_fingerprint: string;
+  }> = [];
   let localSkipped = skipped;
   const localErrors = [...errors];
 
@@ -429,6 +562,7 @@ export async function importYnabCsvAction(
         amount_cents: row.amountCents,
         cleared: true,
         import_batch_id: batchId,
+        import_fingerprint: fingerprintHash(row),
       });
     } catch (error) {
       localSkipped += 1;
@@ -437,21 +571,54 @@ export async function importYnabCsvAction(
   }
 
   let inserted = 0;
+  let duplicateSkipped = 0;
   const chunkSize = 200;
+  let hardFailure = false;
+
   for (let i = 0; i < payload.length; i += chunkSize) {
     const chunk = payload.slice(i, i + chunkSize);
-    const { error, data } = await supabase.from("transactions").insert(chunk).select("id");
-    if (error) {
-      localErrors.push(error.message);
+    const insertResult = await supabase.from("transactions").insert(chunk).select("id");
+
+    if (!insertResult.error) {
+      inserted += insertResult.data?.length ?? chunk.length;
+      continue;
+    }
+
+    if (!isUniqueViolation(insertResult.error)) {
+      hardFailure = true;
+      localErrors.push(insertResult.error.message);
       localSkipped += chunk.length;
-    } else {
-      inserted += data?.length ?? chunk.length;
+      continue;
+    }
+
+    // Chunk collided with existing fingerprints — insert row-by-row so new rows still land.
+    for (const row of chunk) {
+      const one = await supabase.from("transactions").insert(row).select("id");
+      if (one.data?.length) {
+        inserted += one.data.length;
+      } else if (isUniqueViolation(one.error)) {
+        duplicateSkipped += 1;
+      } else if (one.error) {
+        hardFailure = true;
+        localErrors.push(one.error.message);
+        localSkipped += 1;
+      }
     }
   }
+
+  localSkipped += duplicateSkipped;
+
+  // Completed only when every prepared row was inserted or already present.
+  // Failed/partial batches stay retryable (content_hash unique only applies to completed).
+  // Row fingerprints still prevent duplicates on retry.
+  const allResolved =
+    payload.length > 0 && inserted + duplicateSkipped === payload.length && !hardFailure;
+  const finalStatus: "completed" | "failed" = allResolved ? "completed" : "failed";
 
   await supabase
     .from("import_batches")
     .update({
+      status: finalStatus,
       inserted_count: inserted,
       skipped_count: localSkipped,
       error_count: localErrors.length,
@@ -463,14 +630,21 @@ export async function importYnabCsvAction(
   revalidatePath("/accounts");
   revalidatePath("/import");
 
+  const ok = inserted > 0 || (duplicateSkipped > 0 && finalStatus === "completed");
   return {
-    ok: inserted > 0,
+    ok,
     inserted,
     skipped: localSkipped,
     errors: localErrors.slice(0, 25),
     message:
       inserted > 0
-        ? `Imported ${inserted} transactions.`
-        : "Import finished without inserting rows.",
+        ? `Imported ${inserted} new transaction${inserted === 1 ? "" : "s"}${
+            duplicateSkipped > 0 ? ` (${duplicateSkipped} already present skipped)` : ""
+          }.`
+        : duplicateSkipped > 0 && finalStatus === "completed"
+          ? `No new transactions — ${duplicateSkipped} already imported from a previous export.`
+          : finalStatus === "failed"
+            ? "Import failed. You can retry this file; incomplete imports are not locked out."
+            : "Import finished without inserting rows.",
   };
 }

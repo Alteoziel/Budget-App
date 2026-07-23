@@ -12,12 +12,22 @@ export function ImportForm() {
     if (!file) return;
 
     startTransition(async () => {
-      const text = await file.text();
-      const next = await importYnabCsvAction({
-        csvText: text,
-        filename: file.name,
-      });
-      setResult(next);
+      try {
+        const text = await file.text();
+        const next = await importYnabCsvAction({
+          csvText: text,
+          filename: file.name,
+        });
+        setResult(next);
+      } catch (error) {
+        setResult({
+          ok: false,
+          inserted: 0,
+          skipped: 0,
+          errors: [error instanceof Error ? error.message : "Upload failed"],
+          message: "Could not read or import that file.",
+        });
+      }
     });
   }
 
@@ -41,8 +51,9 @@ export function ImportForm() {
       </label>
 
       <div className="rounded-2xl bg-coral-400/10 px-4 py-3 text-sm text-ink-700">
-        Identical CSV uploads are skipped automatically. Prefer a fresh export
-        when you have new transactions to bring over.
+        Fresh exports are safe — already-imported transactions are skipped by
+        fingerprint. Exact file re-uploads of a completed import are blocked;
+        failed imports can be retried.
       </div>
 
       {result ? (
