@@ -18,4 +18,7 @@ regexes = [
   '''sk-live-aaaaaaaaaaaaaaaaaaaaaaaa''',
   # False positive: keyword arg name matched as generic-api-key secret.
   '''correlation_id\s*=''',
+  # CI build placeholder (never a real key); also allow historical false positive.
+  '''ci-placeholder-anon-key-not-a-secret''',
+  '''eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.e30\.placeholder''',
 ]

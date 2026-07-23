@@ -32,7 +32,7 @@ BOUNDARY_CASES = [
 ]
 
 # Only these repo-relative prefixes may be dynamically fuzzed when explicitly enabled.
-_DYNAMIC_ALLOW_PREFIXES = ("app/",)
+_DYNAMIC_ALLOW_PREFIXES = ("governance/", "web/")
 
 HARNESS_TEMPLATE = '''
 import json
