@@ -11,21 +11,17 @@ This list is for a **non-expert human operator**. Code and CI automate a lot; th
 
 | Item | Status | Where / what you do |
 |------|--------|---------------------|
-| Python lockfile (`uv.lock`) + frozen CI | **DONE IN REPO** | Agents update `uv.lock` when deps change |
-| API authz (`BUDGET_API_KEY`) | **DONE IN REPO** | **YOU** must set `BUDGET_API_KEY` in `.env` / hosting secrets |
-| Rate limiting | **DONE IN REPO** | Tune `BUDGET_RATE_LIMIT_PER_MINUTE` if needed |
-| Coverage floor | **DONE IN REPO** | Maintain ≥70% (raise as the product grows) |
-| Audit trail on request path (in-memory → DB later) | **DONE IN REPO** | Nothing until Postgres |
-| Copyright signature DB | **DONE IN REPO** | Optionally add more snippets later |
-| Mypy `--strict` | **DONE IN REPO** | Nothing |
+| Alte' Budgeting app (`web/`) | **DONE IN REPO** | Deploy to Vercel; Root Directory `web` |
+| Supabase Auth + RLS schema | **DONE IN REPO** | **YOU** create project, run migration, set env vars (§5) |
+| Governance Steps 1–5 (no quiz) | **DONE IN REPO** | Require check on Protect Main (§3) |
+| Enterprise Layers B–E + CodeQL | **DONE IN REPO** | Require checks on Protect Main (§3) |
 | Secret scanning + push protection | **YOU MUST DO THIS** | §1 (confirm enabled) |
 | Pre-commit (ruff + gitleaks) | **DONE IN REPO** | Optional local install §4 |
 | FOSSA license SCA workflow | **DONE IN REPO** (needs secret) | **YOU** create FOSSA account + `FOSSA_API_KEY` (§2) |
-| Authz PR checklist template | **DONE IN REPO** | Fill checkboxes on every PR |
-| Semgrep authz / egress rules | **DONE IN REPO** | Nothing |
-| Governance Steps 1–5 (no quiz) | **DONE IN REPO** | Require check on Protect Main (§3) |
-| Enterprise Layers B–E + CodeQL | **DONE IN REPO** | Require checks on Protect Main (§3) |
+| PR checklist template | **DONE IN REPO** | Fill checkboxes on every PR |
+| Semgrep custom + OWASP packs | **DONE IN REPO** | Nothing |
 | Review dashboard deploy | **YOU MUST DO THIS** | See `SETUP_GOVERNANCE.md` |
+| Copyright signature DB | **DONE IN REPO** | Optionally add more snippets later |
 
 ---
 
