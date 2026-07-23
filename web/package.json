@@ -1,0 +1,40 @@
+{
+  "name": "alte-budgeting",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Alte' Budgeting — mobile-first personal budget PWA",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "test": "tsx --tsconfig tsconfig.json src/lib/ynab-csv.test.ts"
+  },
+  "dependencies": {
+    "@supabase/ssr": "^0.12.3",
+    "@supabase/supabase-js": "^2.110.8",
+    "next": "^16.2.11",
+    "papaparse": "^5.5.4",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.6",
+    "@types/node": "^22.10.0",
+    "@types/papaparse": "^5.5.2",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^9.16.0",
+    "eslint-config-next": "^16.2.11",
+    "postcss": "^8.5.12",
+    "tailwindcss": "^3.4.16",
+    "tsx": "^4.23.1",
+    "typescript": "^5.7.3"
+  },
+  "overrides": {
+    "sharp": "^0.35.0",
+    "postcss": "^8.5.12"
+  }
+}

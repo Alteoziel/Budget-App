@@ -2,15 +2,6 @@
 version: 2
 updates:
   - package-ecosystem: pip
-    directory: "/"
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 10
-    labels:
-      - dependencies
-      - layer-b
-
-  - package-ecosystem: pip
     directory: "/governance"
     schedule:
       interval: weekly
@@ -28,6 +19,15 @@ updates:
       - dependencies
       - layer-b
 
+  - package-ecosystem: npm
+    directory: "/web"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+      - layer-b
+
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
@@ -37,13 +37,3 @@ updates:
       - dependencies
       - layer-b
       - github-actions
-
-  - package-ecosystem: docker
-    directory: "/"
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
-    labels:
-      - dependencies
-      - layer-b
-      - docker

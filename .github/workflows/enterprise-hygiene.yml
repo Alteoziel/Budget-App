@@ -37,18 +37,11 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: dashboard/package-lock.json
-
-      - name: Install uv
-        run: curl -LsSf https://astral.sh/uv/0.11.31/install.sh | sh
-
-      - name: Install budget-app (dev, frozen lockfile)
-        run: |
-          export PATH="$HOME/.local/bin:$PATH"
-          uv sync --frozen --extra dev
+          cache-dependency-path: |
+            dashboard/package-lock.json
+            web/package-lock.json
 
       # ── Layer B: secrets + dependency audit ─────────────────────────
-      # Checksum-verified binary (no org Gitleaks Action license required).
       - name: "B · Gitleaks secret scan"
         env:
           GITLEAKS_VERSION: "8.24.3"
@@ -69,11 +62,6 @@ jobs:
             --redact \
             --exit-code 1
 
-      - name: "B · pip-audit (budget-app)"
-        run: |
-          export PATH="$HOME/.local/bin:$PATH"
-          uv run pip-audit --progress-spinner off
-
       - name: "B · pip-audit (governance)"
         working-directory: governance
         run: |
@@ -87,16 +75,20 @@ jobs:
           npm ci
           npm audit --audit-level=high
 
-      # ── Layer C: lint, types, SAST ──────────────────────────────────
-      - name: "C · Ruff"
+      - name: "B · npm audit (web)"
+        working-directory: web
         run: |
-          export PATH="$HOME/.local/bin:$PATH"
-          uv run ruff check app tests
+          npm ci
+          npm audit --audit-level=high
 
-      - name: "C · Mypy"
-        run: |
-          export PATH="$HOME/.local/bin:$PATH"
-          uv run mypy app
+      # ── Layer C: lint + SAST ────────────────────────────────────────
+      - name: "C · ESLint (web)"
+        working-directory: web
+        run: npm run lint
+
+      - name: "C · Typecheck (web)"
+        working-directory: web
+        run: npx tsc --noEmit
 
       - name: "C · Semgrep"
         run: |
@@ -108,52 +100,37 @@ jobs:
               --config .semgrep.yml \
               --error \
               --metrics off \
-              app tests
+              web governance dashboard
           docker run --rm -v "$PWD:/src" -w /src "$IMAGE" \
             semgrep scan \
-              --config p/python \
+              --config p/javascript \
+              --config p/typescript \
               --config p/owasp-top-ten \
               --severity=ERROR \
               --error \
               --metrics off \
-              app tests
+              web dashboard
 
-      # ── Layer D: product tests + coverage ───────────────────────────
-      - name: "D · Pytest + coverage floor"
+      # ── Layer D: product tests + builds ─────────────────────────────
+      - name: "D · Unit tests (web)"
+        working-directory: web
+        run: npm test
+
+      - name: "D · Next.js build (web)"
+        working-directory: web
         env:
-          BUDGET_API_KEY: test-budget-key
-        run: |
-          export PATH="$HOME/.local/bin:$PATH"
-          uv run python -m pytest -q
+          NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.placeholder
+        run: npm run build
 
-      # ── Layer E: container + IaC ────────────────────────────────────
-      - name: "E · Build budget-app image"
-        run: docker build -t budget-app:ci .
+      - name: "D · Next.js build (dashboard)"
+        working-directory: dashboard
+        env:
+          SITE_PASSWORD: ci-site-password
+          DASHBOARD_INGEST_SECRET: ci-ingest-secret
+        run: npm run build
 
-      - name: "E · Trivy image scan (CRITICAL+HIGH)"
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
-        with:
-          image-ref: budget-app:ci
-          format: table
-          exit-code: "1"
-          severity: CRITICAL,HIGH
-          ignore-unfixed: true
-
-      - name: "E · Trivy SBOM (SPDX)"
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
-        with:
-          image-ref: budget-app:ci
-          format: spdx-json
-          output: budget-app-sbom.spdx.json
-          exit-code: "0"
-
-      - name: "E · Upload SBOM artifact"
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: budget-app-sbom
-          path: budget-app-sbom.spdx.json
-          if-no-files-found: error
-
+      # ── Layer E: IaC ────────────────────────────────────────────────
       - name: "E · Checkov (Terraform)"
         uses: bridgecrewio/checkov-action@7b972723c44fb3d256283fac96fae5d7c1894bb7 # v12
         with:

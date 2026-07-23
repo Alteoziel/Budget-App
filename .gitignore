@@ -6,6 +6,11 @@ dashboard/.data/
 dashboard/.env.local
 dashboard/.next/
 dashboard/node_modules/
+web/.env.local
+web/.next/
+web/node_modules/
+web/tsconfig.tsbuildinfo
+
 dist/
 .DS_Store
 *.egg

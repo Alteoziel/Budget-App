@@ -88,18 +88,19 @@ pre-commit run --all-files
 
 ---
 
-## 5. Runtime secrets for the Budget App API
+## 5. Runtime secrets for Alte' Budgeting (`web/`)
 
-Set on every host that runs `app/`:
+Set in Vercel (and local `web/.env.local`):
 
 | Secret | Required | Notes |
 |--------|----------|-------|
-| `BUDGET_API_KEY` | Yes | Long random string; never commit |
-| `BUDGET_API_KEYS` | Optional | Comma-separated rotation keys |
-| `BUDGET_RATE_LIMIT_PER_MINUTE` | Optional | Default 60 |
+| `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Publishable anon key (RLS enforced) |
+| `SUPABASE_SERVICE_ROLE_KEY` | No | Server-only if needed later; never ship to client |
 
-- [ ] Production `BUDGET_API_KEY` set
-- [ ] Local `.env` present and gitignored
+- [ ] Supabase migration applied (RLS on)
+- [ ] Vercel env vars set for `web/`
+- [ ] Local `web/.env.local` present and gitignored
 
 ---
 

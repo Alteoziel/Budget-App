@@ -1,0 +1,26 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --ink: #15241f;
+  --moss: #3f7a5c;
+  --sand: #f7f3eb;
+  --coral: #c45c3a;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  color: var(--ink);
+  background: #f7f3eb;
+}
+
+@layer utilities {
+  .safe-pb {
+    padding-bottom: calc(5.5rem + env(safe-area-inset-bottom));
+  }
+}

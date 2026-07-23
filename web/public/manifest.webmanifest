@@ -1,0 +1,24 @@
+{
+  "name": "Alte' Budgeting",
+  "short_name": "Alte'",
+  "description": "Mobile-first personal budgeting",
+  "start_url": "/budget",
+  "display": "standalone",
+  "background_color": "#f7f3eb",
+  "theme_color": "#3f7a5c",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icons/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
