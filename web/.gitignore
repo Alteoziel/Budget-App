@@ -25,12 +25,11 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# env files (use Doppler instead)
+# env / local secret tools (app uses Doppler → Vercel sync only)
 .env
 .env.*
-!.env.example
-doppler.yaml.local
 .doppler.yaml
+doppler.yaml.local
 
 # typescript
 *.tsbuildinfo

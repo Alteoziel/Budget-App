@@ -24,35 +24,32 @@ PR quality gates from the governance stack stay in place.
 
 **Later:** Teller.io bank sync (not in this phase).
 
-## Quickstart — Alte' Budgeting
+## Quickstart — Alte' Budgeting (cloud only)
 
-Secrets are managed with **[Doppler](https://www.doppler.com/)** (no committed `.env` files).
+This app is meant to run on **Vercel**. Secrets live in **Doppler** and sync into Vercel — no local CLI, no `.env` files.
 
-```bash
-# Install CLI: https://docs.doppler.com/docs/install-cli
-doppler login
-
-cd web
-npm ci
-doppler setup   # select project `alte-budgeting`, config `dev` (or your names)
-# Set secrets once (see web/doppler.secrets.example):
-#   doppler secrets set NEXT_PUBLIC_SUPABASE_URL="https://….supabase.co"
-#   doppler secrets set NEXT_PUBLIC_SUPABASE_ANON_KEY="…"
-
-npm run dev     # runs: doppler run -- next dev
-```
-
-Open [http://localhost:3000](http://localhost:3000).
-
-### Supabase setup
+### 1. Supabase
 
 1. Create a Supabase project
 2. Run [`supabase/migrations/20260723180000_alte_budgeting_schema.sql`](supabase/migrations/20260723180000_alte_budgeting_schema.sql) in the SQL editor
 3. Enable Email auth (password) under Authentication → Providers
-4. Put Project URL + anon key in **Doppler** (not a local `.env`)
-5. Deploy `web/` to Vercel (Root Directory: `web`) and sync Doppler → Vercel:
-   - Doppler dashboard → **Integrations** → **Vercel**
-   - Map `dev` → Development, `preview` → Preview, `prd` → Production
+
+### 2. Doppler (source of truth for secrets)
+
+1. Create Doppler project `alte-budgeting`
+2. In configs `dev` / `preview` / `prd`, set the keys listed in [`web/doppler.secrets.example`](web/doppler.secrets.example):
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+3. Doppler dashboard → **Integrations** → **Vercel**
+4. Sync: `dev` → Development, `preview` → Preview, `prd` → Production
+
+### 3. Vercel
+
+1. Import this GitHub repo
+2. Set **Root Directory** to `web`
+3. Deploy — env vars arrive from the Doppler sync (do not paste secrets into Vercel by hand)
+
+Preview / production URLs come from Vercel after deploy.
 
 ### YNAB CSV import
 

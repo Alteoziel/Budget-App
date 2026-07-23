@@ -4,15 +4,11 @@
   "private": true,
   "description": "Alte' Budgeting — mobile-first personal budget PWA",
   "scripts": {
-    "dev": "doppler run -- next dev",
+    "dev": "next dev",
     "build": "next build",
-    "build:doppler": "doppler run -- next build",
-    "start": "doppler run -- next start",
-    "start:plain": "next start",
+    "start": "next start",
     "lint": "eslint .",
-    "test": "tsx --tsconfig tsconfig.json src/lib/ynab-csv.test.ts",
-    "secrets:open": "doppler open",
-    "secrets:list": "doppler secrets"
+    "test": "tsx --tsconfig tsconfig.json src/lib/ynab-csv.test.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.3",
