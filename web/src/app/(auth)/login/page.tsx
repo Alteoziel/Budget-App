@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { signInAction, signUpAction } from "@/lib/actions";
+import { safeInternalPath } from "@/lib/paths";
 
 export default async function LoginPage({
   searchParams,
@@ -8,6 +9,7 @@ export default async function LoginPage({
 }) {
   const params = await searchParams;
   const isSignup = params.mode === "signup";
+  const nextPath = safeInternalPath(params.next);
 
   return (
     <main className="flex min-h-dvh items-center bg-app-glow px-5 py-10">
@@ -29,7 +31,7 @@ export default async function LoginPage({
         ) : null}
 
         <form action={isSignup ? signUpAction : signInAction} className="mt-6 space-y-3">
-          <input type="hidden" name="next" value={params.next || "/budget"} />
+          <input type="hidden" name="next" value={nextPath} />
           {isSignup ? (
             <label className="block text-sm font-semibold text-ink-700">
               Display name

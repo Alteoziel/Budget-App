@@ -1,4 +1,4 @@
-import { currentBudgetMonth } from "@/lib/money";
+import { budgetMonthDateRange, currentBudgetMonth } from "@/lib/money";
 import { createClient } from "@/lib/supabase/server";
 import type { Account, BudgetRow, Category, CategoryGroup, Transaction } from "@/lib/types";
 
@@ -12,6 +12,9 @@ export async function getBudgetRows(month = currentBudgetMonth()): Promise<{
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { month, rows: [], readyToAssignCents: 0 };
+
+  const range = budgetMonthDateRange(month);
+  if (!range) return { month, rows: [], readyToAssignCents: 0 };
 
   const [{ data: groups }, { data: categories }, { data: assignments }, { data: txns }] =
     await Promise.all([
@@ -36,8 +39,8 @@ export async function getBudgetRows(month = currentBudgetMonth()): Promise<{
         .from("transactions")
         .select("category_id,amount_cents,occurred_on")
         .eq("user_id", user.id)
-        .gte("occurred_on", `${month}-01`)
-        .lte("occurred_on", `${month}-31`),
+        .gte("occurred_on", range.start)
+        .lt("occurred_on", range.endExclusive),
     ]);
 
   const groupMap = new Map((groups as CategoryGroup[] | null)?.map((g) => [g.id, g]) ?? []);
@@ -114,42 +117,60 @@ export async function getAccountsWithBalances(): Promise<
 export async function getAccountRegister(accountId: string): Promise<{
   account: Account | null;
   transactions: Transaction[];
+  balanceCents: number;
   categories: Array<{ id: string; name: string; groupName: string }>;
 }> {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return { account: null, transactions: [], categories: [] };
+  if (!user) {
+    return { account: null, transactions: [], balanceCents: 0, categories: [] };
+  }
 
-  const [{ data: account }, { data: transactions }, { data: categories }, { data: groups }] =
-    await Promise.all([
-      supabase
-        .from("accounts")
-        .select("id,name,account_type,currency")
-        .eq("user_id", user.id)
-        .eq("id", accountId)
-        .maybeSingle(),
-      supabase
-        .from("transactions")
-        .select("id,account_id,category_id,occurred_on,payee,memo,amount_cents,cleared")
-        .eq("user_id", user.id)
-        .eq("account_id", accountId)
-        .order("occurred_on", { ascending: false })
-        .limit(200),
-      supabase
-        .from("categories")
-        .select("id,name,group_id")
-        .eq("user_id", user.id)
-        .order("name"),
-      supabase.from("category_groups").select("id,name").eq("user_id", user.id),
-    ]);
+  const [
+    { data: account },
+    { data: transactions },
+    { data: balanceRows },
+    { data: categories },
+    { data: groups },
+  ] = await Promise.all([
+    supabase
+      .from("accounts")
+      .select("id,name,account_type,currency")
+      .eq("user_id", user.id)
+      .eq("id", accountId)
+      .maybeSingle(),
+    supabase
+      .from("transactions")
+      .select("id,account_id,category_id,occurred_on,payee,memo,amount_cents,cleared")
+      .eq("user_id", user.id)
+      .eq("account_id", accountId)
+      .order("occurred_on", { ascending: false })
+      .limit(200),
+    supabase
+      .from("transactions")
+      .select("amount_cents")
+      .eq("user_id", user.id)
+      .eq("account_id", accountId),
+    supabase
+      .from("categories")
+      .select("id,name,group_id")
+      .eq("user_id", user.id)
+      .order("name"),
+    supabase.from("category_groups").select("id,name").eq("user_id", user.id),
+  ]);
 
   const groupMap = new Map((groups ?? []).map((g) => [g.id as string, g.name as string]));
+  const balanceCents = (balanceRows ?? []).reduce(
+    (sum, row) => sum + (row.amount_cents as number),
+    0,
+  );
 
   return {
     account: (account as Account | null) ?? null,
     transactions: (transactions as Transaction[] | null) ?? [],
+    balanceCents,
     categories: (categories ?? []).map((c) => ({
       id: c.id as string,
       name: c.name as string,
