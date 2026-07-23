@@ -1,0 +1,124 @@
+import Papa from "papaparse";
+import { z } from "zod";
+import { dollarsToCents } from "@/lib/money";
+
+const rowSchema = z.object({
+  Account: z.string().optional().default(""),
+  Date: z.string().min(1),
+  Payee: z.string().optional().default(""),
+  "Category Group/Category": z.string().optional(),
+  Category: z.string().optional(),
+  Memo: z.string().optional().default(""),
+  Outflow: z.string().optional().default(""),
+  Inflow: z.string().optional().default(""),
+});
+
+export type ParsedYnabRow = {
+  accountName: string;
+  occurredOn: string;
+  payee: string;
+  categoryGroup: string;
+  categoryName: string;
+  memo: string;
+  amountCents: number;
+};
+
+export type ParseYnabResult = {
+  rows: ParsedYnabRow[];
+  skipped: number;
+  errors: string[];
+};
+
+function normalizeHeader(header: string): string {
+  return header.trim().replace(/^\uFEFF/, "");
+}
+
+function parseYnabDate(raw: string): string | null {
+  const value = raw.trim();
+  if (!value) return null;
+
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+
+  const us = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/.exec(value);
+  if (us) {
+    const month = us[1].padStart(2, "0");
+    const day = us[2].padStart(2, "0");
+    let year = us[3];
+    if (year.length === 2) {
+      year = Number(year) > 70 ? `19${year}` : `20${year}`;
+    }
+    return `${year}-${month}-${day}`;
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString().slice(0, 10);
+}
+
+function splitCategory(raw: string | undefined): { group: string; category: string } {
+  const value = (raw ?? "").trim();
+  if (!value || value === "Inflow: Ready to Assign" || value === "Ready to Assign") {
+    return { group: "", category: "" };
+  }
+  const sep = value.includes(":") ? ":" : value.includes("/") ? "/" : null;
+  if (!sep) return { group: "Imported", category: value };
+  const [group, ...rest] = value.split(sep);
+  const category = rest.join(sep).trim();
+  return {
+    group: group.trim() || "Imported",
+    category: category || group.trim(),
+  };
+}
+
+export function parseYnabRegisterCsv(csvText: string): ParseYnabResult {
+  const parsed = Papa.parse<Record<string, string>>(csvText, {
+    header: true,
+    skipEmptyLines: "greedy",
+    transformHeader: normalizeHeader,
+  });
+
+  const rows: ParsedYnabRow[] = [];
+  let skipped = 0;
+  const errors: string[] = [...(parsed.errors.map((e) => e.message) ?? [])];
+
+  for (const [index, raw] of (parsed.data ?? []).entries()) {
+    const result = rowSchema.safeParse(raw);
+    if (!result.success) {
+      skipped += 1;
+      errors.push(`Row ${index + 2}: invalid columns`);
+      continue;
+    }
+
+    const data = result.data;
+    const occurredOn = parseYnabDate(data.Date);
+    if (!occurredOn) {
+      skipped += 1;
+      errors.push(`Row ${index + 2}: bad date "${data.Date}"`);
+      continue;
+    }
+
+    const outflow = Math.abs(dollarsToCents(data.Outflow || "0"));
+    const inflow = Math.abs(dollarsToCents(data.Inflow || "0"));
+    const amountCents = inflow - outflow;
+    if (amountCents === 0 && !data.Payee && !(data.Memo || "").trim()) {
+      skipped += 1;
+      continue;
+    }
+
+    const categoryRaw = data["Category Group/Category"] || data.Category || "";
+    const { group, category } = splitCategory(categoryRaw);
+
+    rows.push({
+      accountName: (data.Account || "Imported").trim() || "Imported",
+      occurredOn,
+      payee: (data.Payee || "").trim(),
+      categoryGroup: group,
+      categoryName: category,
+      memo: (data.Memo || "").trim(),
+      amountCents,
+    });
+  }
+
+  return { rows, skipped, errors: errors.slice(0, 25) };
+}

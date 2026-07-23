@@ -4,9 +4,8 @@
 
 ## Checklist
 
-- [ ] New `/v1` routes use `require_api_auth` / `enforce_rate_limit`
-- [ ] Rate limiting considered
-- [ ] Audit events emitted for deny/allow paths
+- [ ] Product changes under `web/` keep secrets out of the client
+- [ ] Supabase RLS still covers any new tables/queries
 - [ ] No new dependency without lockfile update
-- [ ] Tests for authz-denied and malformed input
-- [ ] Outbound HTTP uses `EgressCheckedAsyncClient` (no bare httpx)
+- [ ] Governance Steps 1–5 / Enterprise Layers B–E still green
+- [ ] UI stays mobile-first and easy to use

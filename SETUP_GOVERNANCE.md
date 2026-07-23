@@ -8,7 +8,7 @@ The five-step suite is in the repo. **It will not protect `main` until you finis
 |-------|---------------|---------------------|
 | **Governance Steps 1–5** | GitHub Actions (`AI Code Guardrail` workflow) | Automated AST / OWASP / fuzz / Big-O / copyright on every PR |
 | **Human Review Dashboard** | **Vercel** (`dashboard/` Next.js app) | Approve / reject / merge after reviewing findings |
-| **Budget App API** | Docker / your host — **not Vercel** | The product API (`app/`) |
+| **Alte' Budgeting** | **Vercel** (`web/` Next.js PWA) + Supabase | The product app |
 
 There is **no comprehension quiz** in this repository.
 

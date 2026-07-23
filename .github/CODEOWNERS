@@ -5,8 +5,10 @@
 *                               @Alteoziel
 
 # Security-critical surfaces
-/app/security/                  @Alteoziel
-/app/api/                       @Alteoziel
+/web/                           @Alteoziel
+/web/src/lib/supabase/         @Alteoziel
+/web/src/lib/actions.ts         @Alteoziel
+/supabase/                      @Alteoziel
 /governance/                    @Alteoziel
 /dashboard/                     @Alteoziel
 /.github/workflows/             @Alteoziel

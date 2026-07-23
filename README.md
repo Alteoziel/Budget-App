@@ -1,64 +1,77 @@
-# Budget App
+# Alte' Budgeting
 
-Clean-slate personal budgeting API with the same enterprise security stack
-carried over from a prior project — **minus the comprehension quiz**.
+Mobile-first personal budgeting PWA (YNAB-inspired) with Supabase Auth/Postgres.
+PR quality gates from the governance stack stay in place.
 
-> **Security operator steps** (secrets, Protect Main, FOSSA/Snyk):  
-> [`SECURITY_OPERATOR_CHECKLIST.md`](SECURITY_OPERATOR_CHECKLIST.md)
+| Piece | Path | Purpose |
+|-------|------|---------|
+| **Product app** | [`web/`](web/) | Alte' Budgeting (Next.js PWA) |
+| **DB migrations** | [`supabase/migrations/`](supabase/migrations/) | Schema + RLS |
+| **PR governance** | [`governance/`](governance/) | Automated Steps 1–5 on every PR |
+| **Human review** | [`dashboard/`](dashboard/) | Approve / reject / merge findings |
+| **CI hygiene** | [`.github/workflows/`](.github/workflows/) | Gitleaks, audits, CodeQL, Semgrep, builds |
 
-## Pre-merge gates
+> Operator steps for merge protection: [`SETUP_GOVERNANCE.md`](SETUP_GOVERNANCE.md)  
+> Security checklist: [`SECURITY_OPERATOR_CHECKLIST.md`](SECURITY_OPERATOR_CHECKLIST.md)
 
-| Gate | Path |
-|------|------|
-| Governance Steps 1–5 (AST → OWASP → Fuzz → Big-O → Copyright) | [`governance/`](governance/) + [`.github/workflows/ai-guardrail.yml`](.github/workflows/ai-guardrail.yml) |
-| Human review dashboard (approve / reject / merge) | [`dashboard/`](dashboard/) |
-| Enterprise Layers B–E | [`ENTERPRISE_LAYERS.md`](ENTERPRISE_LAYERS.md) + [`.github/workflows/enterprise-hygiene.yml`](.github/workflows/enterprise-hygiene.yml) |
-| CodeQL (Layer C) | [`.github/workflows/codeql.yml`](.github/workflows/codeql.yml) |
+## Product (phase 1)
+
+- Budget screen (categories, assigned / activity / available)
+- Accounts + transaction register
+- YNAB register **CSV import**
+- Supabase Auth + row-level security
+- Installable PWA shell
+
+**Later:** Teller.io bank sync (not in this phase).
+
+## Quickstart — Alte' Budgeting (cloud only)
+
+This app is meant to run on **Vercel**. Secrets live in **Doppler** and sync into Vercel — no local CLI, no `.env` files.
+
+### 1. Supabase
+
+1. Create a Supabase project
+2. Run [`supabase/migrations/20260723180000_alte_budgeting_schema.sql`](supabase/migrations/20260723180000_alte_budgeting_schema.sql) in the SQL editor
+3. Enable Email auth (password) under Authentication → Providers
+
+### 2. Doppler (source of truth for secrets)
+
+1. Create Doppler project `alte-budgeting`
+2. In configs `dev` / `preview` / `prd`, set the keys listed in [`web/doppler.secrets.example`](web/doppler.secrets.example):
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+3. Doppler dashboard → **Integrations** → **Vercel**
+4. Sync: `dev` → Development, `preview` → Preview, `prd` → Production
+
+### 3. Vercel
+
+1. Import this GitHub repo
+2. Set **Root Directory** to `web`
+3. Deploy — env vars arrive from the Doppler sync (do not paste secrets into Vercel by hand)
+
+Preview / production URLs come from Vercel after deploy.
+
+### YNAB CSV import
+
+1. In YNAB web: budget name → **Export Budget**
+2. Upload the **Register** CSV on **Import** in Alte' Budgeting
+3. Expected headers: `Account, Date, Payee, Category Group/Category, Memo, Outflow, Inflow`
+
+## Governance (unchanged)
 
 ```bash
 cd governance && pip install -e ".[dev]" && ai-guardrail run --root ..
 ```
 
-Require status checks on `main`: **`Governance Steps 1–5`**, **`Enterprise Layers B–E`**, and **`CodeQL (Layer C)`**.
-
-## What’s in the box
-
-- FastAPI Budget App scaffold (`/health`, authenticated `/v1/accounts` stub)
-- API key auth, sliding-window rate limits, audit sink, deny-by-default egress HTTP client
-- Governance engine (no quiz), review dashboard (no quiz), Dependabot, Gitleaks, Semgrep, CodeQL, FOSSA, Trivy, Checkov
-
-## Quickstart
-
-```bash
-cp .env.example .env
-# Set BUDGET_API_KEY to a long random string
-
-python -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
-# Or: curl -LsSf https://astral.sh/uv/install.sh | sh && uv sync --frozen --extra dev
-
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-```bash
-curl http://localhost:8000/health
-curl -H "Authorization: Bearer $BUDGET_API_KEY" http://localhost:8000/v1/accounts
-```
-
-## Docker
-
-```bash
-docker compose up --build
-```
+Require status checks on `main`: **Governance Steps 1–5**, **Enterprise Layers B–E**, and **CodeQL (Layer C)**.
 
 ## Layout
 
 ```
-app/            Budget App API + security modules
+web/            Alte' Budgeting Next.js PWA
+supabase/       SQL migrations (RLS)
 governance/     Steps 1–5 CLI + reporters
-dashboard/      Human review panel (Next.js)
-tests/          API + security contracts
+dashboard/      Human PR review panel
 infra/terraform Checkov-scanned IaC stub
 .github/        CI, Dependabot, CODEOWNERS
 ```

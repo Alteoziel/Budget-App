@@ -1,14 +1,14 @@
 # Enterprise Layers B–E
 
-Automated supply-chain, SAST, product tests, and ship/runtime scaffolding.
+Automated supply-chain, SAST, product builds, and IaC checks.
 These sit **beside** Governance Steps 1–5 (AI Code Guardrail).
 
 | Layer | What | Where |
 |-------|------|-------|
-| **B** Supply chain & secrets | Dependabot, checksummed Gitleaks, pip-audit, npm audit (high+) | `.github/dependabot.yml`, `.gitleaks.toml`, CI job |
-| **C** Static analysis | Ruff, Mypy, Semgrep (custom + packs hard-fail), CodeQL Advanced, CODEOWNERS | `pyproject.toml`, `.semgrep.yml`, `.github/workflows/codeql.yml`, `.github/CODEOWNERS`, CI |
-| **D** Product tests | API + security contracts + coverage floor | `tests/`, `pyproject.toml` coverage config |
-| **E** Ship & runtime | Egress-checked HTTP client, audit schema, Dockerfile (non-root)→Trivy CRITICAL+HIGH, SBOM, Terraform→Checkov | `app/security/`, `infra/terraform/`, CI |
+| **B** Supply chain & secrets | Dependabot, checksummed Gitleaks, pip-audit (governance), npm audit (dashboard + web) | `.github/dependabot.yml`, `.gitleaks.toml`, CI job |
+| **C** Static analysis | ESLint + `tsc` (web), Semgrep, CodeQL Advanced, CODEOWNERS | `web/`, `.semgrep.yml`, `.github/workflows/codeql.yml`, CI |
+| **D** Product builds | Next.js production builds for `web/` and `dashboard/` | CI |
+| **E** Ship & runtime | Terraform → Checkov | `infra/terraform/`, CI |
 
 ## Required CI checks (Protect Main ruleset)
 
@@ -20,35 +20,8 @@ These must stay required on `main`:
 
 Also recommended on Protect Main: Code Owner review, dismiss stale reviews, up-to-date branch, approval of most recent push, signed commits, CodeQL code-scanning gate.
 
-## Operator checklist
+## Notes
 
-### Done (repo settings + Protect Main — keep these on)
-
-- [x] Require status checks: Governance Steps 1–5, Enterprise Layers B–E, CodeQL (Layer C)
-- [x] Require a pull request before merging
-- [x] Require Code Owner review
-- [x] Dismiss stale pull request approvals when new commits are pushed
-- [x] Require approval of the most recent reviewable push
-- [x] Require branches to be up to date before merging (strict status checks)
-- [x] Block force-pushes / branch deletion on default branch
-- [x] Require signed commits
-- [x] Code scanning rule in ruleset (CodeQL high_or_higher / errors)
-- [x] **Code scanning — Advanced setup** (`.github/workflows/codeql.yml` uploads SARIF; `queries: security-extended`)
-- [x] **Dependabot alerts + security updates enabled** (repo Code security; `.github/dependabot.yml` present)
-
-### Still optional / later
-
-1. **Secret scanning + push protection**  
-   Repo → **Settings** → **Code security** → enable **Secret scanning** and **Push protection**.
-
-2. **Restrict who can push / bypass**  
-   Ruleset → set bypass actors to **none** (or only a break-glass admin).
-
-3. **Private vulnerability reporting** (optional)  
-   Code security → **Private vulnerability reporting**.
-
-4. **Second human reviewer**  
-   When you add a collaborator/team, put them in `.github/CODEOWNERS` for `/app/security/`, `/app/api/`, and `/.github/workflows/`.
-
-5. **Governance dashboard deploy**  
-   Review/merge panel — see `SETUP_GOVERNANCE.md`.
+- Alte' Budgeting product code lives in [`web/`](web/).
+- FastAPI product stub was removed; governance + dashboard remain.
+- See [`SETUP_GOVERNANCE.md`](SETUP_GOVERNANCE.md) and [`SECURITY_OPERATOR_CHECKLIST.md`](SECURITY_OPERATOR_CHECKLIST.md).
