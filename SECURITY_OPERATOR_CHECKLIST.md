@@ -85,9 +85,9 @@ pre-commit run --all-files
 
 ---
 
-## 5. Runtime secrets for Alte' Budgeting (`web/`) — Doppler
+## 5. Runtime secrets for Alte' Budgeting (`web/`) — Doppler (cloud only)
 
-Manage secrets in **Doppler** (source of truth). Do not commit `.env` files.
+Manage secrets in the **Doppler dashboard** and sync them to **Vercel**. No local CLI, no `.env` files.
 
 | Secret | Required | Notes |
 |--------|----------|-------|
@@ -95,14 +95,13 @@ Manage secrets in **Doppler** (source of truth). Do not commit `.env` files.
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Publishable anon key (RLS enforced) |
 | `SUPABASE_SERVICE_ROLE_KEY` | No | Server-only if needed later; never ship to client |
 
-Local: `doppler login` → `cd web && doppler setup` → `npm run dev` (`doppler run -- next dev`).  
-Vercel: Doppler → Integrations → Vercel (sync `dev` / `preview` / `prd`).  
+Flow: Doppler dashboard → set secrets → **Integrations → Vercel** (`dev` / `preview` / `prd`).  
 Key list: [`web/doppler.secrets.example`](web/doppler.secrets.example).
 
 - [ ] Supabase migration applied (RLS on)
-- [ ] Doppler project + secrets created
+- [ ] Doppler project + secrets created in the dashboard
 - [ ] Doppler → Vercel sync configured for Development / Preview / Production
-- [ ] Local `doppler setup` done (no `.env.local` needed)
+- [ ] Vercel project Root Directory = `web`
 
 ---
 
