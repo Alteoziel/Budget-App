@@ -12,7 +12,8 @@ This list is for a **non-expert human operator**. Code and CI automate a lot; th
 | Item | Status | Where / what you do |
 |------|--------|---------------------|
 | Alte' Budgeting app (`web/`) | **DONE IN REPO** | Deploy to Vercel; Root Directory `web` |
-| Supabase Auth + RLS schema | **DONE IN REPO** | **YOU** create project, run migration, set env vars (§5) |
+| Supabase Auth + RLS schema | **DONE IN REPO** | **YOU** create project, run migration (§5) |
+| Doppler secrets for `web/` | **YOU MUST DO THIS** | Create project secrets + sync to Vercel (§5) |
 | Governance Steps 1–5 (no quiz) | **DONE IN REPO** | Require check on Protect Main (§3) |
 | Enterprise Layers B–E + CodeQL | **DONE IN REPO** | Require checks on Protect Main (§3) |
 | Secret scanning + push protection | **YOU MUST DO THIS** | §1 (confirm enabled) |
@@ -84,9 +85,9 @@ pre-commit run --all-files
 
 ---
 
-## 5. Runtime secrets for Alte' Budgeting (`web/`)
+## 5. Runtime secrets for Alte' Budgeting (`web/`) — Doppler
 
-Set in Vercel (and local `web/.env.local`):
+Manage secrets in **Doppler** (source of truth). Do not commit `.env` files.
 
 | Secret | Required | Notes |
 |--------|----------|-------|
@@ -94,9 +95,14 @@ Set in Vercel (and local `web/.env.local`):
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Publishable anon key (RLS enforced) |
 | `SUPABASE_SERVICE_ROLE_KEY` | No | Server-only if needed later; never ship to client |
 
+Local: `doppler login` → `cd web && doppler setup` → `npm run dev` (`doppler run -- next dev`).  
+Vercel: Doppler → Integrations → Vercel (sync `dev` / `preview` / `prd`).  
+Key list: [`web/doppler.secrets.example`](web/doppler.secrets.example).
+
 - [ ] Supabase migration applied (RLS on)
-- [ ] Vercel env vars set for `web/`
-- [ ] Local `web/.env.local` present and gitignored
+- [ ] Doppler project + secrets created
+- [ ] Doppler → Vercel sync configured for Development / Preview / Production
+- [ ] Local `doppler setup` done (no `.env.local` needed)
 
 ---
 

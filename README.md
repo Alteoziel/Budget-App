@@ -26,13 +26,20 @@ PR quality gates from the governance stack stay in place.
 
 ## Quickstart — Alte' Budgeting
 
-```bash
-cd web
-cp .env.example .env.local
-# Fill NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY
+Secrets are managed with **[Doppler](https://www.doppler.com/)** (no committed `.env` files).
 
+```bash
+# Install CLI: https://docs.doppler.com/docs/install-cli
+doppler login
+
+cd web
 npm ci
-npm run dev
+doppler setup   # select project `alte-budgeting`, config `dev` (or your names)
+# Set secrets once (see web/doppler.secrets.example):
+#   doppler secrets set NEXT_PUBLIC_SUPABASE_URL="https://….supabase.co"
+#   doppler secrets set NEXT_PUBLIC_SUPABASE_ANON_KEY="…"
+
+npm run dev     # runs: doppler run -- next dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
@@ -42,8 +49,10 @@ Open [http://localhost:3000](http://localhost:3000).
 1. Create a Supabase project
 2. Run [`supabase/migrations/20260723180000_alte_budgeting_schema.sql`](supabase/migrations/20260723180000_alte_budgeting_schema.sql) in the SQL editor
 3. Enable Email auth (password) under Authentication → Providers
-4. Copy Project URL + anon key into `web/.env.local`
-5. Deploy `web/` to Vercel with the same env vars (Root Directory: `web`)
+4. Put Project URL + anon key in **Doppler** (not a local `.env`)
+5. Deploy `web/` to Vercel (Root Directory: `web`) and sync Doppler → Vercel:
+   - Doppler dashboard → **Integrations** → **Vercel**
+   - Map `dev` → Development, `preview` → Preview, `prd` → Production
 
 ### YNAB CSV import
 

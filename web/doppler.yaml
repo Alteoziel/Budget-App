@@ -1,0 +1,7 @@
+# Committed project binding for `doppler setup` / `doppler run`.
+# Create this Doppler project (or rename to match yours), then:
+#   doppler login
+#   cd web && doppler setup
+setup:
+  project: alte-budgeting
+  config: dev
