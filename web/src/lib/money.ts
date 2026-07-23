@@ -26,6 +26,31 @@ export function currentBudgetMonth(date = new Date()): string {
   return `${year}-${month}`;
 }
 
+const BUDGET_MONTH_RE = /^(\d{4})-(\d{2})$/;
+
+export function isBudgetMonth(month: string): boolean {
+  const match = BUDGET_MONTH_RE.exec(month);
+  if (!match) return false;
+  const m = Number(match[2]);
+  return m >= 1 && m <= 12;
+}
+
+/** Inclusive start / exclusive end ISO dates for a YYYY-MM budget month. */
+export function budgetMonthDateRange(month: string): {
+  start: string;
+  endExclusive: string;
+} | null {
+  if (!isBudgetMonth(month)) return null;
+  const [yearStr, monthStr] = month.split("-");
+  const year = Number(yearStr);
+  const monthIndex = Number(monthStr);
+  const start = `${yearStr}-${monthStr}-01`;
+  const nextYear = monthIndex === 12 ? year + 1 : year;
+  const nextMonth = monthIndex === 12 ? 1 : monthIndex + 1;
+  const endExclusive = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
+  return { start, endExclusive };
+}
+
 export function formatBudgetMonth(month: string): string {
   const [year, m] = month.split("-").map(Number);
   if (!year || !m) return month;
@@ -33,4 +58,14 @@ export function formatBudgetMonth(month: string): string {
     month: "long",
     year: "numeric",
   });
+}
+
+/** Previous YYYY-MM budget month, or null if invalid. */
+export function previousBudgetMonth(month: string): string | null {
+  if (!isBudgetMonth(month)) return null;
+  const [yearStr, monthStr] = month.split("-");
+  const year = Number(yearStr);
+  const m = Number(monthStr);
+  if (m === 1) return `${year - 1}-12`;
+  return `${yearStr}-${String(m - 1).padStart(2, "0")}`;
 }

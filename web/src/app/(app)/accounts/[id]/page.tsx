@@ -1,20 +1,24 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
+import { FlashError } from "@/components/FlashError";
 import { Money } from "@/components/Money";
 import { createTransactionAction } from "@/lib/actions";
 import { getAccountRegister } from "@/lib/budget-data";
 
 export default async function AccountRegisterPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ error?: string }>;
 }) {
   const { id } = await params;
-  const { account, transactions, categories } = await getAccountRegister(id);
+  const query = await searchParams;
+  const { account, transactions, balanceCents, categories } =
+    await getAccountRegister(id);
   if (!account) notFound();
 
-  const balance = transactions.reduce((sum, txn) => sum + txn.amount_cents, 0);
   const today = new Date().toISOString().slice(0, 10);
 
   return (
@@ -24,11 +28,12 @@ export default async function AccountRegisterPage({
           ← All accounts
         </Link>
       </div>
+      <FlashError message={query.error} />
 
       <section className="animate-rise rounded-3xl bg-ink-900 px-5 py-5 text-sand-50 shadow-soft">
         <p className="text-xs font-bold uppercase tracking-[0.18em] text-moss-300">Balance</p>
         <p className="mt-2 font-display text-4xl font-bold">
-          <Money cents={balance} className="text-sand-50" />
+          <Money cents={balanceCents} className="text-sand-50" />
         </p>
       </section>
 

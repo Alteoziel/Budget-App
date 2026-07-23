@@ -33,27 +33,43 @@ function normalizeHeader(header: string): string {
   return header.trim().replace(/^\uFEFF/, "");
 }
 
-function parseYnabDate(raw: string): string | null {
+function isValidUtcYmd(year: number, month: number, day: number): boolean {
+  if (month < 1 || month > 12 || day < 1 || day > 31) return false;
+  const dt = new Date(Date.UTC(year, month - 1, day));
+  return (
+    dt.getUTCFullYear() === year &&
+    dt.getUTCMonth() === month - 1 &&
+    dt.getUTCDate() === day
+  );
+}
+
+function ymd(year: number, month: number, day: number): string | null {
+  if (!isValidUtcYmd(year, month, day)) return null;
+  return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+/** Parse YNAB register dates; rejects impossible calendar days; no TZ-shifting fallback. */
+export function parseYnabDate(raw: string): string | null {
   const value = raw.trim();
   if (!value) return null;
 
   const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  if (iso) {
+    return ymd(Number(iso[1]), Number(iso[2]), Number(iso[3]));
+  }
 
   const us = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/.exec(value);
   if (us) {
-    const month = us[1].padStart(2, "0");
-    const day = us[2].padStart(2, "0");
-    let year = us[3];
-    if (year.length === 2) {
-      year = Number(year) > 70 ? `19${year}` : `20${year}`;
+    const month = Number(us[1]);
+    const day = Number(us[2]);
+    let year = Number(us[3]);
+    if (us[3].length === 2) {
+      year = year > 70 ? 1900 + year : 2000 + year;
     }
-    return `${year}-${month}-${day}`;
+    return ymd(year, month, day);
   }
 
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed.toISOString().slice(0, 10);
+  return null;
 }
 
 function splitCategory(raw: string | undefined): { group: string; category: string } {
