@@ -38,7 +38,7 @@ export default async function LoginPage({
               <input
                 name="displayName"
                 className="mt-1 w-full rounded-xl border border-ink-900/10 bg-white px-3 py-3 outline-none ring-moss-400 focus:ring-2"
-                placeholder="Alte"
+                placeholder="Your name"
               />
             </label>
           ) : null}
