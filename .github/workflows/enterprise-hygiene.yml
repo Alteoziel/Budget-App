@@ -42,7 +42,7 @@ jobs:
       - name: Install uv
         run: curl -LsSf https://astral.sh/uv/0.11.31/install.sh | sh
 
-      - name: Install gateway (dev, frozen lockfile)
+      - name: Install budget-app (dev, frozen lockfile)
         run: |
           export PATH="$HOME/.local/bin:$PATH"
           uv sync --frozen --extra dev
@@ -69,7 +69,7 @@ jobs:
             --redact \
             --exit-code 1
 
-      - name: "B · pip-audit (gateway)"
+      - name: "B · pip-audit (budget-app)"
         run: |
           export PATH="$HOME/.local/bin:$PATH"
           uv run pip-audit --progress-spinner off
@@ -77,8 +77,6 @@ jobs:
       - name: "B · pip-audit (governance)"
         working-directory: governance
         run: |
-          # Governance [dev] does not ship pip-audit; gateway install uses uv so
-          # pip-audit is not on PATH here. Install it explicitly for this step.
           python -m pip install -U "pip>=25.3" pip-audit
           pip install -e ".[dev]"
           python -m pip_audit --progress-spinner off
@@ -103,7 +101,6 @@ jobs:
       - name: "C · Semgrep"
         run: |
           set -euo pipefail
-          # Isolated image avoids pip/setuptools conflicts with gateway deps.
           IMAGE="semgrep/semgrep:1.110.0"
           docker pull "$IMAGE"
           docker run --rm -v "$PWD:/src" -w /src "$IMAGE" \
@@ -124,20 +121,19 @@ jobs:
       # ── Layer D: product tests + coverage ───────────────────────────
       - name: "D · Pytest + coverage floor"
         env:
-          GATEWAY_API_KEY: test-gateway-key
+          BUDGET_API_KEY: test-budget-key
         run: |
           export PATH="$HOME/.local/bin:$PATH"
-          # python -m ensures repo root is on sys.path for `import tests.conftest`
           uv run python -m pytest -q
 
       # ── Layer E: container + IaC ────────────────────────────────────
-      - name: "E · Build gateway image"
-        run: docker build -t shadow-ai-gateway:ci .
+      - name: "E · Build budget-app image"
+        run: docker build -t budget-app:ci .
 
       - name: "E · Trivy image scan (CRITICAL+HIGH)"
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
         with:
-          image-ref: shadow-ai-gateway:ci
+          image-ref: budget-app:ci
           format: table
           exit-code: "1"
           severity: CRITICAL,HIGH
@@ -146,16 +142,16 @@ jobs:
       - name: "E · Trivy SBOM (SPDX)"
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
         with:
-          image-ref: shadow-ai-gateway:ci
+          image-ref: budget-app:ci
           format: spdx-json
-          output: gateway-sbom.spdx.json
+          output: budget-app-sbom.spdx.json
           exit-code: "0"
 
       - name: "E · Upload SBOM artifact"
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: gateway-sbom
-          path: gateway-sbom.spdx.json
+          name: budget-app-sbom
+          path: budget-app-sbom.spdx.json
           if-no-files-found: error
 
       - name: "E · Checkov (Terraform)"

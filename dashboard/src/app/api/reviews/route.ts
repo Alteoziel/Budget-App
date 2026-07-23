@@ -6,10 +6,6 @@ import {
 } from "@/lib/auth";
 import { parseIngestBody } from "@/lib/ingest";
 import {
-  dashboardReviewUrl,
-  setGovernanceQuizStatus,
-} from "@/lib/github";
-import {
   getStoreStatus,
   listReviews,
   upsertReview,
@@ -58,21 +54,9 @@ export async function POST(req: NextRequest) {
 
   const review = await upsertReview(parsed.data);
 
-  // Keep the branch-protection check in sync with quiz state for this SHA.
-  const quizStatus = await setGovernanceQuizStatus({
-    repo: review.repo,
-    commitSha: review.commit_sha,
-    state: review.comprehension_passed ? "success" : "pending",
-    description: review.comprehension_passed
-      ? "Comprehension quiz passed for this commit."
-      : "Take the Step 6 comprehension quiz on the governance dashboard.",
-    targetUrl: dashboardReviewUrl(review.id),
-  });
-
   return NextResponse.json(
     {
       review: sanitizeReviewForClient(review),
-      quiz_status: quizStatus,
     },
     { status: 201 }
   );

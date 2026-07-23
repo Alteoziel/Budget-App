@@ -1,4 +1,4 @@
-"""Egress-enforcing HTTP client — all outbound provider calls must use this."""
+"""Egress-enforcing HTTP client — all outbound calls must use this."""
 
 from __future__ import annotations
 
@@ -12,8 +12,8 @@ from app.security.egress import assert_allowed_url
 class EgressCheckedAsyncClient(httpx.AsyncClient):
     """httpx.AsyncClient that deny-by-default checks every request URL.
 
-    Providers must not create bare httpx clients. This central choke point
-    prevents accidental SSRF / data exfil if a new URL is introduced.
+    Application code must not create bare httpx clients. This central choke
+    point prevents accidental SSRF / data exfil if a new URL is introduced.
     """
 
     async def request(self, method: str, url: httpx.URL | str, **kwargs: Any) -> httpx.Response:

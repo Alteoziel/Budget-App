@@ -1,4 +1,4 @@
-"""Pipeline orchestrator — runs Steps 1–6 sequentially (Step 7 = dashboard)."""
+"""Pipeline orchestrator — runs Steps 1–5 sequentially (human review = dashboard)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ from governance.models import PipelineReport, StepResult
 from governance.steps import (
     ast_guardrail,
     benchmark_engine,
-    comprehension_gate,
     copyright_filter,
     fuzz_chamber,
     security_auditor,
@@ -134,14 +133,6 @@ def run_pipeline(
         steps.append(fuzz_chamber.run(paths))
     steps.append(benchmark_engine.run(paths))
     steps.append(copyright_filter.run(paths))
-    steps.append(
-        comprehension_gate.run(
-            paths,
-            diff_text=diff_text,
-            root=root,
-            skip_llm=skip_llm,
-        )
-    )
 
     passed = all(s.passed or s.skipped for s in steps)
     report = PipelineReport(
@@ -157,10 +148,6 @@ def run_pipeline(
             ),
             "steps_passed": sum(1 for s in steps if s.passed or s.skipped),
             "steps_total": len(steps),
-            "comprehension_required": True,
-            "comprehension_note": (
-                "Step 6 quiz must be passed on the dashboard before Step 7 merge."
-            ),
         },
         pr_number=pr_number,
         commit_sha=commit_sha,

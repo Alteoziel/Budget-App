@@ -1,48 +1,30 @@
 # Enterprise Layers B–E
 
 Automated supply-chain, SAST, product tests, and ship/runtime scaffolding.
-These sit **beside** Governance Steps 1–6 (AI Code Guardrail).
+These sit **beside** Governance Steps 1–5 (AI Code Guardrail).
 
 | Layer | What | Where |
 |-------|------|-------|
-| **B** Supply chain & secrets | Dependabot (alerts + security updates **enabled**), checksummed Gitleaks, pip-audit, npm audit (high+) | `.github/dependabot.yml`, `.gitleaks.toml`, CI job |
-| **C** Static analysis | Ruff, Mypy, Semgrep (custom + packs hard-fail), CodeQL Advanced (**enabled**, SARIF upload on), CODEOWNERS | `pyproject.toml`, `.semgrep.yml`, `.github/workflows/codeql.yml`, `.github/CODEOWNERS`, CI |
-| **D** Product tests | API integration + security contracts + coverage floor (**≥60%**) | `tests/`, `pyproject.toml` coverage config |
+| **B** Supply chain & secrets | Dependabot, checksummed Gitleaks, pip-audit, npm audit (high+) | `.github/dependabot.yml`, `.gitleaks.toml`, CI job |
+| **C** Static analysis | Ruff, Mypy, Semgrep (custom + packs hard-fail), CodeQL Advanced, CODEOWNERS | `pyproject.toml`, `.semgrep.yml`, `.github/workflows/codeql.yml`, `.github/CODEOWNERS`, CI |
+| **D** Product tests | API + security contracts + coverage floor | `tests/`, `pyproject.toml` coverage config |
 | **E** Ship & runtime | Egress-checked HTTP client, audit schema, Dockerfile (non-root)→Trivy CRITICAL+HIGH, SBOM, Terraform→Checkov | `app/security/`, `infra/terraform/`, CI |
 
 ## Required CI checks (Protect Main ruleset)
 
 These must stay required on `main`:
 
-1. **`Governance Steps 1–6`** — `.github/workflows/ai-guardrail.yml`
+1. **`Governance Steps 1–5`** — `.github/workflows/ai-guardrail.yml`
 2. **`Enterprise Layers B–E`** — `.github/workflows/enterprise-hygiene.yml`
-3. **`CodeQL (Layer C)`** — python job in `.github/workflows/codeql.yml` (Advanced setup; uploads to Security → Code scanning)
+3. **`CodeQL (Layer C)`** — python job in `.github/workflows/codeql.yml`
 
-Also required on Protect Main: Code Owner review, dismiss stale reviews, up-to-date branch, approval of most recent push, signed commits, CodeQL code-scanning gate, Preview deployment.
-
-## Learning map
-
-| Skill | Artifact you can explain in interviews |
-|-------|----------------------------------------|
-| Dependency risk | Dependabot PRs + `pip-audit` / `npm audit` failing CI |
-| Secret hygiene | Gitleaks (checksum-verified) blocking a committed key |
-| Lint/types as policy | Ruff + Mypy required on every PR |
-| SAST | Semgrep custom + registry ERROR packs + CodeQL security-extended |
-| Ownership | CODEOWNERS on `/app/proxy`, `/governance`, workflows |
-| Service tests | `tests/test_api_integration.py` with mocked providers |
-| Egress control | `EgressCheckedAsyncClient` + deny-by-default allowlist |
-| Audit readiness | `app/security/audit.py` + DDL for Phase 3 Postgres |
-| Container risk | Non-root image; Trivy CRITICAL+HIGH fails CI; SPDX SBOM artifact |
-| IaC security | Checkov on `infra/terraform` |
-| Supply-chain CI | Actions pinned to commit SHAs |
-
----
+Also recommended on Protect Main: Code Owner review, dismiss stale reviews, up-to-date branch, approval of most recent push, signed commits, CodeQL code-scanning gate.
 
 ## Operator checklist
 
 ### Done (repo settings + Protect Main — keep these on)
 
-- [x] Require status checks: Governance Steps 1–6, Enterprise Layers B–E, CodeQL (Layer C)
+- [x] Require status checks: Governance Steps 1–5, Enterprise Layers B–E, CodeQL (Layer C)
 - [x] Require a pull request before merging
 - [x] Require Code Owner review
 - [x] Dismiss stale pull request approvals when new commits are pushed
@@ -53,21 +35,20 @@ Also required on Protect Main: Code Owner review, dismiss stale reviews, up-to-d
 - [x] Code scanning rule in ruleset (CodeQL high_or_higher / errors)
 - [x] **Code scanning — Advanced setup** (`.github/workflows/codeql.yml` uploads SARIF; `queries: security-extended`)
 - [x] **Dependabot alerts + security updates enabled** (repo Code security; `.github/dependabot.yml` present)
-- [x] Required Preview deployment (`Preview – shadow-ai-gateway`)
 
 ### Still optional / later
 
 1. **Secret scanning + push protection**  
-   Repo → **Settings** → **Code security** → enable **Secret scanning** and **Push protection** (if not already on).
+   Repo → **Settings** → **Code security** → enable **Secret scanning** and **Push protection**.
 
 2. **Restrict who can push / bypass**  
-   Ruleset → set bypass actors to **none** (or only a break-glass admin). Prefer **never** committing straight to `main` — use PRs so the gates actually run.
+   Ruleset → set bypass actors to **none** (or only a break-glass admin).
 
 3. **Private vulnerability reporting** (optional)  
    Code security → **Private vulnerability reporting**.
 
 4. **Second human reviewer**  
-   When you add a collaborator/team, put them in `.github/CODEOWNERS` for `/app/security/`, `/app/proxy/`, and `/.github/workflows/`. Solo CODEOWNER self-approval is the biggest remaining process gap.
+   When you add a collaborator/team, put them in `.github/CODEOWNERS` for `/app/security/`, `/app/api/`, and `/.github/workflows/`.
 
 5. **Governance dashboard deploy**  
-   Browser quiz gate — see `SETUP_GOVERNANCE.md`.
+   Review/merge panel — see `SETUP_GOVERNANCE.md`.

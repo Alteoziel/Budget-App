@@ -9,7 +9,7 @@ export default function Error({
 }) {
   return (
     <main className="mx-auto max-w-2xl px-5 py-16 text-mist">
-      <p className="text-xs uppercase tracking-[0.25em]">Shadow AI Gateway</p>
+      <p className="text-xs uppercase tracking-[0.25em]">Budget App</p>
       <h1 className="mt-3 font-display text-4xl text-white">
         Dashboard hit a server error
       </h1>

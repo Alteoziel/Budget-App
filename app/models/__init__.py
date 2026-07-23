@@ -1,5 +1,5 @@
-"""Pydantic request/response models."""
+"""Pydantic models for the Budget App API."""
 
-from app.models.schemas import ChatCompletionRequest, ChatCompletionResponse, ChatMessage
+from app.models.schemas import Account, AccountCreate, AccountList
 
-__all__ = ["ChatCompletionRequest", "ChatCompletionResponse", "ChatMessage"]
+__all__ = ["Account", "AccountCreate", "AccountList"]

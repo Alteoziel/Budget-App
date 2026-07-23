@@ -1,22 +1,14 @@
 /**
- * Safe GitHub URL helpers + Governance Quiz commit status.
- *
- * Branch protection can require context {@link QUIZ_STATUS_CONTEXT}.
- * CI sets it to pending; the dashboard sets success/failure after the quiz.
+ * Safe GitHub URL helpers for the governance review dashboard.
  */
 
 const REPO_RE = /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/;
-
-/** Must match the name you require under branch protection. */
-export const QUIZ_STATUS_CONTEXT = "Governance Quiz";
 
 export type GithubRepoRef = {
   owner: string;
   name: string;
   full: string;
 };
-
-export type QuizStatusState = "pending" | "success" | "failure" | "error";
 
 export function parseGithubRepo(repo: string | null | undefined): GithubRepoRef | null {
   if (!repo || typeof repo !== "string") return null;
@@ -36,15 +28,6 @@ export function parseCommitSha(sha: string | null | undefined): string | null {
   const trimmed = sha.trim();
   if (!/^[0-9a-f]{7,40}$/i.test(trimmed)) return null;
   return trimmed;
-}
-
-function githubToken(): string | null {
-  return (
-    process.env.GITHUB_TOKEN?.trim() ||
-    process.env.GH_MERGE_TOKEN?.trim() ||
-    process.env.GH_STATUS_TOKEN?.trim() ||
-    null
-  );
 }
 
 /**
@@ -88,91 +71,6 @@ export function buildPullMergeUrl(
     repo: parsed.full,
     pr,
   };
-}
-
-/**
- * Post/replace the Governance Quiz commit status for branch protection.
- * Soft-fails when token/repo/sha are missing — quiz UI still works.
- */
-export async function setGovernanceQuizStatus(input: {
-  repo: string | null | undefined;
-  commitSha: string | null | undefined;
-  state: QuizStatusState;
-  description: string;
-  targetUrl?: string | null;
-}): Promise<{ ok: true } | { ok: false; error: string }> {
-  const token = githubToken();
-  if (!token) {
-    return {
-      ok: false,
-      error:
-        "No GITHUB_TOKEN / GH_MERGE_TOKEN / GH_STATUS_TOKEN — cannot update Governance Quiz check.",
-    };
-  }
-
-  const parsed = parseGithubRepo(input.repo);
-  if (!parsed) {
-    return { ok: false, error: "Review repo must look like owner/name." };
-  }
-
-  const allowed = process.env.GITHUB_REPOSITORY?.trim();
-  const prodLike =
-    process.env.NODE_ENV === "production" || process.env.VERCEL === "1";
-  if (prodLike && !allowed) {
-    return {
-      ok: false,
-      error:
-        "GITHUB_REPOSITORY must be set in production to pin status targets.",
-    };
-  }
-  if (allowed) {
-    const allowedParsed = parseGithubRepo(allowed);
-    if (!allowedParsed || allowedParsed.full !== parsed.full) {
-      return {
-        ok: false,
-        error: `Review repo ${parsed.full} is not allowed (expected ${allowed}).`,
-      };
-    }
-  }
-
-  const sha = parseCommitSha(input.commitSha);
-  if (!sha) {
-    return { ok: false, error: "Review has no valid commit SHA." };
-  }
-
-  const url = `https://api.github.com/repos/${parsed.owner}/${parsed.name}/statuses/${sha}`;
-  try {
-    const resp = await fetch(url, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/vnd.github+json",
-        "Content-Type": "application/json",
-        "X-GitHub-Api-Version": "2022-11-28",
-      },
-      body: JSON.stringify({
-        state: input.state,
-        context: QUIZ_STATUS_CONTEXT,
-        description: input.description.slice(0, 140),
-        ...(input.targetUrl
-          ? { target_url: input.targetUrl.slice(0, 1024) }
-          : {}),
-      }),
-    });
-    if (!resp.ok) {
-      const details = await resp.text().catch(() => "");
-      return {
-        ok: false,
-        error: `GitHub status API ${resp.status}: ${details.slice(0, 200)}`,
-      };
-    }
-    return { ok: true };
-  } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : "status update failed",
-    };
-  }
 }
 
 export function dashboardReviewUrl(reviewId: string): string | null {

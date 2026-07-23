@@ -15,9 +15,9 @@ const sans = Source_Sans_3({
 });
 
 export const metadata: Metadata = {
-  title: "AI Governance Review Panel",
+  title: "Budget App · Governance Review",
   description:
-    "Human review gate for Shadow AI Gateway PRs — AST, OWASP, fuzz, Big-O, copyright.",
+    "Human review gate for Budget App PRs — AST, OWASP, fuzz, Big-O, copyright.",
 };
 
 export default function RootLayout({

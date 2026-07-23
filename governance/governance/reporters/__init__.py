@@ -4,7 +4,6 @@ from governance.reporters.github import (
     format_markdown,
     post_github_pr_comment,
     post_inline_comments,
-    post_quiz_commit_status,
     post_to_dashboard,
 )
 
@@ -12,6 +11,5 @@ __all__ = [
     "format_markdown",
     "post_github_pr_comment",
     "post_inline_comments",
-    "post_quiz_commit_status",
     "post_to_dashboard",
 ]

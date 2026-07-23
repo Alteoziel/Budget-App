@@ -10,9 +10,7 @@
  * Redis/memory keep the same API without that taint path.
  */
 
-import { createHash } from "crypto";
 import { Redis } from "@upstash/redis";
-import { gradeCodingSubmission } from "./codingGrade";
 
 export type Severity = "info" | "warning" | "error" | "critical";
 
@@ -37,55 +35,7 @@ export type StepResult = {
   skip_reason?: string | null;
 };
 
-export type QuizQuestion = {
-  id: string;
-  category: string;
-  category_label?: string;
-  prompt: string;
-  choices: string[];
-  answer_index: number;
-  explanation: string;
-  question_type?: "multiple_choice" | "coding" | string;
-  language?: string;
-  starter_code?: string;
-  entrypoint?: string;
-  tests?: {
-    id?: string;
-    args: unknown[];
-    expected?: unknown;
-    raises?: string;
-  }[];
-  format?: string;
-};
-
-export type ComprehensionPack = {
-  learner_level?: string;
-  pass_threshold: number;
-  generator?: string;
-  study_guide: {
-    elevator_pitch: string;
-    bigger_picture: string;
-    glossary: { term: string; definition: string }[];
-    key_functions: { name: string; file: string; plain_english: string }[];
-    dependencies: string[];
-    manual_dev_tasks: string[];
-    security_notes: string[];
-    files_touched?: string[];
-  };
-  questions: QuizQuestion[];
-};
-
-export type ComprehensionAttempt = {
-  score: number;
-  correct: number;
-  total: number;
-  passed: boolean;
-  threshold: number;
-  at: string;
-};
-
 export type ReviewStatus =
-  | "pending_comprehension"
   | "pending_review"
   | "approved"
   | "rejected"
@@ -104,10 +54,6 @@ export type Review = {
   summary: Record<string, unknown>;
   merge_sha?: string | null;
   reviewer_note?: string | null;
-  comprehension?: ComprehensionPack | null;
-  comprehension_passed?: boolean;
-  comprehension_attempt?: ComprehensionAttempt | null;
-  comprehension_fingerprint?: string | null;
 };
 
 export type StoreStatus = {
@@ -119,8 +65,6 @@ export type StoreStatus = {
 const REDIS_KEY = "governance:reviews";
 /** Cap retained reviews to bound memory / Redis payload size. */
 const MAX_STORED_REVIEWS = 200;
-/** Minimum quiz pass threshold — ingest cannot lower this. */
-export const MIN_PASS_THRESHOLD = 0.8;
 
 /** Process-local fallback when Redis is not configured (dev / single instance). */
 let memoryReviews: Review[] = [];
@@ -160,7 +104,7 @@ export function getStoreStatus(): StoreStatus {
     backend: "memory",
     durable: false,
     warning:
-      "Using in-memory store (local). Data resets when the process restarts. For durable quizzes on Vercel, attach Upstash Redis.",
+      "Using in-memory store (local). Data resets when the process restarts. For durable reviews on Vercel, attach Upstash Redis.",
   };
 }
 
@@ -191,134 +135,9 @@ async function writeReviews(reviews: Review[]): Promise<void> {
   memoryReviews = reviews;
 }
 
-export function extractComprehension(
-  steps: StepResult[]
-): ComprehensionPack | null {
-  const step = steps.find((s) => s.step === "comprehension_gate");
-  const pack = step?.metrics?.comprehension;
-  if (!pack || typeof pack !== "object") return null;
-  return pack as ComprehensionPack;
-}
-
-export function comprehensionFingerprint(
-  pack: ComprehensionPack | null | undefined
-): string | null {
-  if (!pack?.questions?.length) return null;
-  const material = pack.questions
-    .map((q) => {
-      if (q.question_type === "coding") {
-        return `${q.id}:coding:${q.entrypoint}:${q.starter_code}:${JSON.stringify(q.tests)}`;
-      }
-      return `${q.id}:${q.prompt}:${(q.choices || []).join("|")}`;
-    })
-    .join("\n");
-  return createHash("sha256").update(material).digest("hex").slice(0, 16);
-}
-
-/** Strip answer keys (and coding expected outputs) from a comprehension pack. */
-export function publicComprehension(pack: ComprehensionPack | null | undefined) {
-  if (!pack) return null;
-  const threshold = Math.min(
-    1,
-    Math.max(MIN_PASS_THRESHOLD, Number(pack.pass_threshold) || MIN_PASS_THRESHOLD)
-  );
-  return {
-    learner_level: pack.learner_level,
-    pass_threshold: threshold,
-    generator: pack.generator,
-    study_guide: pack.study_guide,
-    questions: pack.questions.map((q) => {
-      const { answer_index: _a, explanation: _e, tests, ...rest } = q;
-      if (q.question_type === "coding" && Array.isArray(tests)) {
-        return {
-          ...rest,
-          tests: tests.map(({ expected: _exp, ...t }) => ({
-            ...t,
-            has_expected: _exp !== undefined,
-          })),
-        };
-      }
-      return rest;
-    }),
-  };
-}
-
-/** Strip answer keys from steps[].metrics.comprehension too. */
-export function sanitizeStepsForClient(steps: StepResult[]): StepResult[] {
-  return steps.map((step) => {
-    if (step.step !== "comprehension_gate" || !step.metrics?.comprehension) {
-      return step;
-    }
-    const metrics = { ...step.metrics };
-    metrics.comprehension = publicComprehension(
-      step.metrics.comprehension as ComprehensionPack
-    );
-    return { ...step, metrics };
-  });
-}
-
-/** Full client-safe review (no answer keys anywhere). */
+/** Client-safe review (no secrets). */
 export function sanitizeReviewForClient(review: Review): Review {
-  return {
-    ...review,
-    comprehension: publicComprehension(
-      review.comprehension
-    ) as Review["comprehension"],
-    steps: sanitizeStepsForClient(review.steps ?? []),
-  };
-}
-
-export function gradeComprehension(
-  pack: ComprehensionPack,
-  answers: Record<string, number>,
-  codingSubmissions: Record<string, string> = {}
-): ComprehensionAttempt & {
-  coding?: Record<
-    string,
-    { passed: boolean; passedTests: number; totalTests: number; errors: string[] }
-  >;
-} {
-  const questions = pack.questions ?? [];
-  const total = questions.length;
-  let correct = 0;
-  const coding: Record<
-    string,
-    { passed: boolean; passedTests: number; totalTests: number; errors: string[] }
-  > = {};
-
-  for (const q of questions) {
-    if (q.question_type === "coding") {
-      const result = gradeCodingSubmission(
-        {
-          id: q.id,
-          question_type: "coding",
-          entrypoint: q.entrypoint || "solve",
-          tests: q.tests || [],
-        },
-        codingSubmissions[q.id] || ""
-      );
-      coding[q.id] = result;
-      if (result.passed) correct += 1;
-    } else if (answers[q.id] === q.answer_index) {
-      correct += 1;
-    }
-  }
-
-  const score = total ? correct / total : 0;
-  // Enforce a floor so ingest cannot set pass_threshold: 0 to auto-pass.
-  const threshold = Math.min(
-    1,
-    Math.max(MIN_PASS_THRESHOLD, Number(pack.pass_threshold) || MIN_PASS_THRESHOLD)
-  );
-  return {
-    score,
-    correct,
-    total,
-    passed: score >= threshold,
-    threshold,
-    at: new Date().toISOString(),
-    coding,
-  };
+  return { ...review };
 }
 
 export async function listReviews(): Promise<Review[]> {
@@ -348,10 +167,7 @@ export async function upsertReview(
 ): Promise<Review> {
   const reviews = await readReviews();
   const now = new Date().toISOString();
-  const comprehension = extractComprehension(payload.steps);
-  const fingerprint = comprehensionFingerprint(comprehension);
-  const initialStatus: ReviewStatus =
-    payload.status ?? "pending_comprehension";
+  const initialStatus: ReviewStatus = payload.status ?? "pending_review";
 
   const existingIdx = reviews.findIndex(
     (r) =>
@@ -368,32 +184,20 @@ export async function upsertReview(
 
   if (existingIdx >= 0) {
     const prev = reviews[existingIdx];
-    const sameQuiz =
-      Boolean(fingerprint) &&
-      fingerprint === prev.comprehension_fingerprint &&
-      prev.commit_sha === payload.commit_sha;
-    const keepPass = sameQuiz && Boolean(prev.comprehension_passed);
-
     let nextStatus: ReviewStatus;
     if (payload.status) {
       nextStatus = payload.status;
     } else if (prev.status === "merged") {
       nextStatus = "merged";
-    } else if (!sameQuiz) {
-      nextStatus = "pending_comprehension";
     } else if (prev.status === "approved" || prev.status === "rejected") {
       nextStatus = prev.status;
     } else {
-      nextStatus = keepPass ? "pending_review" : "pending_comprehension";
+      nextStatus = "pending_review";
     }
 
     const updated: Review = {
       ...prev,
       ...payload,
-      comprehension,
-      comprehension_fingerprint: fingerprint,
-      comprehension_passed: keepPass,
-      comprehension_attempt: keepPass ? prev.comprehension_attempt : null,
       status: nextStatus,
       updatedAt: now,
     };
@@ -413,10 +217,6 @@ export async function upsertReview(
     repo: payload.repo,
     steps: payload.steps,
     summary: payload.summary,
-    comprehension,
-    comprehension_fingerprint: fingerprint,
-    comprehension_passed: false,
-    comprehension_attempt: null,
   };
   reviews.unshift(review);
   await writeReviews(reviews.slice(0, MAX_STORED_REVIEWS));

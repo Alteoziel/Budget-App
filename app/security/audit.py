@@ -1,8 +1,8 @@
-"""Layer E — audit log schema + process-wide sink (Phase 3 → Postgres).
+"""Layer E — audit log schema + process-wide sink (swap later for Postgres).
 
 In-memory sink is wired on the request path now so future code always has an
-audit hook. Phase 3 swaps the sink implementation for Supabase without
-changing call sites.
+audit hook. Production can swap the sink implementation without changing call
+sites.
 """
 
 from __future__ import annotations
@@ -21,32 +21,26 @@ class AuditEventType(StrEnum):
     AUTH_OK = "auth_ok"
     AUTH_DENIED = "auth_denied"
     RATE_LIMITED = "rate_limited"
-    INTERCEPTOR_OK = "interceptor_ok"
-    INTERCEPTOR_BLOCK = "interceptor_block"
-    PII_REDACTED = "pii_redacted"
-    PROVIDER_CALL = "provider_call"
-    PROVIDER_ERROR = "provider_error"
     EGRESS_DENIED = "egress_denied"
+    TXN_CREATED = "txn_created"
+    TXN_UPDATED = "txn_updated"
+    ACCOUNT_CREATED = "account_created"
 
 
 class AuditEvent(BaseModel):
-    """Immutable-ish audit record for a single gateway decision/action."""
+    """Immutable-ish audit record for a single API decision/action."""
 
     id: str = Field(default_factory=lambda: str(uuid4()))
     ts: datetime = Field(default_factory=lambda: datetime.now(UTC))
     event_type: AuditEventType
     correlation_id: str
     user_id: str | None = None
-    provider: str | None = None
-    model: str | None = None
-    prompt_tokens: int | None = None
-    completion_tokens: int | None = None
     blocked: bool = False
     reason: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-# Suggested Postgres DDL (Phase 3) — keep in sync with AuditEvent fields.
+# Suggested Postgres DDL — keep in sync with AuditEvent fields.
 AUDIT_EVENTS_DDL = """
 CREATE TABLE IF NOT EXISTS audit_events (
     id UUID PRIMARY KEY,
@@ -54,10 +48,6 @@ CREATE TABLE IF NOT EXISTS audit_events (
     event_type TEXT NOT NULL,
     correlation_id TEXT NOT NULL,
     user_id TEXT,
-    provider TEXT,
-    model TEXT,
-    prompt_tokens INTEGER,
-    completion_tokens INTEGER,
     blocked BOOLEAN NOT NULL DEFAULT FALSE,
     reason TEXT,
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb
@@ -72,7 +62,7 @@ class AuditSink(Protocol):
 
 
 class InMemoryAuditSink:
-    """Dev/test / Phase-1 sink until Supabase is wired in Phase 3."""
+    """Dev/test sink until a durable store is wired."""
 
     def __init__(self, *, maxlen: int = 10_000) -> None:
         self.events: list[AuditEvent] = []
@@ -83,7 +73,6 @@ class InMemoryAuditSink:
         with self._lock:
             self.events.append(event)
             if len(self.events) > self._maxlen:
-                # Drop oldest — ring-buffer behavior until Postgres.
                 overflow = len(self.events) - self._maxlen
                 del self.events[:overflow]
         return event
@@ -113,8 +102,6 @@ async def emit_audit(
     blocked: bool = False,
     reason: str | None = None,
     user_id: str | None = None,
-    provider: str | None = None,
-    model: str | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> AuditEvent:
     event = AuditEvent(
@@ -123,8 +110,6 @@ async def emit_audit(
         blocked=blocked,
         reason=reason,
         user_id=user_id,
-        provider=provider,
-        model=model,
         metadata=metadata or {},
     )
     return await get_audit_sink().write(event)

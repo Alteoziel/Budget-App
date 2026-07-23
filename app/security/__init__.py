@@ -7,7 +7,7 @@ from app.security.audit import (
     emit_audit,
     get_audit_sink,
 )
-from app.security.auth import require_gateway_auth
+from app.security.auth import require_api_auth
 from app.security.egress import (
     ALLOWED_HOSTS,
     EgressDeniedError,
@@ -31,5 +31,5 @@ __all__ = [
     "enforce_rate_limit",
     "get_audit_sink",
     "is_allowed_url",
-    "require_gateway_auth",
+    "require_api_auth",
 ]

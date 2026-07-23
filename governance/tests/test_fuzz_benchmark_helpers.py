@@ -8,22 +8,14 @@ from governance.steps.benchmark_engine import BenchmarkTarget
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_fuzz_chamber_targets_real_gateway_helper() -> None:
-    result = fuzz_chamber.run([REPO_ROOT / "app" / "proxy" / "payloads.py"])
+def test_fuzz_chamber_targets_real_budget_helper() -> None:
+    result = fuzz_chamber.run([REPO_ROOT / "app" / "security" / "egress.py"])
 
     assert result.passed
     assert result.metrics["functions_tested"] >= 1
     assert result.metrics["crashes"] == 0
     assert result.metrics["mode"] == "static"
-    assert any("to_anthropic_payload" in t for t in result.metrics["targets"])
-
-
-def test_fuzz_chamber_skips_human_checkpoint_interceptor() -> None:
-    result = fuzz_chamber.run([REPO_ROOT / "app" / "proxy" / "interceptor.py"])
-
-    assert result.passed
-    assert result.metrics["functions_tested"] == 0
-    assert result.metrics["targets"] == []
+    assert any("is_allowed_url" in t for t in result.metrics["targets"])
 
 
 def test_fuzz_chamber_static_flags_eval(tmp_path: Path) -> None:

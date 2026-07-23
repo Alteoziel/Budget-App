@@ -104,7 +104,7 @@ function SetupStatusPanel({
             {auth.reviewerSecretConfigured
               ? "Uses GOVERNANCE_REVIEWER_SECRET via X-Governance-Reviewer-Secret."
               : auth.reviewerUsesDashboardSecret && auth.dashboardSecretConfigured
-                ? "Falls back to GOVERNANCE_DASHBOARD_SECRET for quiz/approve/merge."
+                ? "Falls back to GOVERNANCE_DASHBOARD_SECRET for approve/merge."
                 : "Locked until a reviewer or dashboard secret is configured."}
           </dd>
         </div>
@@ -173,7 +173,7 @@ export default async function HomePage({ searchParams }: Props) {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="text-xs uppercase tracking-[0.25em] text-mist">
-              Shadow AI Gateway
+              Budget App
             </p>
             <h1 className="mt-3 font-display text-5xl leading-tight text-white md:text-6xl">
               Governance
@@ -182,9 +182,8 @@ export default async function HomePage({ searchParams }: Props) {
           {siteGate ? <SiteLogoutButton /> : null}
         </div>
         <p className="mt-4 max-w-2xl text-lg text-mist">
-          Pass the beginner comprehension quiz, then review AST, OWASP, fuzz,
-          Big-O, and copyright reports before merging to{" "}
-          <code className="text-white/80">main</code>.
+          Review AST, OWASP, fuzz, Big-O, and copyright reports before merging
+          to <code className="text-white/80">main</code>.
         </p>
       </header>
 
@@ -223,7 +222,7 @@ export default async function HomePage({ searchParams }: Props) {
               Vercel env var exactly. A 401 in the Actions log means the
               secrets do not match — fix them, then re-run{" "}
               <strong className="font-semibold text-white">
-                Governance Steps 1–6
+                Governance Steps 1–5
               </strong>
               .
             </p>
@@ -245,7 +244,6 @@ export default async function HomePage({ searchParams }: Props) {
                     </span>
                     <span className="mt-1 block text-xs text-mist">
                       {r.status.replaceAll("_", " ")} ·{" "}
-                      {r.comprehension_passed ? "quiz done" : "quiz pending"} ·{" "}
                       {r.passed ? "suite pass" : "suite fail"}
                     </span>
                   </Link>

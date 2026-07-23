@@ -4,9 +4,9 @@
 
 ## Checklist
 
-- [ ] New `/v1` routes use gateway auth dependency
+- [ ] New `/v1` routes use `require_api_auth` / `enforce_rate_limit`
 - [ ] Rate limiting considered
 - [ ] Audit events emitted for deny/allow paths
 - [ ] No new dependency without lockfile update
 - [ ] Tests for authz-denied and malformed input
-- [ ] I can explain this abstraction (ownership)
+- [ ] Outbound HTTP uses `EgressCheckedAsyncClient` (no bare httpx)

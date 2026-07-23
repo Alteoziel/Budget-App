@@ -8,9 +8,9 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 from app.api.health import router as health_router
-from app.api.v1.chat import router as chat_router
+from app.api.v1.accounts import router as accounts_router
 from app.config import get_settings
-from app.proxy.correlation import (
+from app.correlation import (
     CORRELATION_ID_HEADER,
     parse_correlation_id,
     received_at_iso,
@@ -19,7 +19,7 @@ from app.proxy.correlation import (
 logger = logging.getLogger(__name__)
 
 # Reject oversized bodies early (DoS). Auth still runs after this for /v1.
-MAX_BODY_BYTES = int(os.getenv("GATEWAY_MAX_BODY_BYTES", str(2 * 1024 * 1024)))
+MAX_BODY_BYTES = int(os.getenv("BUDGET_MAX_BODY_BYTES", str(2 * 1024 * 1024)))
 
 
 def _configure_logging(level: str) -> None:
@@ -34,23 +34,23 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     _configure_logging(settings.log_level)
     logging.getLogger(__name__).info(
-        "Shadow AI Guardrail Gateway starting on %s:%s",
-        settings.gateway_host,
-        settings.gateway_port,
+        "Budget App starting on %s:%s",
+        settings.app_host,
+        settings.app_port,
     )
     yield
-    logging.getLogger(__name__).info("Shadow AI Guardrail Gateway shutting down")
+    logging.getLogger(__name__).info("Budget App shutting down")
 
 
 def create_app() -> FastAPI:
-    docs_enabled = os.getenv("GATEWAY_ENABLE_DOCS", "").strip().lower() in {
+    docs_enabled = os.getenv("BUDGET_ENABLE_DOCS", "").strip().lower() in {
         "1",
         "true",
         "yes",
     }
     app = FastAPI(
-        title="Shadow AI Guardrail Gateway",
-        description="Enterprise security proxy for outbound LLM traffic",
+        title="Budget App",
+        description="Personal budgeting API with enterprise security controls",
         version="0.1.0",
         lifespan=lifespan,
         docs_url="/docs" if docs_enabled else None,
@@ -115,7 +115,7 @@ def create_app() -> FastAPI:
         return response
 
     app.include_router(health_router)
-    app.include_router(chat_router)
+    app.include_router(accounts_router)
     return app
 
 

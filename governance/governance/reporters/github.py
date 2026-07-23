@@ -83,10 +83,8 @@ def post_inline_comments(report: PipelineReport, commit_sha: str | None = None) 
                     continue
                 if finding.severity.value not in {"error", "critical"}:
                     continue
-                # Prefer relative path from repo root
                 path = finding.file
                 if path.startswith("/"):
-                    # best-effort strip to repo-relative
                     marker = f"/{repo.split('/')[-1]}/"
                     if marker in path:
                         path = path.split(marker, 1)[1]
@@ -114,7 +112,7 @@ def post_inline_comments(report: PipelineReport, commit_sha: str | None = None) 
 
 
 def post_to_dashboard(report: PipelineReport) -> dict[str, Any] | None:
-    """POST pipeline results to the Step 7 review dashboard API.
+    """POST pipeline results to the human review dashboard API.
 
     Soft-fails: dashboard outages must not fail an otherwise-green CI job.
     """
@@ -151,65 +149,6 @@ def post_to_dashboard(report: PipelineReport) -> dict[str, Any] | None:
             resp.raise_for_status()
             return resp.json()
     except Exception as exc:  # noqa: BLE001 — never fail the suite on dashboard I/O
-        return {"ok": False, "error": str(exc)}
-
-
-QUIZ_STATUS_CONTEXT = "Governance Quiz"
-
-
-def post_quiz_commit_status(
-    report: PipelineReport,
-    *,
-    state: str = "pending",
-    description: str = "Take the Step 6 comprehension quiz on the governance dashboard.",
-) -> dict[str, Any] | None:
-    """Create/replace the branch-protection commit status for the quiz gate.
-
-    Soft-fails when token/repo/sha are missing. Dashboard later sets success
-    after the human passes the quiz for this SHA.
-    """
-    token = os.getenv("GITHUB_TOKEN")
-    repo = report.repo or os.getenv("GITHUB_REPOSITORY")
-    sha = report.commit_sha or os.getenv("GITHUB_SHA")
-    if not token or not repo or not sha:
-        return None
-    if state not in {"pending", "success", "failure", "error"}:
-        state = "pending"
-
-    dashboard_raw = (os.getenv("GOVERNANCE_DASHBOARD_URL") or "").rstrip("/")
-    payload: dict[str, Any] = {
-        "state": state,
-        "context": QUIZ_STATUS_CONTEXT,
-        "description": description[:140],
-    }
-    if dashboard_raw:
-        from governance.egress import EgressDeniedError, assert_allowed_dashboard_url
-
-        try:
-            dashboard = assert_allowed_dashboard_url(dashboard_raw)
-            payload["target_url"] = dashboard[:1024]
-        except EgressDeniedError:
-            pass
-
-    url = f"https://api.github.com/repos/{repo}/statuses/{sha}"
-    try:
-        with httpx.Client(timeout=20.0) as client:
-            resp = client.post(
-                url,
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "Accept": "application/vnd.github+json",
-                    "X-GitHub-Api-Version": "2022-11-28",
-                },
-                json=payload,
-            )
-            if resp.status_code >= 300:
-                return {
-                    "ok": False,
-                    "error": f"{resp.status_code} {resp.text[:200]}",
-                }
-            return resp.json()
-    except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": str(exc)}
 
 

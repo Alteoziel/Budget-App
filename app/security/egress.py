@@ -1,4 +1,8 @@
-"""Layer E — egress allowlist for upstream LLM providers."""
+"""Layer E — deny-by-default egress allowlist for outbound HTTPS calls.
+
+Populate ALLOWED_EGRESS as integrations are added (banks, Plaid, Stripe, etc.).
+Until then the allowlist is empty — outbound calls must fail closed.
+"""
 
 from __future__ import annotations
 
@@ -13,10 +17,8 @@ class EgressTarget:
     scheme: str = "https"
 
 
-ALLOWED_EGRESS: tuple[EgressTarget, ...] = (
-    EgressTarget(name="openai", host="api.openai.com"),
-    EgressTarget(name="anthropic", host="api.anthropic.com"),
-)
+# Empty by default: budget features that need egress must opt in explicitly.
+ALLOWED_EGRESS: tuple[EgressTarget, ...] = ()
 
 ALLOWED_HOSTS: frozenset[str] = frozenset(t.host.lower() for t in ALLOWED_EGRESS)
 

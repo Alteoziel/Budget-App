@@ -78,7 +78,7 @@ export function authorizeIngest(req: NextRequest): boolean {
   return secretsMatch(req.headers.get("x-governance-secret"), expected);
 }
 
-/** Human actions: approve / reject / merge / submit_quiz */
+/** Human actions: approve / reject / merge */
 export function authorizeReviewer(req: NextRequest): boolean {
   const reviewer =
     process.env.GOVERNANCE_REVIEWER_SECRET?.trim() ||

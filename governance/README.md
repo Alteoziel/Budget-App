@@ -1,4 +1,4 @@
-# AI Governance Engine (Steps 1–6)
+# AI Governance Engine (Steps 1–5)
 
 Python CLI that gates pull requests before they hit `main`.
 
@@ -9,9 +9,9 @@ Python CLI that gates pull requests before they hit `main`.
 | 3 | `governance.steps.fuzz_chamber` | Boundary fuzz (null, `[]`, huge inputs) |
 | 4 | `governance.steps.benchmark_engine` | Empirical Big-O timing curves |
 | 5 | `governance.steps.copyright_filter` | Rabin-Karp + Levenshtein vs signature DB |
-| 6 | `governance.steps.comprehension_gate` | Beginner study guide + understanding quiz |
 
-Step 7 (human review dashboard) lives in `/dashboard` — merge stays locked until the Step 6 quiz is passed (≥80%).
+Human review (approve / reject / merge) lives in `/dashboard`. There is **no**
+comprehension quiz in this repository.
 
 ## Install
 
@@ -26,11 +26,7 @@ pip install -e ".[dev]"
 
 ```bash
 ai-guardrail run --root .
-
-# Practice the comprehension quiz interactively
-ai-guardrail quiz --root . --skip-llm
-
-ai-guardrail run --root . -f app/main.py -f app/proxy/interceptor.py
+ai-guardrail run --root . -f app/main.py
 ai-guardrail run --root . --changed-only --base-ref origin/main
 ```
 
@@ -61,10 +57,6 @@ result = run(
 print(result.metrics["injected_profiles"]["changed_helper"])
 ```
 
-Injected profiles are reported in `metrics["injected_profiles"]`; they do not
-block merge unless a future caller adds its own policy around the informational
-result.
-
 ## Tests
 
 ```bash
@@ -75,8 +67,7 @@ pytest
 
 | Variable | Purpose |
 |----------|---------|
-| `OPENAI_API_KEY` / `GOVERNANCE_LLM_API_KEY` | Step 2 LLM OWASP review + richer Step 6 questions |
+| `OPENAI_API_KEY` / `GOVERNANCE_LLM_API_KEY` | Step 2 LLM OWASP review |
 | `GOVERNANCE_LLM_MODEL` | Model id (default `gpt-4o-mini`) |
-| `GOVERNANCE_DASHBOARD_URL` | Step 7 ingest base URL |
-| `GOVERNANCE_DASHBOARD_SECRET` | Shared secret for dashboard POSTs |
-| `GITHUB_TOKEN` | PR comments / inline review comments |
+| `GOVERNANCE_DASHBOARD_URL` | Human-review ingest base URL |
+| `GOVERNANCE_DASHBOARD_SECRET` | Shared secret for dashboard ingest |

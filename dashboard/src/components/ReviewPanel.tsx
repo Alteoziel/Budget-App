@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -11,11 +11,6 @@ import {
   YAxis,
 } from "recharts";
 import type { Review, StepResult } from "@/lib/store";
-import { MiniCodeEditor } from "@/components/MiniCodeEditor";
-import {
-  gradeCodingSubmissionBrowser,
-  type CodingGradeResult,
-} from "@/lib/codingGradeBrowser";
 
 /**
  * Keep the reviewer secret in process memory only — never sessionStorage /
@@ -65,8 +60,6 @@ function statusColor(status: Review["status"]) {
       return "text-signal";
     case "rejected":
       return "text-alert";
-    case "pending_comprehension":
-      return "text-warn";
     default:
       return "text-warn";
   }
@@ -155,60 +148,6 @@ function StepCard({ step }: { step: StepResult }) {
   );
 }
 
-type PublicQuestion = {
-  id: string;
-  category: string;
-  category_label?: string;
-  prompt: string;
-  choices: string[];
-  format?: "text" | "code";
-  question_type?: string;
-  language?: string;
-  starter_code?: string;
-  entrypoint?: string;
-  tests?: {
-    id?: string;
-    args: unknown[];
-    expected?: unknown;
-    raises?: string;
-  }[];
-};
-
-type CodingDraft = {
-  code: string;
-  result: CodingGradeResult | null;
-  running: boolean;
-};
-
-function renderQuizPrompt(prompt: string) {
-  const parts = prompt.split(/(```[\s\S]*?```)/g);
-  return parts.map((part, i) => {
-    if (part.startsWith("```")) {
-      const body = part.replace(/^```(?:\w+)?\n?/, "").replace(/```$/, "");
-      return (
-        <pre
-          key={i}
-          className="mt-2 overflow-x-auto rounded-md bg-black/50 p-3 text-xs leading-relaxed text-signal"
-        >
-          <code>{body}</code>
-        </pre>
-      );
-    }
-    // Safe bold rendering — never inject HTML from quiz prompts (XSS).
-    const chunks = part.split(/(\*\*[\s\S]*?\*\*)/g);
-    return (
-      <span key={i}>
-        {chunks.map((chunk, j) => {
-          if (chunk.startsWith("**") && chunk.endsWith("**") && chunk.length >= 4) {
-            return <strong key={j}>{chunk.slice(2, -2)}</strong>;
-          }
-          return <span key={j}>{chunk}</span>;
-        })}
-      </span>
-    );
-  });
-}
-
 function ReviewerUnlock() {
   const [hasSecret, setHasSecret] = useState(false);
 
@@ -224,7 +163,7 @@ function ReviewerUnlock() {
             Review actions unlocked for this browser session.
           </p>
           <p>
-            Quiz, approve, reject, and merge calls send{" "}
+            Approve, reject, and merge calls send{" "}
             <code>X-Governance-Reviewer-Secret</code>. If a request returns 401,
             clear the saved secret and unlock again.
           </p>
@@ -245,7 +184,7 @@ function ReviewerUnlock() {
             <p className="font-semibold text-warn">Review actions locked.</p>
             <p>
               Enter <code>GOVERNANCE_REVIEWER_SECRET</code> or the dashboard
-              secret to submit the quiz, approve, reject, or merge.
+              secret to approve, reject, or merge.
             </p>
           </div>
           <button
@@ -261,350 +200,6 @@ function ReviewerUnlock() {
         </div>
       )}
     </div>
-  );
-}
-
-function ComprehensionPanel({ review }: { review: Review }) {
-  const pack = review.comprehension;
-  const questions = (pack?.questions ?? []) as PublicQuestion[];
-  const codingQuestions = useMemo(
-    () => questions.filter((q) => q.question_type === "coding"),
-    [questions]
-  );
-  const mcQuestions = useMemo(
-    () => questions.filter((q) => q.question_type !== "coding"),
-    [questions]
-  );
-  const [answers, setAnswers] = useState<Record<string, number>>({});
-  const [codingDrafts, setCodingDrafts] = useState<Record<string, CodingDraft>>(
-    () => {
-      const initial: Record<string, CodingDraft> = {};
-      for (const q of questions) {
-        if (q.question_type === "coding") {
-          initial[q.id] = {
-            code: q.starter_code || "",
-            result: null,
-            running: false,
-          };
-        }
-      }
-      return initial;
-    }
-  );
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [explanations, setExplanations] = useState<
-    {
-      id: string;
-      correct: boolean;
-      explanation: string;
-      coding?: CodingGradeResult | null;
-    }[] | null
-  >(null);
-
-  const allMcAnswered = useMemo(
-    () => mcQuestions.every((q) => answers[q.id] !== undefined),
-    [answers, mcQuestions]
-  );
-  const allCodingPassed = useMemo(
-    () =>
-      codingQuestions.every((q) => codingDrafts[q.id]?.result?.passed === true),
-    [codingDrafts, codingQuestions]
-  );
-  const canSubmit =
-    questions.length > 0 && allMcAnswered && allCodingPassed && !busy;
-
-  function runCodingTests(q: PublicQuestion) {
-    if (!q.entrypoint || !q.tests?.length) return;
-    const draft = codingDrafts[q.id];
-    const code = draft?.code ?? q.starter_code ?? "";
-    setCodingDrafts((prev) => ({
-      ...prev,
-      [q.id]: { code, result: prev[q.id]?.result ?? null, running: true },
-    }));
-    const result = gradeCodingSubmissionBrowser(
-      { id: q.id, entrypoint: q.entrypoint, tests: q.tests },
-      code
-    );
-    setCodingDrafts((prev) => ({
-      ...prev,
-      [q.id]: { code, result, running: false },
-    }));
-  }
-
-  if (!pack) {
-    return (
-      <section className="mb-8 rounded-lg border border-dashed border-white/15 p-5 text-sm text-mist">
-        No comprehension quiz attached yet. Re-run the guardrail suite so Step 6
-        can generate a beginner study guide + quiz for this PR. Approve/Merge stay
-        locked until a quiz exists and is passed.
-      </section>
-    );
-  }
-
-  if (review.comprehension_passed) {
-    const attempt = review.comprehension_attempt;
-    return (
-      <section className="mb-8 rounded-lg bg-signal/10 p-5">
-        <p className="text-xs uppercase tracking-[0.2em] text-signal">
-          Step 6 · Comprehension passed
-        </p>
-        <p className="mt-2 text-white">
-          You scored{" "}
-          {attempt
-            ? `${attempt.correct}/${attempt.total} (${Math.round(attempt.score * 100)}%)`
-            : "a passing mark"}
-          . Step 7 approve/merge is unlocked (suite must also be green to merge).
-        </p>
-      </section>
-    );
-  }
-
-  async function submit() {
-    if (!ensureReviewerSecret()) {
-      setMessage("Reviewer secret required to submit the quiz.");
-      return;
-    }
-    setBusy(true);
-    setMessage(null);
-    try {
-      const coding_submissions = Object.fromEntries(
-        codingQuestions.map((q) => [
-          q.id,
-          codingDrafts[q.id]?.code ?? q.starter_code ?? "",
-        ])
-      );
-      const res = await fetch(`/api/reviews/${review.id}`, {
-        method: "POST",
-        headers: authHeaders(),
-        body: JSON.stringify({
-          action: "submit_quiz",
-          answers,
-          coding_submissions,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        if (res.status === 401) {
-          clearReviewerSecret();
-        }
-        setMessage(data.message || data.error || "Quiz submit failed");
-        return;
-      }
-      setExplanations(data.explanations ?? null);
-      if (data.attempt?.passed) {
-        window.location.reload();
-        return;
-      }
-      setMessage(
-        `Not yet — ${data.attempt.correct}/${data.attempt.total} ` +
-          `(need ≥ ${Math.round((data.attempt.threshold ?? 0.8) * 100)}%). ` +
-          `Re-read the study guide and try again.`
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const guide = pack.study_guide;
-
-  return (
-    <section className="mb-8 rounded-xl border border-warn/30 bg-black/20 p-5">
-      <p className="text-xs uppercase tracking-[0.2em] text-warn">
-        Step 6 · Comprehension Gate
-      </p>
-      <h3 className="mt-2 font-display text-2xl text-white">
-        Prove you understand this change
-      </h3>
-      <p className="mt-2 max-w-3xl text-sm text-mist">
-        You are learning — that is expected. Merging AI-written code you cannot
-        explain is the danger. Read the guide, then pass the quiz (≥{" "}
-        {Math.round((pack.pass_threshold ?? 0.8) * 100)}%) before Approve &amp; Merge
-        unlocks.
-      </p>
-
-      <div className="mt-6 space-y-5 text-sm">
-        <div>
-          <h4 className="font-semibold text-white">What changed (plain English)</h4>
-          <p className="mt-1 text-white/85">{guide.elevator_pitch}</p>
-        </div>
-        <div>
-          <h4 className="font-semibold text-white">Bigger picture</h4>
-          <p className="mt-1 text-white/85">{guide.bigger_picture}</p>
-        </div>
-        <div>
-          <h4 className="font-semibold text-white">Vocabulary</h4>
-          <ul className="mt-2 space-y-2">
-            {guide.glossary.map((g) => (
-              <li key={g.term} className="rounded-md bg-black/30 px-3 py-2">
-                <span className="text-signal">{g.term}</span>
-                <span className="text-mist"> — {g.definition}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-        {guide.key_functions?.length ? (
-          <div>
-            <h4 className="font-semibold text-white">Key functions</h4>
-            <ul className="mt-2 space-y-2">
-              {guide.key_functions.map((fn) => (
-                <li
-                  key={`${fn.file}-${fn.name}`}
-                  className="rounded-md bg-black/30 px-3 py-2"
-                >
-                  <code className="text-white">{fn.name}</code>
-                  <span className="text-mist"> · {fn.file}</span>
-                  <p className="mt-1 text-white/80">{fn.plain_english}</p>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-        <div>
-          <h4 className="font-semibold text-white">Dependencies</h4>
-          <p className="mt-1 text-mist">{guide.dependencies.join(", ")}</p>
-        </div>
-        <div>
-          <h4 className="font-semibold text-white">Manual things you may need to do</h4>
-          <ul className="mt-2 list-disc space-y-1 pl-5 text-white/85">
-            {guide.manual_dev_tasks.map((t) => (
-              <li key={t}>{t}</li>
-            ))}
-          </ul>
-        </div>
-        <div>
-          <h4 className="font-semibold text-white">Security</h4>
-          <ul className="mt-2 list-disc space-y-1 pl-5 text-white/85">
-            {guide.security_notes.map((t) => (
-              <li key={t}>{t}</li>
-            ))}
-          </ul>
-        </div>
-      </div>
-
-      <div className="mt-8 space-y-6 border-t border-white/10 pt-6">
-        <h4 className="font-display text-xl text-white">Quiz</h4>
-        <p className="text-sm text-mist">
-          Multiple-choice questions plus short coding challenges in a mini editor.
-          Run the tests on each challenge until they pass, then submit.
-        </p>
-        {questions.map((q, i) => {
-          const isCoding = q.question_type === "coding";
-          const draft = codingDrafts[q.id] ?? {
-            code: q.starter_code || "",
-            result: null,
-            running: false,
-          };
-          const explanation = explanations?.find((e) => e.id === q.id);
-          return (
-            <fieldset key={q.id} className="space-y-2">
-              <legend className="text-sm text-white">
-                <span className="text-mist">
-                  {i + 1}. [{q.category_label || q.category}]
-                  {isCoding ? " · write code" : ""}
-                </span>{" "}
-                <span className="mt-1 block whitespace-pre-wrap">
-                  {renderQuizPrompt(q.prompt)}
-                </span>
-              </legend>
-              {isCoding ? (
-                <div className="space-y-2">
-                  <MiniCodeEditor
-                    value={draft.code}
-                    running={draft.running}
-                    onChange={(code) =>
-                      setCodingDrafts((prev) => ({
-                        ...prev,
-                        [q.id]: { code, result: null, running: false },
-                      }))
-                    }
-                    onReset={() =>
-                      setCodingDrafts((prev) => ({
-                        ...prev,
-                        [q.id]: {
-                          code: q.starter_code || "",
-                          result: null,
-                          running: false,
-                        },
-                      }))
-                    }
-                    onRun={() => runCodingTests(q)}
-                  />
-                  {draft.result ? (
-                    <p
-                      className={`text-xs ${
-                        draft.result.passed ? "text-signal" : "text-alert"
-                      }`}
-                    >
-                      {draft.result.passed
-                        ? `All ${draft.result.totalTests} tests passed.`
-                        : `${draft.result.passedTests}/${draft.result.totalTests} tests passed. ${draft.result.errors[0] ?? ""}`}
-                    </p>
-                  ) : (
-                    <p className="text-xs text-mist">
-                      Structural preview only — full tests run on quiz submit
-                      (server sandbox). All must pass before you can approve.
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-1">
-                  {q.choices.map((choice, idx) => (
-                    <label
-                      key={idx}
-                      className={`flex cursor-pointer gap-2 rounded-md px-3 py-2 text-sm ${
-                        answers[q.id] === idx
-                          ? "bg-signal/20 text-white"
-                          : "bg-black/25 text-white/85"
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        className="mt-1"
-                        name={q.id}
-                        checked={answers[q.id] === idx}
-                        onChange={() =>
-                          setAnswers((prev) => ({ ...prev, [q.id]: idx }))
-                        }
-                      />
-                      <span>{choice}</span>
-                    </label>
-                  ))}
-                </div>
-              )}
-              {explanation ? (
-                <p
-                  className={`text-xs ${
-                    explanation.correct ? "text-signal" : "text-alert"
-                  }`}
-                >
-                  {explanation.explanation}
-                  {explanation.coding && !explanation.coding.passed
-                    ? ` (${explanation.coding.errors[0] ?? "tests failed"})`
-                    : ""}
-                </p>
-              ) : null}
-            </fieldset>
-          );
-        })}
-
-        <button
-          type="button"
-          disabled={!canSubmit}
-          onClick={submit}
-          className="rounded-md bg-warn px-4 py-2 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {busy
-            ? "Grading…"
-            : !allCodingPassed
-              ? "Pass all coding challenges first"
-              : !allMcAnswered
-                ? "Answer all multiple-choice questions"
-                : "Submit comprehension quiz"}
-        </button>
-        {message ? <p className="text-sm text-alert">{message}</p> : null}
-      </div>
-    </section>
   );
 }
 
@@ -638,16 +233,14 @@ export function ReviewActions({ review }: { review: Review }) {
     window.location.reload();
   }
 
-  const quizLocked = !review.comprehension || !review.comprehension_passed;
-  const mergeLocked = quizLocked || !review.passed;
+  const mergeLocked = !review.passed;
 
   return (
     <div className="mt-6 flex flex-wrap gap-3">
       <button
         type="button"
-        disabled={quizLocked}
         onClick={() => act("approve")}
-        className="rounded-md bg-signal px-4 py-2 text-sm font-semibold text-ink transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+        className="rounded-md bg-signal px-4 py-2 text-sm font-semibold text-ink transition hover:brightness-110"
       >
         Approve
       </button>
@@ -668,11 +261,7 @@ export function ReviewActions({ review }: { review: Review }) {
       </button>
       <p className={`w-full text-sm ${statusColor(review.status)}`}>
         Status: {review.status.replaceAll("_", " ")}
-        {!review.comprehension_passed
-          ? " · complete Step 6 quiz to unlock"
-          : !review.passed
-            ? " · suite failed — merge blocked"
-            : ""}
+        {!review.passed ? " · suite failed — merge blocked" : ""}
       </p>
     </div>
   );
@@ -683,7 +272,7 @@ export function ReviewDetail({ review }: { review: Review }) {
     <article className="rounded-xl bg-slatepanel/80 p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
       <header className="mb-4 border-b border-white/10 pb-4">
         <p className="text-xs uppercase tracking-[0.2em] text-mist">
-          Human Review Panel · Step 7
+          Human Review Panel
         </p>
         <h2 className="mt-2 font-display text-3xl text-white">
           {review.repo ? `${review.repo}` : "Local review"}
@@ -700,8 +289,6 @@ export function ReviewDetail({ review }: { review: Review }) {
         <ReviewerUnlock />
         <ReviewActions review={review} />
       </header>
-
-      <ComprehensionPanel review={review} />
 
       {review.steps.map((step) => (
         <StepCard key={step.step} step={step} />
