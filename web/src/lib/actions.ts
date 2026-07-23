@@ -1,5 +1,6 @@
 "use server";
 
+import { createHash } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -264,6 +265,27 @@ export async function importYnabCsvAction(
   }
 
   const { supabase, user } = await requireUser();
+  const contentHash = createHash("sha256")
+    .update(parsedInput.data.csvText)
+    .digest("hex");
+
+  const priorImport = await supabase
+    .from("import_batches")
+    .select("id,inserted_count")
+    .eq("user_id", user.id)
+    .eq("content_hash", contentHash)
+    .maybeSingle();
+
+  if (priorImport.data?.id) {
+    return {
+      ok: false,
+      inserted: 0,
+      skipped: priorImport.data.inserted_count ?? 0,
+      errors: [],
+      message: "This file was already imported. Upload a new export to add more transactions.",
+    };
+  }
+
   const { rows, skipped, errors } = parseYnabRegisterCsv(parsedInput.data.csvText);
 
   if (rows.length === 0) {
@@ -282,6 +304,7 @@ export async function importYnabCsvAction(
       user_id: user.id,
       filename: parsedInput.data.filename,
       source: "ynab_csv",
+      content_hash: contentHash,
       inserted_count: 0,
       skipped_count: skipped,
       error_count: errors.length,
@@ -290,12 +313,19 @@ export async function importYnabCsvAction(
     .single();
 
   if (batch.error || !batch.data?.id) {
+    const duplicate =
+      batch.error?.code === "23505" ||
+      /duplicate|unique/i.test(batch.error?.message ?? "");
     return {
       ok: false,
       inserted: 0,
       skipped,
-      errors: [batch.error?.message ?? "Could not create import batch"],
-      message: "Import failed before inserting rows.",
+      errors: duplicate
+        ? []
+        : [batch.error?.message ?? "Could not create import batch"],
+      message: duplicate
+        ? "This file was already imported. Upload a new export to add more transactions."
+        : "Import failed before inserting rows.",
     };
   }
 

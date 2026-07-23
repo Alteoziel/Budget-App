@@ -1,15 +1,22 @@
 import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
+import { FlashError } from "@/components/FlashError";
 import { Money } from "@/components/Money";
 import { createAccountAction } from "@/lib/actions";
 import { getAccountsWithBalances } from "@/lib/budget-data";
 
-export default async function AccountsPage() {
+export default async function AccountsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const params = await searchParams;
   const accounts = await getAccountsWithBalances();
   const total = accounts.reduce((sum, account) => sum + account.balanceCents, 0);
 
   return (
     <AppShell title="Accounts" subtitle="Balances from your transactions">
+      <FlashError message={params.error} />
       <section className="animate-rise rounded-3xl bg-ink-900 px-5 py-5 text-sand-50 shadow-soft">
         <p className="text-xs font-bold uppercase tracking-[0.18em] text-moss-300">
           All accounts

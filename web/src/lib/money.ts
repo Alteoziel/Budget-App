@@ -59,3 +59,13 @@ export function formatBudgetMonth(month: string): string {
     year: "numeric",
   });
 }
+
+/** Previous YYYY-MM budget month, or null if invalid. */
+export function previousBudgetMonth(month: string): string | null {
+  if (!isBudgetMonth(month)) return null;
+  const [yearStr, monthStr] = month.split("-");
+  const year = Number(yearStr);
+  const m = Number(monthStr);
+  if (m === 1) return `${year - 1}-12`;
+  return `${yearStr}-${String(m - 1).padStart(2, "0")}`;
+}

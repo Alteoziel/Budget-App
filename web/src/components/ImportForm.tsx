@@ -41,8 +41,8 @@ export function ImportForm() {
       </label>
 
       <div className="rounded-2xl bg-coral-400/10 px-4 py-3 text-sm text-ink-700">
-        Re-importing the same file can create duplicate transactions. Prefer a
-        fresh export after you switch fully to Alte&apos; Budgeting.
+        Identical CSV uploads are skipped automatically. Prefer a fresh export
+        when you have new transactions to bring over.
       </div>
 
       {result ? (

@@ -1,4 +1,5 @@
 import { AppShell } from "@/components/AppShell";
+import { FlashError } from "@/components/FlashError";
 import { Money } from "@/components/Money";
 import {
   assignCategoryAction,
@@ -7,7 +8,12 @@ import {
 import { getBudgetRows } from "@/lib/budget-data";
 import { formatBudgetMonth } from "@/lib/money";
 
-export default async function BudgetPage() {
+export default async function BudgetPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const params = await searchParams;
   const { month, rows, readyToAssignCents } = await getBudgetRows();
 
   const grouped = rows.reduce<Record<string, typeof rows>>((acc, row) => {
@@ -18,6 +24,7 @@ export default async function BudgetPage() {
 
   return (
     <AppShell title="Budget" subtitle={formatBudgetMonth(month)}>
+      <FlashError message={params.error} />
       <section className="animate-rise rounded-3xl bg-ink-900 px-5 py-5 text-sand-50 shadow-soft">
         <p className="text-xs font-bold uppercase tracking-[0.18em] text-moss-300">
           Ready to assign
