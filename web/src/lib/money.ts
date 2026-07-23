@@ -1,15 +1,29 @@
-export function dollarsToCents(value: string | number): number {
+/** Strict money parse: returns null for invalid / ambiguous input. */
+export function dollarsToCents(value: string | number): number | null {
   if (typeof value === "number") {
+    if (!Number.isFinite(value)) return null;
     return Math.round(value * 100);
   }
+
   const cleaned = value.replace(/[$,\s]/g, "").trim();
-  if (!cleaned || cleaned === "-") return 0;
+  if (!cleaned || cleaned === "-" || cleaned === "+") return null;
+
   const negative = cleaned.startsWith("(") && cleaned.endsWith(")");
-  const numeric = negative ? cleaned.slice(1, -1) : cleaned.replace(/^\+/, "");
-  const parsed = Number.parseFloat(numeric);
-  if (Number.isNaN(parsed)) return 0;
-  const cents = Math.round(Math.abs(parsed) * 100);
-  return negative || cleaned.startsWith("-") ? -cents : cents;
+  let numeric = negative ? cleaned.slice(1, -1).trim() : cleaned;
+  if (numeric.startsWith("+")) numeric = numeric.slice(1);
+  const signedNegative = numeric.startsWith("-");
+  if (signedNegative) numeric = numeric.slice(1);
+
+  // Require a plain decimal with at most 2 fractional digits (no trailing junk).
+  if (!/^\d+(\.\d{1,2})?$/.test(numeric)) return null;
+
+  const [whole, frac = ""] = numeric.split(".");
+  const cents =
+    Number.parseInt(whole, 10) * 100 +
+    Number.parseInt(frac.padEnd(2, "0") || "0", 10);
+  if (!Number.isFinite(cents)) return null;
+
+  return negative || signedNegative ? -cents : cents;
 }
 
 export function formatCents(cents: number, currency = "USD"): string {
@@ -68,4 +82,21 @@ export function previousBudgetMonth(month: string): string | null {
   const m = Number(monthStr);
   if (m === 1) return `${year - 1}-12`;
   return `${yearStr}-${String(m - 1).padStart(2, "0")}`;
+}
+
+function isValidUtcYmd(year: number, month: number, day: number): boolean {
+  if (month < 1 || month > 12 || day < 1 || day > 31) return false;
+  const dt = new Date(Date.UTC(year, month - 1, day));
+  return (
+    dt.getUTCFullYear() === year &&
+    dt.getUTCMonth() === month - 1 &&
+    dt.getUTCDate() === day
+  );
+}
+
+/** Validate a calendar YYYY-MM-DD date (no timezone shifting). */
+export function isValidIsoDate(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!match) return false;
+  return isValidUtcYmd(Number(match[1]), Number(match[2]), Number(match[3]));
 }

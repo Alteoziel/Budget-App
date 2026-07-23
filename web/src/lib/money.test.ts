@@ -3,16 +3,30 @@ import {
   budgetMonthDateRange,
   dollarsToCents,
   isBudgetMonth,
+  isValidIsoDate,
   previousBudgetMonth,
 } from "@/lib/money";
 
 assert.equal(dollarsToCents("$1,234.56"), 123456);
 assert.equal(dollarsToCents("(12.34)"), -1234);
 assert.equal(dollarsToCents("-0.01"), -1);
+assert.equal(dollarsToCents("0.1"), 10);
+assert.equal(dollarsToCents("12.3"), 1230);
+
+assert.equal(dollarsToCents("abc"), null);
+assert.equal(dollarsToCents("12abc"), null);
+assert.equal(dollarsToCents("1.005"), null);
+assert.equal(dollarsToCents(""), null);
+assert.equal(dollarsToCents("-"), null);
+assert.equal(dollarsToCents("12.345"), null);
 
 assert.equal(isBudgetMonth("2026-02"), true);
 assert.equal(isBudgetMonth("2026-13"), false);
 assert.equal(isBudgetMonth("2026-2"), false);
+
+assert.equal(isValidIsoDate("2026-02-28"), true);
+assert.equal(isValidIsoDate("2026-02-31"), false);
+assert.equal(isValidIsoDate("2026-2-28"), false);
 
 const feb = budgetMonthDateRange("2026-02");
 assert.deepEqual(feb, { start: "2026-02-01", endExclusive: "2026-03-01" });

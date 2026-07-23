@@ -87,6 +87,13 @@ function splitCategory(raw: string | undefined): { group: string; category: stri
   };
 }
 
+function parseMoneyCell(raw: string | undefined): number | null {
+  const value = (raw ?? "").trim();
+  if (!value) return 0;
+  const cents = dollarsToCents(value);
+  return cents;
+}
+
 export function parseYnabRegisterCsv(csvText: string): ParseYnabResult {
   const parsed = Papa.parse<Record<string, string>>(csvText, {
     header: true,
@@ -114,9 +121,25 @@ export function parseYnabRegisterCsv(csvText: string): ParseYnabResult {
       continue;
     }
 
-    const outflow = Math.abs(dollarsToCents(data.Outflow || "0"));
-    const inflow = Math.abs(dollarsToCents(data.Inflow || "0"));
-    const amountCents = inflow - outflow;
+    const outflowRaw = (data.Outflow || "").trim();
+    const inflowRaw = (data.Inflow || "").trim();
+    const outflow = parseMoneyCell(outflowRaw);
+    const inflow = parseMoneyCell(inflowRaw);
+    if (outflow === null || inflow === null) {
+      skipped += 1;
+      errors.push(`Row ${index + 2}: invalid money amount`);
+      continue;
+    }
+
+    const outflowAbs = Math.abs(outflow);
+    const inflowAbs = Math.abs(inflow);
+    if (outflowAbs > 0 && inflowAbs > 0) {
+      skipped += 1;
+      errors.push(`Row ${index + 2}: both Inflow and Outflow are set`);
+      continue;
+    }
+
+    const amountCents = inflowAbs - outflowAbs;
     if (amountCents === 0 && !data.Payee && !(data.Memo || "").trim()) {
       skipped += 1;
       continue;
@@ -137,4 +160,17 @@ export function parseYnabRegisterCsv(csvText: string): ParseYnabResult {
   }
 
   return { rows, skipped, errors: errors.slice(0, 25) };
+}
+
+/** Deterministic fingerprint for import idempotency across fresh CSV exports. */
+export function ynabRowFingerprint(row: ParsedYnabRow): string {
+  return [
+    row.accountName.trim().toLowerCase(),
+    row.occurredOn,
+    row.payee.trim().toLowerCase(),
+    row.memo.trim().toLowerCase(),
+    String(row.amountCents),
+    row.categoryGroup.trim().toLowerCase(),
+    row.categoryName.trim().toLowerCase(),
+  ].join("|");
 }
