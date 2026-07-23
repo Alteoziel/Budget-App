@@ -203,7 +203,7 @@ export async function createTransactionAction(formData: FormData) {
     redirect("/accounts");
   }
 
-  let categoryId: string | null = categoryIdRaw || null;
+  const categoryId: string | null = categoryIdRaw || null;
   if (categoryId) {
     const category = await supabase
       .from("categories")
