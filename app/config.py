@@ -1,12 +1,11 @@
 from functools import lru_cache
-from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Phase 1 configuration loaded from environment variables."""
+    """Budget App configuration loaded from environment variables."""
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -14,21 +13,15 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
-    anthropic_api_key: str = Field(default="", alias="ANTHROPIC_API_KEY")
-    default_provider: Literal["openai", "anthropic"] = Field(
-        default="openai",
-        alias="DEFAULT_PROVIDER",
-    )
-    gateway_host: str = Field(default="0.0.0.0", alias="GATEWAY_HOST")  # noqa: S104
-    gateway_port: int = Field(default=8000, alias="GATEWAY_PORT")
+    app_host: str = Field(default="0.0.0.0", alias="APP_HOST")  # noqa: S104
+    app_port: int = Field(default=8000, alias="APP_PORT")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
-    # Comma-separated alternate keys; GATEWAY_API_KEY is the primary.
-    gateway_api_key: str = Field(default="", alias="GATEWAY_API_KEY")
-    gateway_api_keys: str = Field(default="", alias="GATEWAY_API_KEYS")
-    gateway_rate_limit_per_minute: int = Field(
+    # Comma-separated alternate keys; BUDGET_API_KEY is the primary.
+    budget_api_key: str = Field(default="", alias="BUDGET_API_KEY")
+    budget_api_keys: str = Field(default="", alias="BUDGET_API_KEYS")
+    budget_rate_limit_per_minute: int = Field(
         default=60,
-        alias="GATEWAY_RATE_LIMIT_PER_MINUTE",
+        alias="BUDGET_RATE_LIMIT_PER_MINUTE",
     )
 
 

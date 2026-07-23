@@ -1,5 +1,5 @@
 # Minimal Terraform stub — Layer E (IaC learning surface).
-# Phase 4 human checkpoint expands this. CI runs Checkov against this directory.
+# Expand when cloud infra for the Budget App is defined. CI runs Checkov here.
 
 terraform {
   required_version = ">= 1.5.0"
@@ -17,19 +17,18 @@ provider "aws" {
 
 variable "aws_region" {
   type        = string
-  description = "AWS region for the private gateway deployment"
+  description = "AWS region for Budget App infrastructure"
   default     = "us-east-1"
 }
 
 variable "project_name" {
   type        = string
-  description = "Name prefix for gateway resources"
-  default     = "shadow-ai-gateway"
+  description = "Name prefix for Budget App resources"
+  default     = "budget-app"
 }
 
-# Placeholder: Phase 4 human checkpoint defines VPC/ECS/ALB resources here.
-# Kept intentionally minimal so Checkov has a valid root module to scan.
-resource "aws_cloudwatch_log_group" "gateway" {
-  name              = "/${var.project_name}/gateway"
+# Placeholder root module so Checkov has a valid scan target.
+resource "aws_cloudwatch_log_group" "api" {
+  name              = "/${var.project_name}/api"
   retention_in_days = 365
 }

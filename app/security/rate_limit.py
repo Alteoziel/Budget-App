@@ -12,7 +12,7 @@ from fastapi import Depends, HTTPException, Request, status
 
 from app.config import Settings, get_settings
 from app.security.audit import AuditEventType, emit_audit
-from app.security.auth import require_gateway_auth
+from app.security.auth import require_api_auth
 
 _lock = Lock()
 _buckets: dict[str, deque[float]] = defaultdict(deque)
@@ -32,7 +32,7 @@ def _prune(window: deque[float], now: float, window_seconds: float) -> None:
 
 def _rate_limit_disabled() -> bool:
     """Disable only via explicit env flag (bare limit=0 no longer kills limiting)."""
-    return os.getenv("GATEWAY_RATE_LIMIT_DISABLED", "").strip().lower() in {
+    return os.getenv("BUDGET_RATE_LIMIT_DISABLED", "").strip().lower() in {
         "1",
         "true",
         "yes",
@@ -42,14 +42,14 @@ def _rate_limit_disabled() -> bool:
 async def enforce_rate_limit(
     request: Request,
     settings: Annotated[Settings, Depends(get_settings)],
-    key_id: Annotated[str, Depends(require_gateway_auth)],
+    key_id: Annotated[str, Depends(require_api_auth)],
 ) -> str:
-    """Sliding-window rate limit keyed by authenticated gateway key fingerprint."""
+    """Sliding-window rate limit keyed by authenticated API key fingerprint."""
     if _rate_limit_disabled():
         return key_id
 
     # Treat <=0 as misconfig → fall back to default 60 (use env flag to disable).
-    limit = settings.gateway_rate_limit_per_minute
+    limit = settings.budget_rate_limit_per_minute
     if limit <= 0:
         limit = 60
 
@@ -62,7 +62,6 @@ async def enforce_rate_limit(
         window = _buckets[bucket_key]
         _prune(window, now, window_seconds)
         if not window:
-            # Drop idle empty deque so the map cannot grow without bound.
             _buckets.pop(bucket_key, None)
             window = _buckets[bucket_key]
         if len(window) >= limit:

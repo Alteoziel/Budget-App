@@ -52,7 +52,7 @@ function LoginForm() {
   return (
     <main className="mx-auto flex min-h-[70vh] max-w-md flex-col justify-center">
       <p className="text-xs uppercase tracking-[0.25em] text-mist">
-        Shadow AI Gateway
+        Budget App
       </p>
       <h1 className="mt-3 font-display text-4xl text-white">Sign in</h1>
       <p className="mt-3 text-mist">

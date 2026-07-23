@@ -15,10 +15,10 @@ COPY pyproject.toml uv.lock README.md ./
 COPY app ./app
 
 RUN uv sync --frozen --no-dev \
-    && useradd --create-home --uid 10001 --shell /usr/sbin/nologin gateway \
-    && chown -R gateway:gateway /app
+    && useradd --create-home --uid 10001 --shell /usr/sbin/nologin budget \
+    && chown -R budget:budget /app
 
-USER gateway
+USER budget
 
 EXPOSE 8000
 

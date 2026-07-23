@@ -1,29 +1,33 @@
-"""Shared pytest fixtures for gateway tests."""
+"""Shared pytest fixtures for the Budget App API."""
 
 from __future__ import annotations
 
 import os
 
 import pytest
+from fastapi.testclient import TestClient
 
-# Must be set before app.config Settings is first loaded in workers.
-os.environ.setdefault("GATEWAY_API_KEY", "test-gateway-key")
-os.environ.setdefault("GATEWAY_RATE_LIMIT_PER_MINUTE", "1000")
-
-TEST_GATEWAY_API_KEY = os.environ["GATEWAY_API_KEY"]
-AUTH_HEADERS = {"Authorization": f"Bearer {TEST_GATEWAY_API_KEY}"}
+# Configure auth before app import side-effects matter for settings cache.
+os.environ.setdefault("BUDGET_API_KEY", "test-budget-key")
 
 
-@pytest.fixture(autouse=True)
-def _reset_security_state() -> None:
+@pytest.fixture()
+def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    monkeypatch.setenv("BUDGET_API_KEY", "test-budget-key")
     from app.config import clear_settings_cache
-    from app.security.audit import get_audit_sink
+    from app.main import create_app
     from app.security.rate_limit import reset_rate_limit_state
 
     clear_settings_cache()
     reset_rate_limit_state()
-    get_audit_sink().clear()
-    yield
-    reset_rate_limit_state()
-    get_audit_sink().clear()
+    # Reset in-memory accounts between tests
+    import app.api.v1.accounts as accounts_mod
+
+    accounts_mod._ACCOUNTS.clear()
+    accounts_mod._NEXT_ID = 1
+
+    with TestClient(create_app()) as test_client:
+        yield test_client
+
     clear_settings_cache()
+    reset_rate_limit_state()

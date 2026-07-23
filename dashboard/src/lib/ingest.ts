@@ -4,7 +4,6 @@
 
 import { z } from "zod";
 import type { StepResult } from "@/lib/store";
-import { assertSafeEntrypoint } from "@/lib/codingSafety";
 
 const MAX_STEPS = 32;
 const MAX_FINDINGS = 200;
@@ -20,27 +19,6 @@ const findingSchema = z.object({
   rule_id: z.string().max(128).nullish(),
   evidence: z.string().max(MAX_STRING).nullish(),
   suggestion: z.string().max(MAX_STRING).nullish(),
-});
-
-const codingTestSchema = z.object({
-  id: z.string().max(64).optional(),
-  args: z.array(z.unknown()).max(16),
-  expected: z.unknown().optional(),
-  raises: z.string().max(64).optional(),
-});
-
-const codingQuestionSchema = z.object({
-  id: z.string().max(64),
-  question_type: z.literal("coding").optional(),
-  entrypoint: z.string().max(64),
-  starter_code: z.string().max(32_768).optional(),
-  tests: z.array(codingTestSchema).max(32),
-  language: z.string().max(32).optional(),
-  prompt: z.string().max(MAX_STRING).optional(),
-  category: z.string().max(128).optional(),
-  explanation: z.string().max(MAX_STRING).optional(),
-  answer_index: z.number().optional(),
-  choices: z.array(z.string().max(2000)).max(8).optional(),
 });
 
 const stepResultSchema = z.object({
@@ -80,27 +58,6 @@ export type IngestPayload = {
   summary: Record<string, unknown>;
 };
 
-function validateCodingEntrypoints(steps: StepResult[]): string | null {
-  for (const step of steps) {
-    const pack = step.metrics?.comprehension as
-      | { questions?: unknown[] }
-      | undefined;
-    if (!pack?.questions) continue;
-    for (const raw of pack.questions) {
-      if (!raw || typeof raw !== "object") continue;
-      const q = raw as { question_type?: string; entrypoint?: string };
-      if (q.question_type !== "coding") continue;
-      const parsed = codingQuestionSchema.safeParse(raw);
-      if (!parsed.success) {
-        return `Invalid coding question: ${parsed.error.issues[0]?.message}`;
-      }
-      const entryErr = assertSafeEntrypoint(parsed.data.entrypoint);
-      if (entryErr) return entryErr;
-    }
-  }
-  return null;
-}
-
 export function parseIngestBody(body: unknown):
   | { ok: true; data: IngestPayload }
   | { ok: false; error: string } {
@@ -115,11 +72,6 @@ export function parseIngestBody(body: unknown):
   if (Object.keys(d.summary).length > MAX_SUMMARY_KEYS) {
     return { ok: false, error: `summary exceeds ${MAX_SUMMARY_KEYS} keys` };
   }
-  const steps = d.steps as StepResult[];
-  const codingErr = validateCodingEntrypoints(steps);
-  if (codingErr) {
-    return { ok: false, error: codingErr };
-  }
   return {
     ok: true,
     data: {
@@ -127,7 +79,7 @@ export function parseIngestBody(body: unknown):
       pr_number: d.pr_number ?? null,
       commit_sha: d.commit_sha ?? null,
       repo: d.repo ?? null,
-      steps,
+      steps: d.steps as StepResult[],
       summary: d.summary,
     },
   };

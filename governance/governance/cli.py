@@ -9,9 +9,6 @@ from typing import Optional
 
 import typer
 from rich.console import Console
-from rich.markdown import Markdown
-from rich.panel import Panel
-from rich.prompt import IntPrompt
 from rich.table import Table
 
 from governance.pipeline import run_pipeline
@@ -19,16 +16,14 @@ from governance.reporters import (
     format_markdown,
     post_github_pr_comment,
     post_inline_comments,
-    post_quiz_commit_status,
     post_to_dashboard,
 )
-from governance.steps import comprehension_gate
 
 app = typer.Typer(
     name="ai-guardrail",
     help=(
-        "AI Code Governance Engine: AST → Security → Fuzz → Bench → Copyright → "
-        "Comprehension (Step 7 = dashboard review/merge)."
+        "AI Code Governance Engine: AST → Security → Fuzz → Bench → Copyright "
+        "(human review/merge = dashboard)."
     ),
     add_completion=False,
 )
@@ -71,7 +66,7 @@ def run(
         True, "--fail-on-error/--no-fail-on-error", help="Exit 1 when suite fails"
     ),
 ) -> None:
-    """Run Steps 1–6 and optionally report to GitHub / dashboard."""
+    """Run Steps 1–5 and optionally report to GitHub / dashboard."""
     report = run_pipeline(
         root=root.resolve(),
         files=path,
@@ -100,7 +95,7 @@ def run(
         f"{report.summary.get('blocking_findings', 0)} blocking finding(s)"
     )
     console.print(
-        "[dim]Step 6 quiz must still be passed on the dashboard before merge.[/dim]"
+        "[dim]Human review/merge still happens on the governance dashboard.[/dim]"
     )
 
     if json_out:
@@ -137,23 +132,6 @@ def run(
         else:
             console.print("Dashboard updated.")
 
-    # Always try to open/refresh the branch-protection quiz check on this SHA.
-    # Dashboard flips it to success after the human passes (≥80%).
-    quiz_status = post_quiz_commit_status(report, state="pending")
-    if quiz_status is None:
-        console.print(
-            "Governance Quiz check skipped (need GITHUB_TOKEN + repo + commit SHA)."
-        )
-    elif quiz_status.get("ok") is False:
-        console.print(
-            f"[yellow]Governance Quiz check failed (non-blocking): "
-            f"{quiz_status.get('error')}[/yellow]"
-        )
-    else:
-        console.print(
-            "Governance Quiz check set to pending — pass the dashboard quiz to clear it."
-        )
-
     if fail_on_error and not report.passed:
         raise typer.Exit(code=1)
 
@@ -167,92 +145,6 @@ def print_report(
     from governance.models import PipelineReport
 
     console.print(format_markdown(PipelineReport.model_validate(data)))
-
-
-@app.command("quiz")
-def quiz(
-    root: Path = typer.Option(Path("."), "--root"),
-    changed_only: bool = typer.Option(False, "--changed-only"),
-    base_ref: str = typer.Option("origin/main", "--base-ref"),
-    skip_llm: bool = typer.Option(True, "--skip-llm/--use-llm"),
-    path: Optional[list[str]] = typer.Option(None, "--file", "-f"),
-) -> None:
-    """Interactive beginner quiz (Step 6) — practice locally before merging."""
-    from governance.pipeline import collect_paths, get_diff_text
-
-    resolved = root.resolve()
-    paths = collect_paths(
-        root=resolved, files=path, changed_only=changed_only, base_ref=base_ref
-    )
-    diff_text = get_diff_text(resolved, base_ref)
-    result = comprehension_gate.run(
-        paths, diff_text=diff_text, root=resolved, skip_llm=skip_llm
-    )
-    pack = result.metrics["comprehension"]
-    guide = pack["study_guide"]
-
-    console.print(
-        Panel(
-            Markdown(
-                f"### Study guide\n\n{guide['elevator_pitch']}\n\n"
-                f"**Bigger picture:** {guide['bigger_picture']}\n"
-            ),
-            title="Read this first",
-        )
-    )
-    console.print("\n[bold]Glossary[/bold]")
-    for g in guide["glossary"]:
-        console.print(f"  • [cyan]{g['term']}[/cyan] — {g['definition']}")
-
-    console.print("\n[bold]Manual tasks for you[/bold]")
-    for t in guide["manual_dev_tasks"]:
-        console.print(f"  • {t}")
-
-    console.print("\n[bold]Security notes[/bold]")
-    for t in guide["security_notes"]:
-        console.print(f"  • {t}")
-
-    console.print(
-        f"\n[bold]Quiz[/bold] — need ≥ {int(pack['pass_threshold'] * 100)}% to pass\n"
-    )
-    answers: dict[str, int] = {}
-    mc_questions = [q for q in pack["questions"] if q.get("question_type") != "coding"]
-    coding_n = len(pack["questions"]) - len(mc_questions)
-    if coding_n:
-        console.print(
-            f"\n[yellow]{coding_n} coding challenge(s) need the dashboard mini-editor "
-            "— skipped in this CLI practice session.[/yellow]"
-        )
-    for i, q in enumerate(mc_questions, 1):
-        console.print(
-            f"\n[magenta]{i}. [{q.get('category_label', q['category'])}][/magenta] {q['prompt']}"
-        )
-        for idx, choice in enumerate(q["choices"]):
-            console.print(f"   {idx}) {choice}")
-        pick = IntPrompt.ask(
-            "Your answer", choices=[str(x) for x in range(len(q["choices"]))]
-        )
-        answers[q["id"]] = int(pick)
-
-    practice_pack = {**pack, "questions": mc_questions}
-    graded = comprehension_gate.grade(practice_pack, answers)
-    console.print()
-    if graded["passed"]:
-        console.print(
-            f"[bold green]PASSED[/bold green] {graded['correct']}/{graded['total']} "
-            f"({graded['score']:.0%})"
-        )
-    else:
-        console.print(
-            f"[bold red]NOT YET[/bold red] {graded['correct']}/{graded['total']} "
-            f"({graded['score']:.0%}) — re-read the guide and try again"
-        )
-        raise typer.Exit(code=1)
-
-    console.print("\n[dim]Explanations[/dim]")
-    for d in graded["details"]:
-        mark = "✓" if d["correct"] else "✗"
-        console.print(f"  {mark} {d['id']}: {d['explanation']}")
 
 
 def main() -> None:

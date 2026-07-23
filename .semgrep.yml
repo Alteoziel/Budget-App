@@ -2,52 +2,39 @@
 # Custom rules AND registry packs hard-fail on ERROR in CI.
 
 rules:
-  - id: shadow-ai.no-hardcoded-provider-keys
+  - id: budget-app.no-hardcoded-api-keys
     languages: [python]
     severity: ERROR
-    message: Hardcoded LLM provider API key detected. Use environment variables.
+    message: Hardcoded API key detected. Use environment variables.
     patterns:
       - pattern-either:
-          - pattern-regex: (?i)(openai|anthropic|llm|api)[_-]?key\s*=\s*["']sk-[A-Za-z0-9_\-]{10,}["']
-          - pattern-regex: (?i)(openai|anthropic)[_-]?api[_-]?key\s*=\s*["'][^"']{12,}["']
-          - pattern: OPENAI_API_KEY = "..."
-          - pattern: ANTHROPIC_API_KEY = "..."
+          - pattern-regex: (?i)(budget|api)[_-]?key\s*=\s*["']sk-[A-Za-z0-9_\-]{10,}["']
+          - pattern-regex: (?i)budget[_-]?api[_-]?key\s*=\s*["'][^"']{12,}["']
+          - pattern: BUDGET_API_KEY = "..."
     paths:
       exclude:
         - "**/tests/**"
         - "**/governance/tests/**"
 
-  - id: shadow-ai.interceptor-must-be-awaited
+  - id: budget-app.no-shell-true
     languages: [python]
     severity: ERROR
-    message: Call intercept_outbound_request with await (async choke point).
-    patterns:
-      - pattern: intercept_outbound_request(...)
-      - pattern-not-inside: |
-          await intercept_outbound_request(...)
-    paths:
-      include:
-        - "**/app/**"
-
-  - id: shadow-ai.no-shell-true
-    languages: [python]
-    severity: ERROR
-    message: subprocess with shell=True is forbidden in the gateway.
+    message: subprocess with shell=True is forbidden in the Budget App.
     pattern: subprocess.$FN(..., shell=True, ...)
     paths:
       include:
         - "**/app/**"
 
-  - id: shadow-ai.no-os-system
+  - id: budget-app.no-os-system
     languages: [python]
     severity: ERROR
-    message: os.system is forbidden in the gateway — use subprocess without shell.
+    message: os.system is forbidden — use subprocess without shell.
     pattern: os.system(...)
     paths:
       include:
         - "**/app/**"
 
-  - id: shadow-ai.no-pickle-loads
+  - id: budget-app.no-pickle-loads
     languages: [python]
     severity: ERROR
     message: pickle.loads/load is forbidden (RCE risk). Use JSON or typed parsers.
@@ -60,7 +47,7 @@ rules:
       include:
         - "**/app/**"
 
-  - id: shadow-ai.no-bare-httpx-async-client
+  - id: budget-app.no-bare-httpx-async-client
     languages: [python]
     severity: ERROR
     message: Use EgressCheckedAsyncClient instead of bare httpx.AsyncClient for outbound calls.
@@ -71,25 +58,10 @@ rules:
               ...
     paths:
       include:
-        - "**/app/proxy/**"
         - "**/app/api/**"
+        - "**/app/security/**"
 
-  # Expects final authz wiring: Depends(require_gateway_auth) (or name in signature).
-  # Regex (not AST) — FastAPI Annotated/Depends forms vary; nested parens break [^)]*.
-  - id: shadow-ai.chat-route-requires-gateway-auth
-    languages: [python]
-    severity: ERROR
-    message: |
-      /chat/completions handlers must reference require_gateway_auth in the
-      function signature (e.g. Depends(require_gateway_auth)).
-    patterns:
-      - pattern-regex: async def chat_completions\s*\(
-      - pattern-not-regex: (?s)async def chat_completions\([\s\S]*?require_gateway_auth[\s\S]*?\)(?:\s*->[\s\S]*?)?:\s*\n
-    paths:
-      include:
-        - "**/app/api/**"
-
-  - id: shadow-ai.no-bare-except-pass
+  - id: budget-app.no-bare-except-pass
     languages: [python]
     severity: ERROR
     message: Bare except/Exception handlers that only pass are forbidden under app/.
@@ -114,16 +86,15 @@ rules:
       include:
         - "**/app/**"
 
-  # Expects final rate-limit dependency name: enforce_rate_limit.
-  - id: shadow-ai.rate-limit-dependency-expected
+  - id: budget-app.v1-routes-require-api-auth
     languages: [python]
-    severity: WARNING
+    severity: ERROR
     message: |
-      chat_completions should include enforce_rate_limit in its signature
-      (e.g. Depends(enforce_rate_limit)).
+      /v1 handlers must reference require_api_auth or enforce_rate_limit
+      (which depends on require_api_auth) in the function signature.
     patterns:
-      - pattern-regex: async def chat_completions\s*\(
-      - pattern-not-regex: (?s)async def chat_completions\([\s\S]*?enforce_rate_limit[\s\S]*?\)(?:\s*->[\s\S]*?)?:\s*\n
+      - pattern-regex: async def (list_accounts|create_account)\s*\(
+      - pattern-not-regex: (?s)async def (?:list_accounts|create_account)\([\s\S]*?(?:require_api_auth|enforce_rate_limit)[\s\S]*?\)(?:\s*->[\s\S]*?)?:\s*\n
     paths:
       include:
         - "**/app/api/**"

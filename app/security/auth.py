@@ -1,6 +1,6 @@
-"""Gateway caller authentication (Bearer / X-API-Key).
+"""API caller authentication (Bearer / X-API-Key).
 
-Protects /v1 routes from becoming an open relay. Health stays public.
+Protects /v1 routes. Health stays public.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.config import Settings, get_settings
-from app.proxy.correlation import parse_correlation_id
+from app.correlation import parse_correlation_id
 from app.security.audit import AuditEventType, emit_audit
 
 _bearer = HTTPBearer(auto_error=False)
@@ -21,9 +21,9 @@ _bearer = HTTPBearer(auto_error=False)
 
 def _configured_keys(settings: Settings) -> frozenset[str]:
     keys: set[str] = set()
-    if settings.gateway_api_key.strip():
-        keys.add(settings.gateway_api_key.strip())
-    for part in settings.gateway_api_keys.split(","):
+    if settings.budget_api_key.strip():
+        keys.add(settings.budget_api_key.strip())
+    for part in settings.budget_api_keys.split(","):
         cleaned = part.strip()
         if cleaned:
             keys.add(cleaned)
@@ -35,7 +35,7 @@ def key_fingerprint(token: str) -> str:
     return hashlib.pbkdf2_hmac(
         "sha256",
         token.encode("utf-8"),
-        salt=b"shadow-ai-gateway-key-id-v1",
+        salt=b"budget-app-key-id-v1",
         iterations=10_000,
         dklen=8,
     ).hex()
@@ -57,7 +57,7 @@ def _correlation_id(request: Request) -> str:
     return parse_correlation_id(request.headers)
 
 
-async def require_gateway_auth(
+async def require_api_auth(
     request: Request,
     settings: Annotated[Settings, Depends(get_settings)],
     credentials: Annotated[
@@ -65,7 +65,7 @@ async def require_gateway_auth(
         Depends(_bearer),
     ] = None,
 ) -> str:
-    """Require a valid gateway API key. Returns a fingerprint for auditing."""
+    """Require a valid API key. Returns a fingerprint for auditing."""
     correlation_id = _correlation_id(request)
     request.state.correlation_id = correlation_id
 
@@ -74,8 +74,8 @@ async def require_gateway_auth(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=(
-                "Gateway auth is not configured. Set GATEWAY_API_KEY (or "
-                "GATEWAY_API_KEYS) before serving /v1 traffic."
+                "API auth is not configured. Set BUDGET_API_KEY (or "
+                "BUDGET_API_KEYS) before serving /v1 traffic."
             ),
         )
 
@@ -92,15 +92,15 @@ async def require_gateway_auth(
             AuditEventType.AUTH_DENIED,
             correlation_id=correlation_id,
             blocked=True,
-            reason="invalid_or_missing_gateway_api_key",
+            reason="invalid_or_missing_api_key",
             metadata={"path": request.url.path},
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or missing gateway API key",
+            detail="Invalid or missing API key",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
     fingerprint = key_fingerprint(token)
-    request.state.gateway_key_id = fingerprint
+    request.state.api_key_id = fingerprint
     return fingerprint
