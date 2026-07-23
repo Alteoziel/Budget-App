@@ -8,5 +8,8 @@ export function safeInternalPath(
   if (!value.startsWith("/")) return fallback;
   if (value.startsWith("//") || value.startsWith("/\\")) return fallback;
   if (value.includes("\\") || value.includes("://")) return fallback;
+  // Reject encoded slash/backslash tricks before they normalize to //host.
+  if (/%2f|%5c/i.test(value)) return fallback;
+  if (value.includes("..")) return fallback;
   return value;
 }

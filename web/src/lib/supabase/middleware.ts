@@ -22,8 +22,7 @@ export async function updateSession(request: NextRequest) {
   // Fail closed: without Supabase env, only public routes are reachable.
   if (!url || !anonKey) {
     if (!isPublicPath(path)) {
-      const redirectUrl = request.nextUrl.clone();
-      redirectUrl.pathname = "/login";
+      const redirectUrl = new URL("/login", request.url);
       redirectUrl.searchParams.set("next", path);
       return NextResponse.redirect(redirectUrl);
     }
@@ -59,16 +58,13 @@ export async function updateSession(request: NextRequest) {
     path === "/sw.js";
 
   if (!user && !isAuthRoute && !isPublicAsset && path !== "/") {
-    const redirectUrl = request.nextUrl.clone();
-    redirectUrl.pathname = "/login";
+    const redirectUrl = new URL("/login", request.url);
     redirectUrl.searchParams.set("next", path);
     return NextResponse.redirect(redirectUrl);
   }
 
   if (user && (isAuthRoute || path === "/")) {
-    const redirectUrl = request.nextUrl.clone();
-    redirectUrl.pathname = "/budget";
-    return NextResponse.redirect(redirectUrl);
+    return NextResponse.redirect(new URL("/budget", request.url));
   }
 
   return supabaseResponse;

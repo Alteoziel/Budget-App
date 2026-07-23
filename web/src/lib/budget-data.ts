@@ -2,6 +2,12 @@ import { budgetMonthDateRange, currentBudgetMonth } from "@/lib/money";
 import { createClient } from "@/lib/supabase/server";
 import type { Account, BudgetRow, Category, CategoryGroup, Transaction } from "@/lib/types";
 
+function assertNoError(error: { message: string } | null, label: string) {
+  if (error) {
+    throw new Error(`${label}: ${error.message}`);
+  }
+}
+
 export async function getBudgetRows(month = currentBudgetMonth()): Promise<{
   month: string;
   rows: BudgetRow[];
@@ -17,12 +23,12 @@ export async function getBudgetRows(month = currentBudgetMonth()): Promise<{
   if (!range) return { month, rows: [], readyToAssignCents: 0 };
 
   const [
-    { data: groups },
-    { data: categories },
-    { data: assignments },
-    { data: priorAssignments },
-    { data: txns },
-    { data: priorTxns },
+    groupsRes,
+    categoriesRes,
+    assignmentsRes,
+    priorAssignmentsRes,
+    txnsRes,
+    priorTxnsRes,
   ] = await Promise.all([
     supabase
       .from("category_groups")
@@ -59,6 +65,20 @@ export async function getBudgetRows(month = currentBudgetMonth()): Promise<{
       .lt("occurred_on", range.start),
   ]);
 
+  assertNoError(groupsRes.error, "Failed to load category groups");
+  assertNoError(categoriesRes.error, "Failed to load categories");
+  assertNoError(assignmentsRes.error, "Failed to load assignments");
+  assertNoError(priorAssignmentsRes.error, "Failed to load prior assignments");
+  assertNoError(txnsRes.error, "Failed to load transactions");
+  assertNoError(priorTxnsRes.error, "Failed to load prior transactions");
+
+  const groups = groupsRes.data;
+  const categories = categoriesRes.data;
+  const assignments = assignmentsRes.data;
+  const priorAssignments = priorAssignmentsRes.data;
+  const txns = txnsRes.data;
+  const priorTxns = priorTxnsRes.data;
+
   const groupMap = new Map((groups as CategoryGroup[] | null)?.map((g) => [g.id, g]) ?? []);
   const assignedMap = new Map(
     (assignments ?? []).map((a) => [a.category_id as string, a.assigned_cents as number]),
@@ -82,25 +102,31 @@ export async function getBudgetRows(month = currentBudgetMonth()): Promise<{
   }
 
   const activityMap = new Map<string, number>();
-  let inflowUncategorized = 0;
+  // Uncategorized amounts (inflows and outflows) belong in Ready to Assign.
+  let uncategorizedCurrent = 0;
   for (const txn of txns ?? []) {
     const amount = txn.amount_cents as number;
     const categoryId = txn.category_id as string | null;
     if (!categoryId) {
-      if (amount > 0) inflowUncategorized += amount;
+      uncategorizedCurrent += amount;
       continue;
     }
     activityMap.set(categoryId, (activityMap.get(categoryId) ?? 0) + amount);
   }
 
-  // Prior uncategorized inflows that were never assigned still sit in Ready to Assign.
-  let priorUncategorizedInflow = 0;
+  let uncategorizedPrior = 0;
   for (const txn of priorTxns ?? []) {
-    if (txn.category_id == null && (txn.amount_cents as number) > 0) {
-      priorUncategorizedInflow += txn.amount_cents as number;
+    if (txn.category_id == null) {
+      uncategorizedPrior += txn.amount_cents as number;
     }
   }
+
   const priorAssignedTotal = (priorAssignments ?? []).reduce(
+    (sum, row) => sum + (row.assigned_cents as number),
+    0,
+  );
+  // Include hidden categories in RTA math so assigned dollars don't vanish.
+  const totalAssigned = (assignments ?? []).reduce(
     (sum, row) => sum + (row.assigned_cents as number),
     0,
   );
@@ -128,12 +154,8 @@ export async function getBudgetRows(month = currentBudgetMonth()): Promise<{
         : a.groupName.localeCompare(b.groupName),
     );
 
-  const totalAssigned = rows.reduce((sum, row) => sum + row.assignedCents, 0);
   const readyToAssignCents =
-    priorUncategorizedInflow -
-    priorAssignedTotal +
-    inflowUncategorized -
-    totalAssigned;
+    uncategorizedPrior - priorAssignedTotal + uncategorizedCurrent - totalAssigned;
 
   return { month, rows, readyToAssignCents };
 }
@@ -147,10 +169,20 @@ export async function getAccountsWithBalances(): Promise<
   } = await supabase.auth.getUser();
   if (!user) return [];
 
-  const [{ data: accounts }, { data: txns }] = await Promise.all([
-    supabase.from("accounts").select("id,name,account_type,currency").eq("user_id", user.id).order("name"),
+  const [accountsRes, txnsRes] = await Promise.all([
+    supabase
+      .from("accounts")
+      .select("id,name,account_type,currency")
+      .eq("user_id", user.id)
+      .order("name"),
     supabase.from("transactions").select("account_id,amount_cents").eq("user_id", user.id),
   ]);
+
+  assertNoError(accountsRes.error, "Failed to load accounts");
+  assertNoError(txnsRes.error, "Failed to load account balances");
+
+  const accounts = accountsRes.data;
+  const txns = txnsRes.data;
 
   const balances = new Map<string, number>();
   for (const txn of txns ?? []) {
@@ -178,38 +210,46 @@ export async function getAccountRegister(accountId: string): Promise<{
     return { account: null, transactions: [], balanceCents: 0, categories: [] };
   }
 
-  const [
-    { data: account },
-    { data: transactions },
-    { data: balanceRows },
-    { data: categories },
-    { data: groups },
-  ] = await Promise.all([
-    supabase
-      .from("accounts")
-      .select("id,name,account_type,currency")
-      .eq("user_id", user.id)
-      .eq("id", accountId)
-      .maybeSingle(),
-    supabase
-      .from("transactions")
-      .select("id,account_id,category_id,occurred_on,payee,memo,amount_cents,cleared")
-      .eq("user_id", user.id)
-      .eq("account_id", accountId)
-      .order("occurred_on", { ascending: false })
-      .limit(200),
-    supabase
-      .from("transactions")
-      .select("amount_cents")
-      .eq("user_id", user.id)
-      .eq("account_id", accountId),
-    supabase
-      .from("categories")
-      .select("id,name,group_id")
-      .eq("user_id", user.id)
-      .order("name"),
-    supabase.from("category_groups").select("id,name").eq("user_id", user.id),
-  ]);
+  const [accountRes, transactionsRes, balanceRes, categoriesRes, groupsRes] =
+    await Promise.all([
+      supabase
+        .from("accounts")
+        .select("id,name,account_type,currency")
+        .eq("user_id", user.id)
+        .eq("id", accountId)
+        .maybeSingle(),
+      supabase
+        .from("transactions")
+        .select("id,account_id,category_id,occurred_on,payee,memo,amount_cents,cleared")
+        .eq("user_id", user.id)
+        .eq("account_id", accountId)
+        .order("occurred_on", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(200),
+      supabase
+        .from("transactions")
+        .select("amount_cents")
+        .eq("user_id", user.id)
+        .eq("account_id", accountId),
+      supabase
+        .from("categories")
+        .select("id,name,group_id")
+        .eq("user_id", user.id)
+        .order("name"),
+      supabase.from("category_groups").select("id,name").eq("user_id", user.id),
+    ]);
+
+  assertNoError(accountRes.error, "Failed to load account");
+  assertNoError(transactionsRes.error, "Failed to load register");
+  assertNoError(balanceRes.error, "Failed to load balance");
+  assertNoError(categoriesRes.error, "Failed to load categories");
+  assertNoError(groupsRes.error, "Failed to load category groups");
+
+  const account = accountRes.data;
+  const transactions = transactionsRes.data;
+  const balanceRows = balanceRes.data;
+  const categories = categoriesRes.data;
+  const groups = groupsRes.data;
 
   const groupMap = new Map((groups ?? []).map((g) => [g.id as string, g.name as string]));
   const balanceCents = (balanceRows ?? []).reduce(
