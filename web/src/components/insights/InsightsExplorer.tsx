@@ -108,7 +108,7 @@ export function InsightsExplorer({ dataset }: { dataset: InsightsDataset }) {
         ) : (
           <ul className="space-y-2">
             {findings.map((f) => (
-              <li key={f.id} className="rounded-3xl bg-sand-50/80 px-4 py-3 shadow-soft">
+              <li key={f.id} className="card-surface rounded-2xl px-4 py-3">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-sm font-semibold text-ink-900">{f.title}</p>
                   <SeverityBadge severity={f.severity} />

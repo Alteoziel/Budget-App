@@ -14,7 +14,7 @@ export default async function LoginPage({
 
   return (
     <main className="flex min-h-dvh items-center bg-app-glow px-5 py-10">
-      <div className="mx-auto w-full max-w-md animate-rise rounded-3xl border border-ink-900/5 bg-sand-50/80 p-6 shadow-soft backdrop-blur">
+      <div className="mx-auto w-full max-w-md animate-rise card-surface rounded-2xl p-6 backdrop-blur">
         <p className="text-xs font-bold uppercase tracking-[0.2em] text-moss-500">
           Alte&apos; Budgeting
         </p>

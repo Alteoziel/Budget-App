@@ -10,14 +10,16 @@
       :root {
         color-scheme: light dark;
         --ink: #15241f;
-        --sand: #f7f3eb;
+        --sand: #e9e3d6;
+        --card: #fefdfa;
         --moss: #3f7a5c;
         --coral: #c45c3a;
       }
       @media (prefers-color-scheme: dark) {
         :root {
           --ink: #eaf1ed;
-          --sand: #18201d;
+          --sand: #0d1211;
+          --card: #212926;
           --moss: #5a9a75;
         }
       }
@@ -57,7 +59,7 @@
         margin-top: 1.5rem;
         padding: 1rem 1.1rem;
         border-radius: 1.25rem;
-        background: color-mix(in srgb, var(--sand) 80%, white);
+        background: var(--card);
         box-shadow: 0 10px 30px rgba(15, 26, 23, 0.08);
       }
       .actions {

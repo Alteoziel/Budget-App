@@ -24,7 +24,7 @@ export function RegisterAccountMenu({
   const [panel, setPanel] = useState<"add" | "balance">("add");
 
   return (
-    <div className="rounded-3xl border border-ink-900/5 bg-sand-50/80 shadow-soft">
+    <div className="card-surface rounded-2xl">
       <div className="flex items-center justify-between gap-3 px-4 py-3">
         <button
           type="button"

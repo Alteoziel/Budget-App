@@ -87,16 +87,16 @@ export default function OfflinePage() {
 
         {snapshot ? (
           <>
-            <section className="rounded-3xl bg-ink-900 px-5 py-5 text-sand-50 shadow-soft">
-              <p className="text-xs font-bold uppercase tracking-[0.18em] text-moss-300">
+            <section className="hero-panel rounded-2xl px-4 py-4">
+              <p className="text-[11px] font-bold uppercase tracking-[0.16em] opacity-80">
                 Ready to assign
               </p>
-              <p className="mt-2 font-display text-4xl font-bold">
-                <Money cents={snapshot.readyToAssignCents} className="text-sand-50" />
+              <p className="mt-1 font-display text-3xl font-bold">
+                <Money cents={snapshot.readyToAssignCents} className="text-inherit" />
               </p>
             </section>
 
-            <section className="overflow-hidden rounded-3xl bg-sand-50/80 shadow-soft">
+            <section className="card-surface overflow-hidden rounded-2xl">
               <div className="border-b border-ink-900/5 px-4 py-3">
                 <h2 className="font-display text-lg font-bold text-ink-900">Accounts</h2>
               </div>
@@ -125,7 +125,7 @@ export default function OfflinePage() {
               {groups.map(([groupName, categories]) => (
                 <div
                   key={groupName}
-                  className="overflow-hidden rounded-3xl bg-sand-50/80 shadow-soft"
+                  className="card-surface overflow-hidden rounded-2xl"
                 >
                   <div className="border-b border-ink-900/5 px-4 py-3">
                     <h3 className="font-display text-base font-bold text-ink-900">
@@ -155,7 +155,7 @@ export default function OfflinePage() {
               ))}
             </section>
 
-            <section className="overflow-hidden rounded-3xl bg-sand-50/80 shadow-soft">
+            <section className="card-surface overflow-hidden rounded-2xl">
               <div className="border-b border-ink-900/5 px-4 py-3">
                 <h2 className="font-display text-lg font-bold text-ink-900">
                   Recent transactions
@@ -189,7 +189,7 @@ export default function OfflinePage() {
               )}
             </section>
 
-            <section className="rounded-3xl border border-ink-900/5 bg-sand-50/80 p-4 shadow-soft">
+            <section className="card-surface rounded-2xl p-4">
               <h2 className="font-display text-lg font-bold text-ink-900">
                 Add transaction offline
               </h2>

@@ -109,7 +109,7 @@ function ChartCard({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-3xl bg-sand-50/80 p-4 shadow-soft">
+    <section className="card-surface rounded-2xl p-4">
       <h2 className="mb-3 font-display text-lg font-bold text-ink-900">{title}</h2>
       {empty ? (
         <p className="py-10 text-center text-sm text-ink-600">No data in this range yet.</p>

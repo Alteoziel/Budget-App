@@ -33,7 +33,7 @@ export function ImportForm() {
 
   return (
     <div className="space-y-4">
-      <label className="flex cursor-pointer flex-col items-center justify-center rounded-3xl border border-dashed border-ink-900/20 bg-sand-50/80 px-4 py-10 text-center shadow-soft transition hover:border-moss-400 hover:bg-sand-100">
+      <label className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-ink-900/25 bg-sand-50 px-4 py-10 text-center shadow-soft transition hover:border-moss-400 hover:bg-sand-100">
         <span className="font-display text-xl font-bold text-ink-900">
           {pending ? "Importing…" : "Upload YNAB CSV"}
         </span>
