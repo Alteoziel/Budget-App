@@ -51,7 +51,7 @@ This app is meant to run on **Vercel**. Secrets live in **Doppler** and sync int
 1. Import this GitHub repo
 2. Set **Root Directory** to `web`
 3. Deploy — env vars arrive from the Doppler sync (do not paste secrets into Vercel by hand)
-4. Cron: [`web/vercel.json`](web/vercel.json) hits `/api/cron/teller-sync` at `15 0,12 * * *` UTC with `Authorization: Bearer CRON_SECRET`
+4. Cron: [`web/vercel.json`](web/vercel.json) hits `/api/cron/teller-sync` daily at `15 12 * * *` UTC with `Authorization: Bearer CRON_SECRET` (Hobby allows one cron/day; on Pro you can restore morning+evening `15 0,12 * * *`)
 
 Preview / production URLs come from Vercel after deploy.
 

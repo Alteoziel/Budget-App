@@ -244,8 +244,9 @@ export default async function SettingsPage({
           <h2 className="font-display text-lg font-bold text-ink-900">Bank sync (Teller)</h2>
           <p className="text-xs text-ink-600">
             Uses Teller <span className="font-semibold">Development</span> (free, ≤100
-            enrollments). Not for unlimited public production without KYB. Twice-daily cron
-            syncs when <code className="font-mono">CRON_SECRET</code> is set.
+            enrollments). Not for unlimited public production without KYB. Daily Vercel Cron
+            syncs when <code className="font-mono">CRON_SECRET</code> is set (Pro can run
+            morning + evening).
           </p>
           {tellerReady && tellerAppId ? (
             <TellerConnectButton applicationId={tellerAppId} environment={tellerEnv} />
