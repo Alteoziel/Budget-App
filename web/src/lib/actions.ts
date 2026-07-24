@@ -136,9 +136,9 @@ export async function deleteAccountAction(formData: FormData) {
     redirectWithError("/accounts", "Account not found.");
   }
 
-  // Clear Teller mapping first (also cascades from account delete; explicit for clarity).
+  // Clear bank mapping first (also cascades from account delete; explicit for clarity).
   await supabase
-    .from("teller_accounts")
+    .from("plaid_accounts")
     .delete()
     .eq("account_id", accountId)
     .eq("budget_id", budget.id);
@@ -1120,25 +1120,25 @@ export async function leaveBudgetAction() {
   redirect("/settings");
 }
 
-export async function disconnectTellerEnrollmentAction(formData: FormData) {
+export async function disconnectPlaidItemAction(formData: FormData) {
   const { supabase, budget } = await requireBudget("admin");
-  const enrollmentId = String(formData.get("enrollment_id") ?? "");
-  if (!enrollmentId) redirectWithError("/settings", "Enrollment required.");
+  const itemId = String(formData.get("item_id") ?? "");
+  if (!itemId) redirectWithError("/settings", "Bank connection required.");
 
   await supabase
-    .from("teller_accounts")
+    .from("plaid_accounts")
     .delete()
-    .eq("enrollment_id", enrollmentId)
+    .eq("plaid_item_id", itemId)
     .eq("budget_id", budget.id);
 
   const { error } = await supabase
-    .from("teller_enrollments")
+    .from("plaid_items")
     .update({
       status: "disconnected",
       updated_at: new Date().toISOString(),
       last_error: null,
     })
-    .eq("id", enrollmentId)
+    .eq("id", itemId)
     .eq("budget_id", budget.id);
 
   if (error) redirectWithError("/settings", "Could not disconnect bank.");
@@ -1147,28 +1147,28 @@ export async function disconnectTellerEnrollmentAction(formData: FormData) {
   redirect("/settings");
 }
 
-export async function syncTellerNowAction(formData: FormData) {
+export async function syncPlaidNowAction(formData: FormData) {
   const { supabase, budget } = await requireBudget("admin");
-  const enrollmentId = String(formData.get("enrollment_id") ?? "");
-  if (!enrollmentId) redirectWithError("/settings", "Enrollment required.");
+  const itemId = String(formData.get("item_id") ?? "");
+  if (!itemId) redirectWithError("/settings", "Bank connection required.");
 
-  const { data: enrollment, error } = await supabase
-    .from("teller_enrollments")
-    .select("id,budget_id,access_token_encrypted,last_synced_at,created_by,status")
-    .eq("id", enrollmentId)
+  const { data: item, error } = await supabase
+    .from("plaid_items")
+    .select("id,budget_id,access_token_encrypted,sync_cursor,created_by,status")
+    .eq("id", itemId)
     .eq("budget_id", budget.id)
     .maybeSingle();
 
-  if (error || !enrollment || enrollment.status === "disconnected") {
-    redirectWithError("/settings", "Enrollment not found.");
+  if (error || !item || item.status === "disconnected") {
+    redirectWithError("/settings", "Bank connection not found.");
   }
 
-  const { syncEnrollment } = await import("@/lib/teller/sync");
+  const { syncPlaidItem } = await import("@/lib/plaid/sync");
   const started = new Date().toISOString();
-  const result = await syncEnrollment(supabase, enrollment!);
+  const result = await syncPlaidItem(supabase, item!);
   await supabase.from("sync_runs").insert({
     budget_id: budget.id,
-    enrollment_id: enrollment!.id,
+    plaid_item_id: item!.id,
     source: "manual",
     started_at: started,
     finished_at: new Date().toISOString(),

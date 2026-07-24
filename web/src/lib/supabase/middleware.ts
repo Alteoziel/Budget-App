@@ -7,6 +7,7 @@ function isPublicPath(path: string): boolean {
     path.startsWith("/login") ||
     path.startsWith("/invite") ||
     path.startsWith("/api/cron/") ||
+    path.startsWith("/api/plaid/webhook") ||
     path.startsWith("/_next") ||
     path.startsWith("/icons") ||
     path === "/manifest.webmanifest" ||
@@ -55,6 +56,7 @@ export async function updateSession(request: NextRequest) {
   const isAuthRoute = path.startsWith("/login");
   const isInviteRoute = path.startsWith("/invite");
   const isCronRoute = path.startsWith("/api/cron/");
+  const isPlaidWebhook = path.startsWith("/api/plaid/webhook");
   const isPublicAsset =
     path.startsWith("/_next") ||
     path.startsWith("/icons") ||
@@ -66,6 +68,7 @@ export async function updateSession(request: NextRequest) {
     !isAuthRoute &&
     !isInviteRoute &&
     !isCronRoute &&
+    !isPlaidWebhook &&
     !isPublicAsset &&
     path !== "/"
   ) {
