@@ -225,7 +225,7 @@ export async function getAccountRegister(accountId: string): Promise<{
         .eq("account_id", accountId)
         .order("occurred_on", { ascending: false })
         .order("created_at", { ascending: false })
-        .limit(200),
+        .limit(500),
       supabase
         .from("transactions")
         .select("amount_cents")

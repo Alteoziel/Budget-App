@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { FlashError } from "@/components/FlashError";
 import { Money } from "@/components/Money";
+import { RegisterTransactions } from "@/components/RegisterTransactions";
 import { createTransactionAction } from "@/lib/actions";
 import { getAccountRegister } from "@/lib/budget-data";
 
@@ -38,28 +39,11 @@ export default async function AccountRegisterPage({
       </section>
 
       <section className="animate-rise-delay mt-5 overflow-hidden rounded-3xl bg-sand-50/80 shadow-soft">
-        {transactions.length === 0 ? (
-          <p className="px-4 py-8 text-center text-sm text-ink-600">
-            No transactions yet.
-          </p>
-        ) : (
-          <ul className="divide-y divide-ink-900/5">
-            {transactions.map((txn) => (
-              <li key={txn.id} className="flex items-start justify-between gap-3 px-4 py-3">
-                <div>
-                  <p className="font-semibold text-ink-900">{txn.payee || "Untitled"}</p>
-                  <p className="text-xs text-ink-600">
-                    {txn.occurred_on}
-                    {txn.memo ? ` · ${txn.memo}` : ""}
-                  </p>
-                </div>
-                <p className="font-bold">
-                  <Money cents={txn.amount_cents} />
-                </p>
-              </li>
-            ))}
-          </ul>
-        )}
+        <RegisterTransactions
+          accountId={account.id}
+          transactions={transactions}
+          categories={categories}
+        />
       </section>
 
       <section className="mt-6 rounded-3xl border border-ink-900/5 bg-sand-50/80 p-4 shadow-soft">
