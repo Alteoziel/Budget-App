@@ -23,7 +23,7 @@ function AutoRuleLabel({ row }: { row: BudgetRow }) {
 }
 
 const btnClass =
-  "rounded-xl border border-ink-900/10 bg-white px-2.5 py-2 text-xs font-bold text-ink-800 hover:bg-sand-100";
+  "min-h-12 w-full rounded-xl border border-ink-900/10 bg-white px-2 text-sm font-bold text-ink-800 hover:bg-sand-100";
 
 export function CategoryAssignControl({
   month,
@@ -43,49 +43,48 @@ export function CategoryAssignControl({
         <AutoRuleLabel row={row} />
       </p>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <label className="sr-only" htmlFor={`amount-${row.categoryId}`}>
-          Amount
-        </label>
-        <input
-          id={`amount-${row.categoryId}`}
-          name="amount"
-          inputMode="decimal"
-          placeholder="0.00"
-          className="min-h-11 w-28 touch-manipulation rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm outline-none ring-moss-400 focus:ring-2"
-        />
-        <div className="flex flex-wrap gap-1.5">
-          <PendingSubmitButton name="intent" value="add" pendingLabel="…" className={btnClass}>
-            +
-          </PendingSubmitButton>
-          <PendingSubmitButton name="intent" value="sub" pendingLabel="…" className={btnClass}>
-            −
-          </PendingSubmitButton>
-          <PendingSubmitButton
-            name="intent"
-            value="set"
-            pendingLabel="…"
-            className="rounded-xl bg-moss-500 px-2.5 py-2 text-xs font-bold text-sand-50 hover:bg-moss-400"
-          >
-            set
-          </PendingSubmitButton>
-          <PendingSubmitButton
-            name="intent"
-            value="auto_percent"
-            pendingLabel="…"
-            className={btnClass}
-          >
-            auto:%
-          </PendingSubmitButton>
-          <PendingSubmitButton
-            name="intent"
-            value="auto_fixed"
-            pendingLabel="…"
-            className={btnClass}
-          >
-            auto:#
-          </PendingSubmitButton>
-        </div>
+      <label className="sr-only" htmlFor={`amount-${row.categoryId}`}>
+        Amount
+      </label>
+      <input
+        id={`amount-${row.categoryId}`}
+        name="amount"
+        inputMode="decimal"
+        placeholder="0.00"
+        className="min-h-12 w-full touch-manipulation rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-base outline-none ring-moss-400 focus:ring-2"
+      />
+
+      <div className="grid grid-cols-5 gap-2">
+        <PendingSubmitButton name="intent" value="add" pendingLabel="+" className={btnClass}>
+          +
+        </PendingSubmitButton>
+        <PendingSubmitButton name="intent" value="sub" pendingLabel="−" className={btnClass}>
+          −
+        </PendingSubmitButton>
+        <PendingSubmitButton
+          name="intent"
+          value="set"
+          pendingLabel="set"
+          className="min-h-12 w-full rounded-xl bg-moss-500 px-2 text-sm font-bold text-sand-50 hover:bg-moss-400"
+        >
+          set
+        </PendingSubmitButton>
+        <PendingSubmitButton
+          name="intent"
+          value="auto_percent"
+          pendingLabel="auto:%"
+          className={btnClass}
+        >
+          auto:%
+        </PendingSubmitButton>
+        <PendingSubmitButton
+          name="intent"
+          value="auto_fixed"
+          pendingLabel="auto:#"
+          className={btnClass}
+        >
+          auto:#
+        </PendingSubmitButton>
       </div>
     </form>
   );

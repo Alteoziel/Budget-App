@@ -5,7 +5,7 @@ import { useId, useState } from "react";
 export function SettingsCategory({
   title,
   description,
-  defaultOpen = true,
+  defaultOpen = false,
   children,
 }: {
   title: string;
