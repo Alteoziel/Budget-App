@@ -127,7 +127,14 @@ export function BudgetManager({
 
           <ul className="divide-y divide-ink-900/5">
             {group.categories.map((row) => (
-              <li key={row.categoryId} className="px-4 py-3">
+              <li
+                key={row.categoryId}
+                className={`px-4 py-3 ${
+                  row.availableCents < 0
+                    ? "border-l-4 border-coral-500 bg-coral-400/10"
+                    : ""
+                }`}
+              >
                 {editingCategoryId === row.categoryId ? (
                   <form
                     action={renameCategoryAction}
@@ -176,6 +183,11 @@ export function BudgetManager({
                         <p className="font-bold">
                           <Money cents={row.availableCents} />
                         </p>
+                        {row.availableCents < 0 ? (
+                          <p className="text-[11px] font-bold uppercase tracking-wide text-coral-500">
+                            Overspent
+                          </p>
+                        ) : null}
                       </div>
                     </div>
                     <div className="mt-2 flex gap-3">

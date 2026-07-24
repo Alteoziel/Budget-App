@@ -1,9 +1,10 @@
 import { AppShell } from "@/components/AppShell";
 import { BudgetManager } from "@/components/BudgetManager";
+import { BudgetOverview } from "@/components/BudgetOverview";
 import { FlashError } from "@/components/FlashError";
 import { Money } from "@/components/Money";
 import { PendingSubmitButton } from "@/components/PendingSubmitButton";
-import { autoAssignAction, createCategoryAction } from "@/lib/actions";
+import { createCategoryAction } from "@/lib/actions";
 import { getBudgetRows } from "@/lib/budget-data";
 import { formatBudgetMonth } from "@/lib/money";
 
@@ -42,27 +43,11 @@ export default async function BudgetPage({
           Auto-assigned <Money cents={assignedCents} /> across categories.
         </p>
       ) : null}
-      <section className="animate-rise rounded-3xl bg-ink-900 px-5 py-5 text-sand-50 shadow-soft">
-        <p className="text-xs font-bold uppercase tracking-[0.18em] text-moss-300">
-          Ready to assign
-        </p>
-        <p className="mt-2 font-display text-4xl font-bold">
-          <Money cents={readyToAssignCents} className="text-sand-50" />
-        </p>
-        <p className="mt-2 text-sm text-sand-200">
-          Assign dollars to categories until this hits zero — or use Auto-assign with your
-          percentages.
-        </p>
-        <form action={autoAssignAction} className="mt-4">
-          <input type="hidden" name="month" value={month} />
-          <PendingSubmitButton
-            pendingLabel="Assigning…"
-            className="min-h-11 w-full rounded-2xl bg-moss-500 px-4 py-3 text-sm font-bold text-sand-50 disabled:opacity-60 sm:w-auto"
-          >
-            Auto-assign
-          </PendingSubmitButton>
-        </form>
-      </section>
+      <BudgetOverview
+        month={month}
+        rows={rows}
+        readyToAssignCents={readyToAssignCents}
+      />
 
       <section className="animate-rise-delay mt-6">
         <BudgetManager month={month} groups={groups} />
