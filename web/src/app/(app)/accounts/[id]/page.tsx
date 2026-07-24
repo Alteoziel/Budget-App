@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
+import { DeleteAccountButton } from "@/components/DeleteAccountButton";
 import { FlashError } from "@/components/FlashError";
 import { Money } from "@/components/Money";
 import { RegisterTransactions } from "@/components/RegisterTransactions";
@@ -121,6 +122,20 @@ export default async function AccountRegisterPage({
             Save transaction
           </button>
         </form>
+      </section>
+
+      <section className="mt-6 rounded-3xl border border-coral-400/30 bg-coral-400/10 p-4">
+        <h2 className="font-display text-lg font-bold text-ink-900">Delete account</h2>
+        <p className="mt-1 text-sm text-ink-600">
+          Removes “{account.name}” and all of its transactions from this budget.
+        </p>
+        <div className="mt-3">
+          <DeleteAccountButton
+            accountId={account.id}
+            accountName={account.name}
+            transactionCount={transactions.length}
+          />
+        </div>
       </section>
     </AppShell>
   );

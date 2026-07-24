@@ -118,6 +118,51 @@ export async function createAccountAction(formData: FormData) {
   revalidatePath("/budget");
 }
 
+export async function deleteAccountAction(formData: FormData) {
+  const { supabase, budget } = await requireBudget("editor");
+  const accountId = String(formData.get("account_id") ?? "").trim();
+  if (!accountId) {
+    redirectWithError("/accounts", "Account not found.");
+  }
+
+  const { data: account, error: lookupError } = await supabase
+    .from("accounts")
+    .select("id,name")
+    .eq("id", accountId)
+    .eq("budget_id", budget.id)
+    .maybeSingle();
+
+  if (lookupError || !account) {
+    redirectWithError("/accounts", "Account not found.");
+  }
+
+  // Clear Teller mapping first (also cascades from account delete; explicit for clarity).
+  await supabase
+    .from("teller_accounts")
+    .delete()
+    .eq("account_id", accountId)
+    .eq("budget_id", budget.id);
+
+  const { error } = await supabase
+    .from("accounts")
+    .delete()
+    .eq("id", accountId)
+    .eq("budget_id", budget.id);
+
+  if (error) {
+    redirectWithError(
+      "/accounts",
+      `Could not delete “${account!.name}”. Remove linked bank mapping or try again.`,
+    );
+  }
+
+  revalidatePath("/accounts");
+  revalidatePath("/budget");
+  revalidatePath("/insights");
+  revalidatePath("/settings");
+  redirect("/accounts");
+}
+
 export async function createCategoryAction(formData: FormData) {
   const { supabase, user, budget } = await requireBudget("editor");
   const groupName = String(formData.get("group_name") ?? "").trim() || "Everyday";

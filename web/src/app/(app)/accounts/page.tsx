@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
+import { DeleteAccountButton } from "@/components/DeleteAccountButton";
 import { FlashError } from "@/components/FlashError";
 import { Money } from "@/components/Money";
 import { createAccountAction } from "@/lib/actions";
@@ -34,21 +35,29 @@ export default async function AccountsPage({
         ) : (
           <ul className="divide-y divide-ink-900/5">
             {accounts.map((account) => (
-              <li key={account.id}>
+              <li
+                key={account.id}
+                className="flex items-center gap-2 px-4 py-4 transition hover:bg-sand-100"
+              >
                 <Link
                   href={`/accounts/${account.id}`}
-                  className="flex items-center justify-between gap-3 px-4 py-4 transition hover:bg-sand-100"
+                  className="flex min-w-0 flex-1 items-center justify-between gap-3"
                 >
-                  <div>
-                    <p className="font-semibold text-ink-900">{account.name}</p>
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold text-ink-900">{account.name}</p>
                     <p className="text-xs uppercase tracking-wide text-ink-600">
                       {account.account_type}
                     </p>
                   </div>
-                  <p className="font-bold">
+                  <p className="shrink-0 font-bold">
                     <Money cents={account.balanceCents} />
                   </p>
                 </Link>
+                <DeleteAccountButton
+                  accountId={account.id}
+                  accountName={account.name}
+                  variant="link"
+                />
               </li>
             ))}
           </ul>
