@@ -151,6 +151,7 @@ export async function createAccountAction(formData: FormData) {
     budget_id: budget.id,
     name,
     account_type: accountType,
+    include_in_total: true,
   });
   if (error) {
     redirectWithError(
@@ -162,6 +163,40 @@ export async function createAccountAction(formData: FormData) {
   }
   revalidatePath("/accounts");
   revalidatePath("/budget");
+}
+
+export async function setAccountIncludeInTotalAction(formData: FormData) {
+  const { supabase, budget } = await requireBudget("editor");
+  const accountId = String(formData.get("account_id") ?? "").trim();
+  const includeRaw = String(formData.get("include_in_total") ?? "").trim();
+  const includeInTotal = includeRaw === "true" || includeRaw === "1" || includeRaw === "on";
+
+  if (!accountId) {
+    redirectWithError("/accounts", "Account not found.");
+  }
+
+  const { data: account, error: lookupError } = await supabase
+    .from("accounts")
+    .select("id")
+    .eq("id", accountId)
+    .eq("budget_id", budget.id)
+    .maybeSingle();
+
+  if (lookupError || !account) {
+    redirectWithError("/accounts", "Account not found.");
+  }
+
+  const { error } = await supabase
+    .from("accounts")
+    .update({ include_in_total: includeInTotal })
+    .eq("id", accountId)
+    .eq("budget_id", budget.id);
+
+  if (error) {
+    redirectWithError("/accounts", "Could not update account filter.");
+  }
+
+  revalidatePath("/accounts");
 }
 
 export async function deleteAccountAction(formData: FormData) {

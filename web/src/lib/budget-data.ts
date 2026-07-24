@@ -173,26 +173,42 @@ export const getBudgetRows = cache(async (month = currentBudgetMonth()): Promise
 });
 
 export const getAccountsWithBalances = cache(async (): Promise<
-  Array<Account & { balanceCents: number }>
+  Array<Account & { balanceCents: number; include_in_total: boolean }>
 > => {
   const { supabase, budget } = await requireBudget("viewer");
 
-  const [accountsRes, txnsRes] = await Promise.all([
-    supabase
+  let accountsRes: {
+    data: Array<Record<string, unknown>> | null;
+    error: { message: string } | null;
+  } = await supabase
+    .from("accounts")
+    .select("id,budget_id,name,account_type,currency,include_in_total")
+    .eq("budget_id", budget.id)
+    .order("name");
+
+  // Column may be missing until migration is applied.
+  if (
+    accountsRes.error &&
+    /include_in_total|schema cache|column/i.test(accountsRes.error.message)
+  ) {
+    accountsRes = await supabase
       .from("accounts")
       .select("id,budget_id,name,account_type,currency")
       .eq("budget_id", budget.id)
-      .order("name"),
-    supabase
-      .from("transactions")
-      .select("account_id,amount_cents")
-      .eq("budget_id", budget.id),
-  ]);
+      .order("name");
+  }
+
+  const txnsRes = await supabase
+    .from("transactions")
+    .select("account_id,amount_cents")
+    .eq("budget_id", budget.id);
 
   assertNoError(accountsRes.error, "Failed to load accounts");
   assertNoError(txnsRes.error, "Failed to load account balances");
 
-  const accounts = accountsRes.data;
+  const accounts = (accountsRes.data ?? []) as Array<
+    Account & { include_in_total?: boolean }
+  >;
   const txns = txnsRes.data;
 
   const balances = new Map<string, number>();
@@ -201,8 +217,9 @@ export const getAccountsWithBalances = cache(async (): Promise<
     balances.set(id, (balances.get(id) ?? 0) + (txn.amount_cents as number));
   }
 
-  return ((accounts as Account[] | null) ?? []).map((account) => ({
+  return accounts.map((account) => ({
     ...account,
+    include_in_total: account.include_in_total !== false,
     balanceCents: balances.get(account.id) ?? 0,
   }));
 });
