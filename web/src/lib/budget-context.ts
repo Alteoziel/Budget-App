@@ -26,16 +26,37 @@ export async function listUserBudgets(): Promise<
   } = await supabase.auth.getUser();
   if (!user) return [];
 
-  const { data, error } = await supabase
+  // Avoid nested resource joins (can fail if FK embed isn't cached yet); two-step load.
+  const { data: memberships, error } = await supabase
     .from("budget_members")
-    .select("role, budgets(id, name, created_by)")
+    .select("role, budget_id")
     .eq("user_id", user.id);
-  if (error) throw new Error(error.message);
+  if (error) {
+    throw new Error(
+      `Could not load budgets (${error.message}). If this is a new deploy, apply supabase/migrations in order.`,
+    );
+  }
 
-  return (data ?? [])
+  const ids = (memberships ?? []).map((m) => m.budget_id as string).filter(Boolean);
+  if (!ids.length) return [];
+
+  const { data: budgetRows, error: budgetError } = await supabase
+    .from("budgets")
+    .select("id, name, created_by")
+    .in("id", ids);
+  if (budgetError) {
+    throw new Error(
+      `Could not load budgets (${budgetError.message}). If this is a new deploy, apply supabase/migrations in order.`,
+    );
+  }
+
+  const byId = new Map(
+    (budgetRows ?? []).map((b) => [b.id as string, b as Budget]),
+  );
+
+  return (memberships ?? [])
     .map((row) => {
-      const budget = row.budgets as unknown as Budget | Budget[] | null;
-      const b = Array.isArray(budget) ? budget[0] : budget;
+      const b = byId.get(row.budget_id as string);
       if (!b) return null;
       return { ...b, role: row.role as BudgetRole };
     })
@@ -65,7 +86,14 @@ export async function resolveActiveBudget(): Promise<{
   const preferred =
     cookieBudgetId || (profile?.current_budget_id as string | null) || null;
 
-  const budgets = await listUserBudgets();
+  let budgets: Array<Budget & { role: BudgetRole }>;
+  try {
+    budgets = await listUserBudgets();
+  } catch (err) {
+    // Surface schema/RLS problems instead of a blank Next.js digests page.
+    throw err instanceof Error ? err : new Error("Could not load budgets.");
+  }
+
   if (budgets.length === 0) {
     // Bootstrap a budget if trigger somehow missed (legacy users).
     const created = await supabase
@@ -73,12 +101,22 @@ export async function resolveActiveBudget(): Promise<{
       .insert({ name: "My budget", created_by: user.id })
       .select("id,name,created_by")
       .single();
+    if (created.error) {
+      throw new Error(
+        `Could not create a budget (${created.error.message}). Apply supabase/migrations if tables are missing.`,
+      );
+    }
     if (created.data?.id) {
-      await supabase.from("budget_members").insert({
+      const membership = await supabase.from("budget_members").insert({
         budget_id: created.data.id,
         user_id: user.id,
         role: "owner",
       });
+      if (membership.error) {
+        throw new Error(
+          `Could not join budget (${membership.error.message}). Check budget_members RLS/grants.`,
+        );
+      }
       await supabase
         .from("profiles")
         .update({ current_budget_id: created.data.id })

@@ -81,3 +81,7 @@ drop policy if exists "sync_runs_write" on public.sync_runs;
 create policy "sync_runs_write" on public.sync_runs
   for all using (budget_id is null or public.has_budget_role(budget_id, 'admin'))
   with check (budget_id is null or public.has_budget_role(budget_id, 'admin'));
+
+grant select, insert, update, delete on public.teller_enrollments to authenticated;
+grant select, insert, update, delete on public.teller_accounts to authenticated;
+grant select, insert, update, delete on public.sync_runs to authenticated;
