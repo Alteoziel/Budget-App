@@ -21,7 +21,7 @@ PR quality gates from the governance stack stay in place.
 - Accounts + transaction register
 - Insights charts + rule-based trend tips
 - YNAB register / Reflect **CSV import**
-- Teller **Development** bank sync (≤100 enrollments) + twice-daily Vercel Cron
+- Plaid bank sync (Link + transactions sync) + daily Vercel Cron
 - Supabase Auth + budget-scoped RLS
 - Installable PWA shell
 
@@ -41,8 +41,8 @@ This app is meant to run on **Vercel**. Secrets live in **Doppler** and sync int
 2. In configs `dev` / `preview` / `prd`, set the keys listed in [`web/doppler.secrets.example`](web/doppler.secrets.example):
    - Required: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
    - Invites: `NEXT_PUBLIC_SITE_URL`
-   - Cron sync: `SUPABASE_SERVICE_ROLE_KEY`, `CRON_SECRET`, `TELLER_TOKEN_ENCRYPTION_KEY`
-   - Teller Development: `NEXT_PUBLIC_TELLER_APPLICATION_ID`, `NEXT_PUBLIC_TELLER_ENVIRONMENT=development`, `TELLER_CERTIFICATE`, `TELLER_PRIVATE_KEY`
+   - Cron / webhooks: `SUPABASE_SECRET_KEY` (`sb_secret_…` from Supabase → API Keys; preferred over legacy `service_role`), `CRON_SECRET`, `BANK_TOKEN_ENCRYPTION_KEY`
+   - Plaid: `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV` (`sandbox` | `development` | `production`)
 3. Doppler dashboard → **Integrations** → **Vercel**
 4. Sync: `dev` → Development, `preview` → Preview, `prd` → Production
 
@@ -51,15 +51,17 @@ This app is meant to run on **Vercel**. Secrets live in **Doppler** and sync int
 1. Import this GitHub repo
 2. Set **Root Directory** to `web`
 3. Deploy — env vars arrive from the Doppler sync (do not paste secrets into Vercel by hand)
-4. Cron: [`web/vercel.json`](web/vercel.json) hits `/api/cron/teller-sync` daily at `15 12 * * *` UTC with `Authorization: Bearer CRON_SECRET` (Hobby allows one cron/day; on Pro you can restore morning+evening `15 0,12 * * *`)
+4. Cron: [`web/vercel.json`](web/vercel.json) hits `/api/cron/plaid-sync` daily at `15 12 * * *` UTC with `Authorization: Bearer CRON_SECRET` (Hobby allows one cron/day; on Pro you can restore morning+evening `15 0,12 * * *`)
 
 Preview / production URLs come from Vercel after deploy.
 
-### Teller Development notes
+### Plaid notes
 
-- Free tier capped at **100 enrollments**; Production/KYB is out of scope until you need more
-- Settings → **Connect bank** opens Teller Connect; initial backfill ~90 days; categories left blank for you to assign
-- Disconnect / Sync now are available per enrollment on Settings
+- Keys: [Plaid Dashboard](https://dashboard.plaid.com) → Team Settings → Keys
+- Start with `PLAID_ENV=sandbox` (Link test user `user_good` / `pass_good`)
+- Settings → **Connect bank** opens Plaid Link; categories left blank for you to assign
+- Run migration `supabase/migrations/20260724150000_plaid_bank_sync.sql`
+- Disconnect / Sync now are available per connected item on Settings
 
 ### YNAB CSV import
 

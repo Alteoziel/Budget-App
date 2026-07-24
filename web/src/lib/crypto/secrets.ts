@@ -4,18 +4,20 @@ const AUTH_TAG_LENGTH = 16;
 
 function keyBytes(): Buffer {
   const raw =
+    process.env.BANK_TOKEN_ENCRYPTION_KEY ||
+    process.env.PLAID_TOKEN_ENCRYPTION_KEY ||
     process.env.TELLER_TOKEN_ENCRYPTION_KEY ||
     process.env.CRON_SECRET ||
     "";
   if (!raw) {
     throw new Error(
-      "Missing TELLER_TOKEN_ENCRYPTION_KEY (or CRON_SECRET fallback) for token encryption.",
+      "Missing BANK_TOKEN_ENCRYPTION_KEY (or CRON_SECRET fallback) for token encryption.",
     );
   }
   return createHash("sha256").update(raw).digest();
 }
 
-/** Encrypt access token at rest (AES-256-GCM). Stored as iv:tag:ciphertext hex. */
+/** Encrypt secrets at rest (AES-256-GCM). Stored as iv:tag:ciphertext hex. */
 export function encryptSecret(plaintext: string): string {
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", keyBytes(), iv, {

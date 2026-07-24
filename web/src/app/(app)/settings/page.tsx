@@ -1,20 +1,20 @@
 import { AppShell } from "@/components/AppShell";
 import { FlashError } from "@/components/FlashError";
-import { TellerConnectButton } from "@/components/TellerConnectButton";
+import { PlaidLinkButton } from "@/components/PlaidLinkButton";
 import {
   createBudgetAction,
   createInviteLinkAction,
-  disconnectTellerEnrollmentAction,
+  disconnectPlaidItemAction,
   leaveBudgetAction,
   removeMemberAction,
   renameBudgetAction,
   revokeInviteAction,
-  syncTellerNowAction,
+  syncPlaidNowAction,
   updateMemberRoleAction,
 } from "@/lib/actions";
 import { listUserBudgets, requireBudget, roleAtLeast } from "@/lib/budget-context";
 import { createClient } from "@/lib/supabase/server";
-import { tellerConfigured } from "@/lib/teller/client";
+import { plaidConfigured, plaidEnvName } from "@/lib/plaid/client";
 
 export default async function SettingsPage({
   searchParams,
@@ -48,26 +48,20 @@ export default async function SettingsPage({
     : { data: [] as Array<Record<string, unknown>> };
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? "";
-  const tellerAppId =
-    process.env.NEXT_PUBLIC_TELLER_APPLICATION_ID ||
-    process.env.TELLER_APPLICATION_ID ||
-    "";
-  const tellerEnv = process.env.NEXT_PUBLIC_TELLER_ENVIRONMENT || "development";
-  const tellerReady = tellerConfigured();
+  const plaidReady = plaidConfigured();
+  const plaidEnv = plaidEnvName();
 
-  // Teller tables may be absent until that migration is applied — don't 500 Settings.
-  let enrollments: Array<Record<string, unknown>> = [];
+  // Plaid tables may be absent until that migration is applied — don't 500 Settings.
+  let plaidItems: Array<Record<string, unknown>> = [];
   let lastSync: Record<string, unknown> | null = null;
   if (canAdmin) {
-    const enrollRes = await supabase
-      .from("teller_enrollments")
-      .select(
-        "id,institution_name,status,last_synced_at,last_error,created_at,enrollment_id",
-      )
+    const itemsRes = await supabase
+      .from("plaid_items")
+      .select("id,institution_name,status,last_synced_at,last_error,created_at,item_id")
       .eq("budget_id", budget.id)
       .neq("status", "disconnected")
       .order("created_at", { ascending: false });
-    if (!enrollRes.error) enrollments = enrollRes.data ?? [];
+    if (!itemsRes.error) plaidItems = itemsRes.data ?? [];
 
     const syncRes = await supabase
       .from("sync_runs")
@@ -244,21 +238,24 @@ export default async function SettingsPage({
 
       {canAdmin ? (
         <section className="mt-4 space-y-3 rounded-3xl bg-sand-50/80 p-4 shadow-soft">
-          <h2 className="font-display text-lg font-bold text-ink-900">Bank sync (Teller)</h2>
+          <h2 className="font-display text-lg font-bold text-ink-900">Bank sync (Plaid)</h2>
           <p className="text-xs text-ink-600">
-            Uses Teller <span className="font-semibold">Development</span> (free, ≤100
-            enrollments). Not for unlimited public production without KYB. Daily Vercel Cron
-            syncs when <code className="font-mono">CRON_SECRET</code> is set (Pro can run
-            morning + evening).
+            Environment: <span className="font-semibold">{plaidEnv}</span>. Start in{" "}
+            <span className="font-semibold">sandbox</span> (fake banks), then switch Doppler to{" "}
+            <span className="font-semibold">development</span> / production when Plaid approves
+            real institutions. Daily cron syncs when{" "}
+            <code className="font-mono">CRON_SECRET</code> is set.
           </p>
-          {tellerReady && tellerAppId ? (
-            <TellerConnectButton applicationId={tellerAppId} environment={tellerEnv} />
+          {plaidReady ? (
+            <PlaidLinkButton />
           ) : (
             <p className="rounded-xl bg-amber-100/80 px-3 py-2 text-xs text-amber-950">
-              Teller is not fully configured. Add{" "}
-              <code className="font-mono">NEXT_PUBLIC_TELLER_APPLICATION_ID</code>,{" "}
-              <code className="font-mono">TELLER_CERTIFICATE</code>,{" "}
-              <code className="font-mono">TELLER_PRIVATE_KEY</code>, and{" "}
+              Plaid is not configured. Add{" "}
+              <code className="font-mono">PLAID_CLIENT_ID</code>,{" "}
+              <code className="font-mono">PLAID_SECRET</code>,{" "}
+              <code className="font-mono">PLAID_ENV</code> (sandbox/development/production),{" "}
+              <code className="font-mono">SUPABASE_SECRET_KEY</code>,{" "}
+              <code className="font-mono">BANK_TOKEN_ENCRYPTION_KEY</code>, and{" "}
               <code className="font-mono">CRON_SECRET</code> in Doppler.
             </p>
           )}
@@ -277,32 +274,32 @@ export default async function SettingsPage({
           ) : null}
 
           <ul className="divide-y divide-ink-900/5">
-            {(enrollments ?? []).map((e) => (
-              <li key={String(e.id)} className="space-y-2 py-3 text-sm">
+            {plaidItems.map((item) => (
+              <li key={String(item.id)} className="space-y-2 py-3 text-sm">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <p className="font-semibold text-ink-900">
-                      {String(e.institution_name || "Bank")}
+                      {String(item.institution_name || "Bank")}
                     </p>
                     <p className="text-xs text-ink-600">
-                      {String(e.status)}
-                      {e.last_synced_at
-                        ? ` · synced ${new Date(String(e.last_synced_at)).toLocaleString()}`
+                      {String(item.status)}
+                      {item.last_synced_at
+                        ? ` · synced ${new Date(String(item.last_synced_at)).toLocaleString()}`
                         : " · never synced"}
                     </p>
-                    {e.last_error ? (
-                      <p className="text-xs text-coral-500">{String(e.last_error)}</p>
+                    {item.last_error ? (
+                      <p className="text-xs text-coral-500">{String(item.last_error)}</p>
                     ) : null}
                   </div>
                   <div className="flex gap-2">
-                    <form action={syncTellerNowAction}>
-                      <input type="hidden" name="enrollment_id" value={String(e.id)} />
+                    <form action={syncPlaidNowAction}>
+                      <input type="hidden" name="item_id" value={String(item.id)} />
                       <button type="submit" className="text-xs font-bold text-moss-500">
                         Sync now
                       </button>
                     </form>
-                    <form action={disconnectTellerEnrollmentAction}>
-                      <input type="hidden" name="enrollment_id" value={String(e.id)} />
+                    <form action={disconnectPlaidItemAction}>
+                      <input type="hidden" name="item_id" value={String(item.id)} />
                       <button type="submit" className="text-xs font-bold text-coral-500">
                         Disconnect
                       </button>

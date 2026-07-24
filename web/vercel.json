@@ -4,7 +4,7 @@
   "buildCommand": "npm run build",
   "crons": [
     {
-      "path": "/api/cron/teller-sync",
+      "path": "/api/cron/plaid-sync",
       "schedule": "15 12 * * *"
     }
   ]

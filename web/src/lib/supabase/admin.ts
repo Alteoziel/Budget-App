@@ -1,16 +1,22 @@
 import { createClient } from "@supabase/supabase-js";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 
-/** Service-role client for cron / trusted server jobs (bypasses RLS). */
+/**
+ * Elevated backend client for cron / webhooks (bypasses RLS).
+ * Prefer Supabase secret keys (`sb_secret_…`) over the legacy service_role JWT.
+ */
 export function createServiceClient() {
   const { url } = getSupabaseEnv();
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!serviceKey) {
+  const secretKey =
+    process.env.SUPABASE_SECRET_KEY ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!secretKey) {
     throw new Error(
-      "Missing SUPABASE_SERVICE_ROLE_KEY. Add it in Doppler and sync to Vercel.",
+      "Missing SUPABASE_SECRET_KEY (preferred) or SUPABASE_SERVICE_ROLE_KEY. " +
+        "Create a secret key in Supabase → Settings → API Keys and add it in Doppler.",
     );
   }
-  return createClient(url, serviceKey, {
+  return createClient(url, secretKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 }
