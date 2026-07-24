@@ -6,6 +6,7 @@ function isPublicPath(path: string): boolean {
     path === "/" ||
     path.startsWith("/login") ||
     path.startsWith("/invite") ||
+    path.startsWith("/api/cron/") ||
     path.startsWith("/_next") ||
     path.startsWith("/icons") ||
     path === "/manifest.webmanifest" ||
@@ -53,13 +54,21 @@ export async function updateSession(request: NextRequest) {
 
   const isAuthRoute = path.startsWith("/login");
   const isInviteRoute = path.startsWith("/invite");
+  const isCronRoute = path.startsWith("/api/cron/");
   const isPublicAsset =
     path.startsWith("/_next") ||
     path.startsWith("/icons") ||
     path === "/manifest.webmanifest" ||
     path === "/sw.js";
 
-  if (!user && !isAuthRoute && !isInviteRoute && !isPublicAsset && path !== "/") {
+  if (
+    !user &&
+    !isAuthRoute &&
+    !isInviteRoute &&
+    !isCronRoute &&
+    !isPublicAsset &&
+    path !== "/"
+  ) {
     const redirectUrl = new URL("/login", request.url);
     redirectUrl.searchParams.set("next", path);
     return NextResponse.redirect(redirectUrl);
