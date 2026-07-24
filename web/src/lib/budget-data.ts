@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { requireBudget } from "@/lib/budget-context";
 import { budgetMonthDateRange, currentBudgetMonth } from "@/lib/money";
 import type { Account, BudgetRow, Category, CategoryGroup, Transaction } from "@/lib/types";
@@ -8,11 +9,11 @@ function assertNoError(error: { message: string } | null, label: string) {
   }
 }
 
-export async function getBudgetRows(month = currentBudgetMonth()): Promise<{
+export const getBudgetRows = cache(async (month = currentBudgetMonth()): Promise<{
   month: string;
   rows: BudgetRow[];
   readyToAssignCents: number;
-}> {
+}> => {
   const ctx = await requireBudget("viewer");
   const { supabase, budget } = ctx;
 
@@ -169,11 +170,11 @@ export async function getBudgetRows(month = currentBudgetMonth()): Promise<{
     uncategorizedPrior - priorAssignedTotal + uncategorizedCurrent - totalAssigned;
 
   return { month, rows, readyToAssignCents };
-}
+});
 
-export async function getAccountsWithBalances(): Promise<
+export const getAccountsWithBalances = cache(async (): Promise<
   Array<Account & { balanceCents: number }>
-> {
+> => {
   const { supabase, budget } = await requireBudget("viewer");
 
   const [accountsRes, txnsRes] = await Promise.all([
@@ -204,14 +205,14 @@ export async function getAccountsWithBalances(): Promise<
     ...account,
     balanceCents: balances.get(account.id) ?? 0,
   }));
-}
+});
 
-export async function getAccountRegister(accountId: string): Promise<{
+export const getAccountRegister = cache(async (accountId: string): Promise<{
   account: Account | null;
   transactions: Transaction[];
   balanceCents: number;
   categories: Array<{ id: string; name: string; groupName: string }>;
-}> {
+}> => {
   const { supabase, budget } = await requireBudget("viewer");
 
   const [accountRes, transactionsRes, balanceRes, categoriesRes, groupsRes] =
@@ -276,4 +277,4 @@ export async function getAccountRegister(accountId: string): Promise<{
       groupName: groupMap.get(c.group_id as string) ?? "Ungrouped",
     })),
   };
-}
+});

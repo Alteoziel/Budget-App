@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import type { Budget, BudgetRole } from "@/lib/types";
 
@@ -17,16 +18,14 @@ export function roleAtLeast(have: BudgetRole | null | undefined, need: BudgetRol
   return ROLE_RANK[have] >= ROLE_RANK[need];
 }
 
-export async function listUserBudgets(): Promise<
-  Array<Budget & { role: BudgetRole }>
-> {
+/** Deduped per request — layout + pages share one membership load. */
+export const listUserBudgets = cache(async (): Promise<Array<Budget & { role: BudgetRole }>> => {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return [];
 
-  // Avoid nested resource joins (can fail if FK embed isn't cached yet); two-step load.
   const { data: memberships, error } = await supabase
     .from("budget_members")
     .select("role, budget_id")
@@ -50,9 +49,7 @@ export async function listUserBudgets(): Promise<
     );
   }
 
-  const byId = new Map(
-    (budgetRows ?? []).map((b) => [b.id as string, b as Budget]),
-  );
+  const byId = new Map((budgetRows ?? []).map((b) => [b.id as string, b as Budget]));
 
   return (memberships ?? [])
     .map((row) => {
@@ -61,13 +58,14 @@ export async function listUserBudgets(): Promise<
       return { ...b, role: row.role as BudgetRole };
     })
     .filter(Boolean) as Array<Budget & { role: BudgetRole }>;
-}
+});
 
-export async function resolveActiveBudget(): Promise<{
+/** Deduped per request. */
+export const resolveActiveBudget = cache(async (): Promise<{
   budget: Budget;
   role: BudgetRole;
   userId: string;
-} | null> {
+} | null> => {
   const supabase = await createClient();
   const {
     data: { user },
@@ -90,12 +88,10 @@ export async function resolveActiveBudget(): Promise<{
   try {
     budgets = await listUserBudgets();
   } catch (err) {
-    // Surface schema/RLS problems instead of a blank Next.js digests page.
     throw err instanceof Error ? err : new Error("Could not load budgets.");
   }
 
   if (budgets.length === 0) {
-    // Bootstrap a budget if trigger somehow missed (legacy users).
     const created = await supabase
       .from("budgets")
       .insert({ name: "My budget", created_by: user.id })
@@ -136,9 +132,9 @@ export async function resolveActiveBudget(): Promise<{
     budgets[0]!;
 
   return { budget: active, role: active.role, userId: user.id };
-}
+});
 
-export async function requireBudget(minRole: BudgetRole = "viewer") {
+export const requireBudget = cache(async (minRole: BudgetRole = "viewer") => {
   const supabase = await createClient();
   const {
     data: { user },
@@ -154,7 +150,7 @@ export async function requireBudget(minRole: BudgetRole = "viewer") {
     );
   }
   return { supabase, user, ...active };
-}
+});
 
 export async function setActiveBudgetId(budgetId: string) {
   const cookieStore = await cookies();
