@@ -1,5 +1,5 @@
+import { requireBudget } from "@/lib/budget-context";
 import { budgetMonthDateRange, currentBudgetMonth } from "@/lib/money";
-import { createClient } from "@/lib/supabase/server";
 import type { Account, BudgetRow, Category, CategoryGroup, Transaction } from "@/lib/types";
 
 function assertNoError(error: { message: string } | null, label: string) {
@@ -13,11 +13,8 @@ export async function getBudgetRows(month = currentBudgetMonth()): Promise<{
   rows: BudgetRow[];
   readyToAssignCents: number;
 }> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { month, rows: [], readyToAssignCents: 0 };
+  const ctx = await requireBudget("viewer");
+  const { supabase, budget } = ctx;
 
   const range = budgetMonthDateRange(month);
   if (!range) return { month, rows: [], readyToAssignCents: 0 };
@@ -32,36 +29,36 @@ export async function getBudgetRows(month = currentBudgetMonth()): Promise<{
   ] = await Promise.all([
     supabase
       .from("category_groups")
-      .select("id,name,sort_order,hidden")
-      .eq("user_id", user.id)
+      .select("id,name,sort_order,hidden,budget_id")
+      .eq("budget_id", budget.id)
       .order("sort_order")
       .order("name"),
     supabase
       .from("categories")
-      .select("id,group_id,name,sort_order,hidden")
-      .eq("user_id", user.id)
+      .select("id,group_id,name,sort_order,hidden,budget_id")
+      .eq("budget_id", budget.id)
       .order("sort_order")
       .order("name"),
     supabase
       .from("category_months")
       .select("category_id,month,assigned_cents")
-      .eq("user_id", user.id)
+      .eq("budget_id", budget.id)
       .eq("month", month),
     supabase
       .from("category_months")
       .select("category_id,assigned_cents")
-      .eq("user_id", user.id)
+      .eq("budget_id", budget.id)
       .lt("month", month),
     supabase
       .from("transactions")
       .select("category_id,amount_cents,occurred_on")
-      .eq("user_id", user.id)
+      .eq("budget_id", budget.id)
       .gte("occurred_on", range.start)
       .lt("occurred_on", range.endExclusive),
     supabase
       .from("transactions")
       .select("category_id,amount_cents")
-      .eq("user_id", user.id)
+      .eq("budget_id", budget.id)
       .lt("occurred_on", range.start),
   ]);
 
@@ -102,7 +99,6 @@ export async function getBudgetRows(month = currentBudgetMonth()): Promise<{
   }
 
   const activityMap = new Map<string, number>();
-  // Uncategorized amounts (inflows and outflows) belong in Ready to Assign.
   let uncategorizedCurrent = 0;
   for (const txn of txns ?? []) {
     const amount = txn.amount_cents as number;
@@ -125,7 +121,6 @@ export async function getBudgetRows(month = currentBudgetMonth()): Promise<{
     (sum, row) => sum + (row.assigned_cents as number),
     0,
   );
-  // Include hidden categories in RTA math so assigned dollars don't vanish.
   const totalAssigned = (assignments ?? []).reduce(
     (sum, row) => sum + (row.assigned_cents as number),
     0,
@@ -163,19 +158,18 @@ export async function getBudgetRows(month = currentBudgetMonth()): Promise<{
 export async function getAccountsWithBalances(): Promise<
   Array<Account & { balanceCents: number }>
 > {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return [];
+  const { supabase, budget } = await requireBudget("viewer");
 
   const [accountsRes, txnsRes] = await Promise.all([
     supabase
       .from("accounts")
-      .select("id,name,account_type,currency")
-      .eq("user_id", user.id)
+      .select("id,budget_id,name,account_type,currency")
+      .eq("budget_id", budget.id)
       .order("name"),
-    supabase.from("transactions").select("account_id,amount_cents").eq("user_id", user.id),
+    supabase
+      .from("transactions")
+      .select("account_id,amount_cents")
+      .eq("budget_id", budget.id),
   ]);
 
   assertNoError(accountsRes.error, "Failed to load accounts");
@@ -202,26 +196,22 @@ export async function getAccountRegister(accountId: string): Promise<{
   balanceCents: number;
   categories: Array<{ id: string; name: string; groupName: string }>;
 }> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
-    return { account: null, transactions: [], balanceCents: 0, categories: [] };
-  }
+  const { supabase, budget } = await requireBudget("viewer");
 
   const [accountRes, transactionsRes, balanceRes, categoriesRes, groupsRes] =
     await Promise.all([
       supabase
         .from("accounts")
-        .select("id,name,account_type,currency")
-        .eq("user_id", user.id)
+        .select("id,budget_id,name,account_type,currency")
+        .eq("budget_id", budget.id)
         .eq("id", accountId)
         .maybeSingle(),
       supabase
         .from("transactions")
-        .select("id,account_id,category_id,occurred_on,payee,memo,amount_cents,cleared")
-        .eq("user_id", user.id)
+        .select(
+          "id,budget_id,account_id,category_id,occurred_on,payee,memo,amount_cents,cleared,external_id",
+        )
+        .eq("budget_id", budget.id)
         .eq("account_id", accountId)
         .order("occurred_on", { ascending: false })
         .order("created_at", { ascending: false })
@@ -229,14 +219,17 @@ export async function getAccountRegister(accountId: string): Promise<{
       supabase
         .from("transactions")
         .select("amount_cents")
-        .eq("user_id", user.id)
+        .eq("budget_id", budget.id)
         .eq("account_id", accountId),
       supabase
         .from("categories")
         .select("id,name,group_id")
-        .eq("user_id", user.id)
+        .eq("budget_id", budget.id)
         .order("name"),
-      supabase.from("category_groups").select("id,name").eq("user_id", user.id),
+      supabase
+        .from("category_groups")
+        .select("id,name")
+        .eq("budget_id", budget.id),
     ]);
 
   assertNoError(accountRes.error, "Failed to load account");

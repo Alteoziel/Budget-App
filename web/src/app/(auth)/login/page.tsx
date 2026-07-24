@@ -9,7 +9,7 @@ export default async function LoginPage({
 }) {
   const params = await searchParams;
   const isSignup = params.mode === "signup";
-  const nextPath = safeInternalPath(params.next);
+  const nextPath = safeInternalPath(params.next ?? "/budget");
 
   return (
     <main className="flex min-h-dvh items-center bg-app-glow px-5 py-10">

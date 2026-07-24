@@ -1,7 +1,9 @@
 import { BottomNav } from "@/components/BottomNav";
+import { BudgetSwitcher } from "@/components/BudgetSwitcher";
 import { signOutAction } from "@/lib/actions";
+import { listUserBudgets, resolveActiveBudget } from "@/lib/budget-context";
 
-export function AppShell({
+export async function AppShell({
   title,
   subtitle,
   children,
@@ -10,15 +12,23 @@ export function AppShell({
   subtitle?: string;
   children: React.ReactNode;
 }) {
+  const active = await resolveActiveBudget();
+  const budgets = await listUserBudgets();
+
   return (
     <div className="min-h-dvh bg-app-glow">
       <header className="mx-auto flex max-w-lg items-start justify-between gap-4 px-5 pb-2 pt-6">
-        <div className="animate-rise">
+        <div className="animate-rise min-w-0">
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-moss-500">
             Alte&apos; Budgeting
           </p>
           <h1 className="mt-1 font-display text-3xl font-bold text-ink-900">{title}</h1>
           {subtitle ? <p className="mt-1 text-sm text-ink-600">{subtitle}</p> : null}
+          {active ? (
+            <div className="mt-2">
+              <BudgetSwitcher budgets={budgets} activeId={active.budget.id} />
+            </div>
+          ) : null}
         </div>
         <form action={signOutAction}>
           <button
