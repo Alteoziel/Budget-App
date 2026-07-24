@@ -41,7 +41,7 @@ This app is meant to run on **Vercel**. Secrets live in **Doppler** and sync int
 2. In configs `dev` / `preview` / `prd`, set the keys listed in [`web/doppler.secrets.example`](web/doppler.secrets.example):
    - Required: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
    - Invites: `NEXT_PUBLIC_SITE_URL`
-   - Cron sync: `SUPABASE_SERVICE_ROLE_KEY`, `CRON_SECRET`, `BANK_TOKEN_ENCRYPTION_KEY`
+   - Cron / webhooks: `SUPABASE_SECRET_KEY` (`sb_secret_…` from Supabase → API Keys; preferred over legacy `service_role`), `CRON_SECRET`, `BANK_TOKEN_ENCRYPTION_KEY`
    - Plaid: `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV` (`sandbox` | `development` | `production`)
 3. Doppler dashboard → **Integrations** → **Vercel**
 4. Sync: `dev` → Development, `preview` → Preview, `prd` → Production

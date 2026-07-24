@@ -254,6 +254,7 @@ export default async function SettingsPage({
               <code className="font-mono">PLAID_CLIENT_ID</code>,{" "}
               <code className="font-mono">PLAID_SECRET</code>,{" "}
               <code className="font-mono">PLAID_ENV</code> (sandbox/development/production),{" "}
+              <code className="font-mono">SUPABASE_SECRET_KEY</code>,{" "}
               <code className="font-mono">BANK_TOKEN_ENCRYPTION_KEY</code>, and{" "}
               <code className="font-mono">CRON_SECRET</code> in Doppler.
             </p>
