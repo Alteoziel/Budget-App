@@ -35,11 +35,17 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
+// Runs before paint so a saved dark preference never flashes light first.
+const themeScript = `(function(){try{var p=localStorage.getItem("alte-theme");var d=p==="dark"||((!p||p==="system")&&window.matchMedia("(prefers-color-scheme: dark)").matches);if(d)document.documentElement.classList.add("dark");}catch(e){}})();`;
+
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
       <body className={`${display.variable} ${sans.variable} font-sans antialiased`}>
         {children}
         <RegisterServiceWorker />

@@ -25,17 +25,60 @@ export function RegisterTransactions({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-
-  const allSelected =
-    transactions.length > 0 && transactions.every((txn) => selected.has(txn.id));
-
-  const selectedCount = selected.size;
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [flowFilter, setFlowFilter] = useState<"all" | "income" | "spending">("all");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
 
   const categoryLabel = useMemo(() => {
     const map = new Map(categories.map((c) => [c.id, `${c.groupName}: ${c.name}`]));
     return (categoryId: string | null) =>
       categoryId ? (map.get(categoryId) ?? "Category") : "Uncategorized";
   }, [categories]);
+
+  const filtered = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return transactions.filter((txn) => {
+      if (needle) {
+        const haystack = `${txn.payee} ${txn.memo} ${categoryLabel(txn.category_id)}`.toLowerCase();
+        if (!haystack.includes(needle)) return false;
+      }
+      if (categoryFilter === "uncategorized") {
+        if (txn.category_id) return false;
+      } else if (categoryFilter !== "all" && txn.category_id !== categoryFilter) {
+        return false;
+      }
+      if (flowFilter === "income" && txn.amount_cents <= 0) return false;
+      if (flowFilter === "spending" && txn.amount_cents >= 0) return false;
+      if (fromDate && txn.occurred_on < fromDate) return false;
+      if (toDate && txn.occurred_on > toDate) return false;
+      return true;
+    });
+  }, [transactions, search, categoryFilter, flowFilter, fromDate, toDate, categoryLabel]);
+
+  const filtersActive =
+    Boolean(search.trim()) ||
+    categoryFilter !== "all" ||
+    flowFilter !== "all" ||
+    Boolean(fromDate) ||
+    Boolean(toDate);
+
+  const filteredTotalCents = filtered.reduce((sum, txn) => sum + txn.amount_cents, 0);
+
+  const allSelected =
+    filtered.length > 0 && filtered.every((txn) => selected.has(txn.id));
+
+  const selectedCount = selected.size;
+
+  function clearFilters() {
+    setSearch("");
+    setCategoryFilter("all");
+    setFlowFilter("all");
+    setFromDate("");
+    setToDate("");
+  }
 
   function toggleOne(id: string) {
     setSelected((prev) => {
@@ -51,7 +94,7 @@ export function RegisterTransactions({
       setSelected(new Set());
       return;
     }
-    setSelected(new Set(transactions.map((txn) => txn.id)));
+    setSelected(new Set(filtered.map((txn) => txn.id)));
   }
 
   if (transactions.length === 0) {
@@ -62,6 +105,104 @@ export function RegisterTransactions({
 
   return (
     <div>
+      <div className="border-b border-ink-900/5 px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={() => setFiltersOpen((open) => !open)}
+            aria-expanded={filtersOpen}
+            className="min-h-11 rounded-xl bg-sand-100 px-3 py-2 text-sm font-bold text-ink-800"
+          >
+            {filtersOpen ? "Hide filters" : "Filters"}
+            {filtersActive ? " · on" : ""}
+          </button>
+          <p className="text-xs font-semibold text-ink-600">
+            {filtersActive
+              ? `${filtered.length} of ${transactions.length} · net `
+              : `${transactions.length} transactions · net `}
+            <Money cents={filteredTotalCents} />
+          </p>
+        </div>
+
+        {filtersOpen ? (
+          <div className="mt-3 space-y-3">
+            <label className="block text-xs font-semibold text-ink-600">
+              Search payee, memo, or category
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Coffee"
+                className="mt-1 min-h-11 w-full rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm outline-none ring-moss-400 focus:ring-2"
+              />
+            </label>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="block text-xs font-semibold text-ink-600">
+                Category
+                <select
+                  value={categoryFilter}
+                  onChange={(event) => setCategoryFilter(event.target.value)}
+                  className="mt-1 min-h-11 w-full rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm outline-none ring-moss-400 focus:ring-2"
+                >
+                  <option value="all">All categories</option>
+                  <option value="uncategorized">Uncategorized</option>
+                  {categories.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.groupName}: {category.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block text-xs font-semibold text-ink-600">
+                Type
+                <select
+                  value={flowFilter}
+                  onChange={(event) =>
+                    setFlowFilter(event.target.value as "all" | "income" | "spending")
+                  }
+                  className="mt-1 min-h-11 w-full rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm outline-none ring-moss-400 focus:ring-2"
+                >
+                  <option value="all">Income & spending</option>
+                  <option value="income">Income only</option>
+                  <option value="spending">Spending only</option>
+                </select>
+              </label>
+
+              <label className="block text-xs font-semibold text-ink-600">
+                From
+                <input
+                  type="date"
+                  value={fromDate}
+                  onChange={(event) => setFromDate(event.target.value)}
+                  className="mt-1 min-h-11 w-full rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm outline-none ring-moss-400 focus:ring-2"
+                />
+              </label>
+
+              <label className="block text-xs font-semibold text-ink-600">
+                To
+                <input
+                  type="date"
+                  value={toDate}
+                  onChange={(event) => setToDate(event.target.value)}
+                  className="mt-1 min-h-11 w-full rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm outline-none ring-moss-400 focus:ring-2"
+                />
+              </label>
+            </div>
+
+            {filtersActive ? (
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="min-h-11 text-xs font-bold text-coral-500"
+              >
+                Clear filters
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ink-900/5 px-4 py-3">
         <label className="flex items-center gap-2 text-sm font-semibold text-ink-700">
           <input
@@ -70,7 +211,7 @@ export function RegisterTransactions({
             onChange={toggleAll}
             className="size-4 rounded border-ink-900/20"
           />
-          Select all ({transactions.length})
+          Select all ({filtered.length})
         </label>
         <form
           action={async (formData) => {
@@ -107,8 +248,14 @@ export function RegisterTransactions({
         </form>
       </div>
 
+      {filtered.length === 0 ? (
+        <p className="px-4 py-8 text-center text-sm text-ink-600">
+          No transactions match these filters.
+        </p>
+      ) : null}
+
       <ul className="divide-y divide-ink-900/5">
-        {transactions.map((txn) => {
+        {filtered.map((txn) => {
           const isEditing = editingId === txn.id;
           const direction = txn.amount_cents >= 0 ? "inflow" : "outflow";
           const amountAbs = (Math.abs(txn.amount_cents) / 100).toFixed(2);

@@ -278,8 +278,59 @@ export async function deleteAccountAction(formData: FormData) {
   redirect("/accounts");
 }
 
+async function resolveCategoryGroupId(
+  supabase: Awaited<ReturnType<typeof requireBudget>>["supabase"],
+  userId: string,
+  budgetId: string,
+  groupName: string,
+): Promise<string | null> {
+  const existing = await supabase
+    .from("category_groups")
+    .select("id")
+    .eq("budget_id", budgetId)
+    .ilike("name", escapeIlikeExact(groupName))
+    .maybeSingle();
+  if (existing.data?.id) return existing.data.id as string;
+
+  const created = await supabase
+    .from("category_groups")
+    .insert({ user_id: userId, budget_id: budgetId, name: groupName })
+    .select("id")
+    .single();
+  if (created.data?.id) return created.data.id as string;
+
+  const again = await supabase
+    .from("category_groups")
+    .select("id")
+    .eq("budget_id", budgetId)
+    .ilike("name", escapeIlikeExact(groupName))
+    .maybeSingle();
+  return (again.data?.id as string | undefined) ?? null;
+}
+
+export async function createCategoryGroupAction(
+  name: string,
+): Promise<{ ok: true; id: string; name: string } | { ok: false; error: string }> {
+  const { supabase, user, budget } = await requireBudget("editor");
+  const groupName = name.trim();
+  if (!groupName) return { ok: false, error: "Group name is required." };
+  if (groupName.length > 80) return { ok: false, error: "Group name is too long." };
+
+  const groupId = await resolveCategoryGroupId(
+    supabase,
+    user.id,
+    budget.id,
+    groupName,
+  );
+  if (!groupId) return { ok: false, error: "Could not create category group." };
+
+  revalidatePath("/budget");
+  return { ok: true, id: groupId, name: groupName };
+}
+
 export async function createCategoryAction(formData: FormData) {
   const { supabase, user, budget } = await requireBudget("editor");
+  const selectedGroupId = String(formData.get("group_id") ?? "").trim();
   const groupName = String(formData.get("group_name") ?? "").trim() || "Everyday";
   const categoryName = String(formData.get("category_name") ?? "").trim();
   if (!categoryName) {
@@ -287,36 +338,19 @@ export async function createCategoryAction(formData: FormData) {
   }
 
   let groupId: string | null = null;
-  const existing = await supabase
-    .from("category_groups")
-    .select("id")
-    .eq("budget_id", budget.id)
-    .ilike("name", escapeIlikeExact(groupName))
-    .maybeSingle();
-
-  if (existing.data?.id) {
-    groupId = existing.data.id;
-  } else {
-    const created = await supabase
+  if (selectedGroupId) {
+    const owned = await supabase
       .from("category_groups")
-      .insert({ user_id: user.id, budget_id: budget.id, name: groupName })
       .select("id")
-      .single();
-    if (created.error && isUniqueViolation(created.error)) {
-      const again = await supabase
-        .from("category_groups")
-        .select("id")
-        .eq("budget_id", budget.id)
-        .ilike("name", escapeIlikeExact(groupName))
-        .maybeSingle();
-      groupId = again.data?.id ?? null;
-    } else {
-      const createdId = created.data?.id;
-      if (created.error || !createdId) {
-        redirectWithError("/budget", "Could not create category group.");
-      }
-      groupId = createdId;
+      .eq("budget_id", budget.id)
+      .eq("id", selectedGroupId)
+      .maybeSingle();
+    groupId = (owned.data?.id as string | undefined) ?? null;
+    if (!groupId) {
+      redirectWithError("/budget", "Category group not found.");
     }
+  } else {
+    groupId = await resolveCategoryGroupId(supabase, user.id, budget.id, groupName);
   }
 
   if (!groupId) {
@@ -339,6 +373,76 @@ export async function createCategoryAction(formData: FormData) {
   }
 
   revalidatePath("/budget");
+}
+
+export async function setCategoryGoalAction(
+  input: {
+    categoryId: string;
+    amount: string;
+    goalName: string;
+    frequency: string;
+    note: string;
+  },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { supabase, budget } = await requireBudget("editor");
+  const categoryId = input.categoryId.trim();
+  if (!categoryId) return { ok: false, error: "Category not found." };
+
+  const frequencies = new Set(["weekly", "monthly", "quarterly", "yearly", "once"]);
+  const frequency = frequencies.has(input.frequency) ? input.frequency : "monthly";
+
+  const rawAmount = input.amount.trim();
+  let goalCents: number | null = null;
+  if (rawAmount) {
+    const parsed = dollarsToCents(rawAmount);
+    if (parsed == null || parsed < 0) {
+      return { ok: false, error: "Enter a goal amount like 250.00, or leave it blank." };
+    }
+    goalCents = parsed;
+  }
+
+  const owned = await supabase
+    .from("categories")
+    .select("id")
+    .eq("budget_id", budget.id)
+    .eq("id", categoryId)
+    .maybeSingle();
+  if (!owned.data?.id) return { ok: false, error: "Category not found." };
+
+  const { error } = await supabase
+    .from("categories")
+    .update({
+      goal_cents: goalCents,
+      goal_name: input.goalName.trim().slice(0, 120),
+      goal_frequency: frequency,
+      goal_note: input.note.trim().slice(0, 500),
+    })
+    .eq("budget_id", budget.id)
+    .eq("id", categoryId);
+
+  if (error) {
+    return {
+      ok: false,
+      error: /goal_|column|schema cache/i.test(error.message)
+        ? "Run the category goals migration in Supabase, then try again."
+        : "Could not save this goal.",
+    };
+  }
+
+  revalidatePath("/budget");
+  return { ok: true };
+}
+
+export async function clearCategoryGoalAction(
+  categoryId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  return setCategoryGoalAction({
+    categoryId,
+    amount: "",
+    goalName: "",
+    frequency: "monthly",
+    note: "",
+  });
 }
 
 export async function renameCategoryAction(formData: FormData) {

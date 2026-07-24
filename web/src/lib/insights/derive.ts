@@ -1,7 +1,17 @@
-import type { MonthPoint, InsightsFilters } from "@/lib/insights/series";
-import { getInsightSeries } from "@/lib/insights/series";
-import { requireBudget } from "@/lib/budget-context";
+import type { InsightsDataset } from "@/lib/insights/dataset";
+import type { MonthPoint } from "@/lib/insights/series";
 import type { TrendFinding } from "@/lib/types";
+
+export type DerivedFilters = {
+  monthsBack: number;
+  accountIds: string[];
+  categoryIds: string[];
+};
+
+export type DerivedInsights = {
+  points: MonthPoint[];
+  findings: TrendFinding[];
+};
 
 function pctChange(current: number, prior: number): number | null {
   if (prior === 0) return current === 0 ? 0 : null;
@@ -13,24 +23,111 @@ function avg(nums: number[]): number {
   return nums.reduce((a, b) => a + b, 0) / nums.length;
 }
 
-export async function computeTrendFindings(
-  filters: InsightsFilters = {},
-): Promise<TrendFinding[]> {
-  const { points } = await getInsightSeries(filters);
-  const { supabase, budget } = await requireBudget("viewer");
+/** Recompute the whole Insights view from the cached dataset, in memory. */
+export function deriveInsights(
+  dataset: InsightsDataset,
+  filters: DerivedFilters,
+): DerivedInsights {
+  const monthsBack = Math.min(
+    Math.max(filters.monthsBack, 3),
+    dataset.months.length,
+  );
+  const firstIndex = dataset.months.length - monthsBack;
+  const months = dataset.months.slice(firstIndex);
+
+  const accountSet = new Set(filters.accountIds);
+  const categorySet = new Set(filters.categoryIds);
+
+  const accountAllowed = dataset.accounts.map(
+    (account) => accountSet.size === 0 || accountSet.has(account.id),
+  );
+  const categoryAllowed = dataset.categories.map(
+    (category) => categorySet.size === 0 || categorySet.has(category.id),
+  );
+
+  const spending = new Array<number>(monthsBack).fill(0);
+  const income = new Array<number>(monthsBack).fill(0);
+  const delta = new Array<number>(monthsBack).fill(0);
+  const categoryTotals = new Map<string, { name: string; cents: number }>();
+
+  for (const [mi, ai, ci, amount] of dataset.cells) {
+    if (!accountAllowed[ai]) continue;
+    const localMonth = mi - firstIndex;
+    if (localMonth < 0) continue;
+
+    delta[localMonth]! += amount;
+
+    if (ci >= 0 && amount < 0) {
+      const category = dataset.categories[ci]!;
+      const entry = categoryTotals.get(category.id) ?? {
+        name: category.name,
+        cents: 0,
+      };
+      entry.cents += Math.abs(amount);
+      categoryTotals.set(category.id, entry);
+    }
+
+    if (categorySet.size > 0 && (ci < 0 || !categoryAllowed[ci])) continue;
+    if (amount < 0) spending[localMonth]! += Math.abs(amount);
+    else income[localMonth]! += amount;
+  }
+
+  // Balance carried in: everything before the window, plus filtered months we skipped.
+  let running = 0;
+  dataset.priorByAccount.forEach((cents, ai) => {
+    if (accountAllowed[ai]) running += cents;
+  });
+  for (const [mi, ai, , amount] of dataset.cells) {
+    if (!accountAllowed[ai]) continue;
+    if (mi < firstIndex) running += amount;
+  }
+
+  const points: MonthPoint[] = months.map((month, i) => {
+    running += delta[i] ?? 0;
+    return {
+      month,
+      spendingCents: spending[i] ?? 0,
+      incomeCents: income[i] ?? 0,
+      endBalanceCents: running,
+    };
+  });
+
+  const findings = deriveTrendFindings({
+    points,
+    dataset,
+    firstIndex,
+    categoryTotals,
+  });
+
+  return { points, findings };
+}
+
+function deriveTrendFindings({
+  points,
+  dataset,
+  firstIndex,
+  categoryTotals,
+}: {
+  points: MonthPoint[];
+  dataset: InsightsDataset;
+  firstIndex: number;
+  categoryTotals: Map<string, { name: string; cents: number }>;
+}): TrendFinding[] {
   const now = new Date().toISOString();
   const findings: TrendFinding[] = [];
 
   if (points.length >= 2) {
     const last = points[points.length - 1]!;
     const prev = points[points.length - 2]!;
+
     const spendChange = pctChange(last.spendingCents, prev.spendingCents);
     if (spendChange != null && Math.abs(spendChange) >= 25) {
       findings.push({
         id: "spend-mom",
         kind: "spending_mom",
         severity: spendChange > 0 ? "alert" : "info",
-        title: spendChange > 0 ? "Spending jumped last month" : "Spending dropped last month",
+        title:
+          spendChange > 0 ? "Spending jumped last month" : "Spending dropped last month",
         summary: `Spending moved ${spendChange > 0 ? "+" : ""}${spendChange.toFixed(0)}% vs the prior month.`,
         metrics: {
           currentCents: last.spendingCents,
@@ -106,67 +203,35 @@ export async function computeTrendFindings(
     }
   }
 
-  // Recurring-looking outflows by payee
-  const lookbackStart = points[0] ? `${points[0].month}-01` : "2000-01-01";
-  const { data: txns } = await supabase
-    .from("transactions")
-    .select("payee,amount_cents,occurred_on")
-    .eq("budget_id", budget.id)
-    .lt("amount_cents", 0)
-    .gte("occurred_on", lookbackStart)
-    .neq("payee", "");
-
-  const byPayee = new Map<string, Array<{ month: string; cents: number }>>();
-  for (const txn of txns ?? []) {
-    const payee = String(txn.payee).trim().toLowerCase();
-    if (!payee) continue;
-    const month = String(txn.occurred_on).slice(0, 7);
-    const cents = Math.abs(txn.amount_cents as number);
-    const list = byPayee.get(payee) ?? [];
-    const existing = list.find((x) => x.month === month);
-    if (existing) existing.cents += cents;
-    else list.push({ month, cents });
-    byPayee.set(payee, list);
+  const byPayee = new Map<number, number[]>();
+  for (const [mi, pi, cents] of dataset.payeeCells) {
+    if (mi < firstIndex) continue;
+    const list = byPayee.get(pi) ?? [];
+    list.push(cents);
+    byPayee.set(pi, list);
   }
 
-  for (const [payee, months] of byPayee) {
-    if (months.length < 3) continue;
-    const amounts = months.map((m) => m.cents);
+  for (const [pi, amounts] of byPayee) {
+    if (amounts.length < 3) continue;
     const mean = avg(amounts);
-    if (mean < 500) continue; // ignore tiny
+    if (mean < 500) continue;
     const within = amounts.every((a) => Math.abs(a - mean) / mean <= 0.15);
     if (!within) continue;
+    const payee = dataset.payees[pi] ?? "";
+    if (!payee) continue;
     findings.push({
       id: `recurring-${payee.slice(0, 24)}`,
       kind: "recurring_outflow",
       severity: "info",
       title: `Recurring: ${payee}`,
-      summary: `About ${(mean / 100).toFixed(2)} shows up in ${months.length} months — confirm it still earns its place.`,
-      metrics: { averageCents: Math.round(mean), months: months.length },
+      summary: `About ${(mean / 100).toFixed(2)} shows up in ${amounts.length} months — confirm it still earns its place.`,
+      metrics: { averageCents: Math.round(mean), months: amounts.length },
       relatedIds: [],
       createdAt: now,
     });
   }
 
-  // Top discretionary share (uncategorized ignored; use largest spend categories)
-  const { data: catTxns } = await supabase
-    .from("transactions")
-    .select("category_id,amount_cents,categories(name)")
-    .eq("budget_id", budget.id)
-    .lt("amount_cents", 0)
-    .gte("occurred_on", lookbackStart)
-    .not("category_id", "is", null);
-
-  const catTotals = new Map<string, { name: string; cents: number }>();
-  for (const row of catTxns ?? []) {
-    const id = row.category_id as string;
-    const cat = row.categories as unknown as { name?: string } | { name?: string }[] | null;
-    const name = Array.isArray(cat) ? cat[0]?.name : cat?.name;
-    const entry = catTotals.get(id) ?? { name: name || id, cents: 0 };
-    entry.cents += Math.abs(row.amount_cents as number);
-    catTotals.set(id, entry);
-  }
-  const ranked = [...catTotals.entries()].sort((a, b) => b[1].cents - a[1].cents);
+  const ranked = [...categoryTotals.entries()].sort((a, b) => b[1].cents - a[1].cents);
   const totalSpend = ranked.reduce((s, [, v]) => s + v.cents, 0);
   if (totalSpend > 0 && ranked[0]) {
     const [id, top] = ranked[0];
@@ -188,5 +253,3 @@ export async function computeTrendFindings(
 
   return findings;
 }
-
-export type { MonthPoint };
