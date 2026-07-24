@@ -317,7 +317,12 @@ export function BudgetManager({
                             </span>
                           </button>
 
-                          <CategoryGoalButton row={row} />
+                          <CategoryGoalButton
+                            row={row}
+                            onExpandClick={() =>
+                              setExpandedCategoryId(expanded ? null : row.categoryId)
+                            }
+                          />
 
                           {expanded ? (
                             <>
