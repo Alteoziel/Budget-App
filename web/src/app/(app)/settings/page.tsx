@@ -55,26 +55,29 @@ export default async function SettingsPage({
   const tellerEnv = process.env.NEXT_PUBLIC_TELLER_ENVIRONMENT || "development";
   const tellerReady = tellerConfigured();
 
-  const { data: enrollments } = canAdmin
-    ? await supabase
-        .from("teller_enrollments")
-        .select(
-          "id,institution_name,status,last_synced_at,last_error,created_at,enrollment_id",
-        )
-        .eq("budget_id", budget.id)
-        .neq("status", "disconnected")
-        .order("created_at", { ascending: false })
-    : { data: [] as Array<Record<string, unknown>> };
+  // Teller tables may be absent until that migration is applied — don't 500 Settings.
+  let enrollments: Array<Record<string, unknown>> = [];
+  let lastSync: Record<string, unknown> | null = null;
+  if (canAdmin) {
+    const enrollRes = await supabase
+      .from("teller_enrollments")
+      .select(
+        "id,institution_name,status,last_synced_at,last_error,created_at,enrollment_id",
+      )
+      .eq("budget_id", budget.id)
+      .neq("status", "disconnected")
+      .order("created_at", { ascending: false });
+    if (!enrollRes.error) enrollments = enrollRes.data ?? [];
 
-  const { data: lastSync } = canAdmin
-    ? await supabase
-        .from("sync_runs")
-        .select("started_at,finished_at,inserted,updated,errors,source")
-        .eq("budget_id", budget.id)
-        .order("started_at", { ascending: false })
-        .limit(1)
-        .maybeSingle()
-    : { data: null };
+    const syncRes = await supabase
+      .from("sync_runs")
+      .select("started_at,finished_at,inserted,updated,errors,source")
+      .eq("budget_id", budget.id)
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!syncRes.error) lastSync = (syncRes.data as Record<string, unknown> | null) ?? null;
+  }
 
   return (
     <AppShell title="Settings" subtitle={budget.name}>

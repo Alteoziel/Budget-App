@@ -241,7 +241,10 @@ create policy "budgets_delete_owner" on public.budgets for delete
   using (public.has_budget_role(id, 'owner'));
 
 create policy "budget_members_select" on public.budget_members for select
-  using (public.is_budget_member(budget_id));
+  using (
+    auth.uid() = user_id
+    or public.is_budget_member(budget_id)
+  );
 create policy "budget_members_insert_admin" on public.budget_members for insert
   with check (public.has_budget_role(budget_id, 'admin') or auth.uid() = user_id);
 create policy "budget_members_update_admin" on public.budget_members for update
@@ -389,4 +392,11 @@ begin
 end;
 $$;
 
-grant execute on function public.accept_budget_invite(text) to authenticated;
+grant execute on function public.is_budget_member(uuid) to authenticated, service_role;
+grant execute on function public.budget_role(uuid) to authenticated, service_role;
+grant execute on function public.has_budget_role(uuid, text) to authenticated, service_role;
+grant execute on function public.accept_budget_invite(text) to authenticated, service_role;
+
+grant select, insert, update, delete on public.budgets to authenticated;
+grant select, insert, update, delete on public.budget_members to authenticated;
+grant select, insert, update, delete on public.budget_invites to authenticated;

@@ -32,7 +32,7 @@ This app is meant to run on **Vercel**. Secrets live in **Doppler** and sync int
 ### 1. Supabase
 
 1. Create a Supabase project
-2. Run all SQL files in [`supabase/migrations/`](supabase/migrations/) in order (SQL editor)
+2. Run **all** SQL files in [`supabase/migrations/`](supabase/migrations/) in order in the SQL editor (including multi-budget + RLS grants). Skipping these causes logged-in pages to 500.
 3. Enable Email auth (password) under Authentication → Providers
 
 ### 2. Doppler (source of truth for secrets)
