@@ -20,6 +20,7 @@ export type Account = {
   name: string;
   account_type: "checking" | "savings" | "credit" | "cash" | "other";
   currency: string;
+  include_in_total?: boolean;
 };
 
 export type CategoryGroup = {

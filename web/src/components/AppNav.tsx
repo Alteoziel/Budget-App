@@ -31,7 +31,7 @@ export function MobileBottomNav() {
           const active = pathname === link.href || pathname.startsWith(`${link.href}/`);
           return (
             <li key={link.href}>
-              <Link href={link.href} className={navClass(active)}>
+              <Link href={link.href} prefetch className={navClass(active)}>
                 {link.label}
               </Link>
             </li>
@@ -61,6 +61,7 @@ export function DesktopSideNav() {
             <li key={link.href}>
               <Link
                 href={link.href}
+                prefetch
                 className={`touch-manipulation flex min-h-11 items-center rounded-xl px-3 text-sm font-bold transition ${
                   active
                     ? "bg-moss-500 text-sand-50"

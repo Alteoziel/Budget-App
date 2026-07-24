@@ -15,10 +15,12 @@ export function RegisterTransactions({
   accountId,
   transactions,
   categories,
+  accounts,
 }: {
   accountId: string;
   transactions: Transaction[];
   categories: CategoryOption[];
+  accounts: Array<{ id: string; name: string }>;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -129,7 +131,21 @@ export function RegisterTransactions({
                       onSubmit={() => setEditingId(null)}
                     >
                       <input type="hidden" name="transaction_id" value={txn.id} />
-                      <input type="hidden" name="account_id" value={accountId} />
+                      <input type="hidden" name="from_account_id" value={accountId} />
+                      <label className="block text-xs font-semibold text-ink-600">
+                        Account
+                        <select
+                          name="account_id"
+                          defaultValue={accountId}
+                          className="mt-1 w-full rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm outline-none ring-moss-400 focus:ring-2"
+                        >
+                          {accounts.map((account) => (
+                            <option key={account.id} value={account.id}>
+                              {account.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
                       <label className="block text-xs font-semibold text-ink-600">
                         Date
                         <input

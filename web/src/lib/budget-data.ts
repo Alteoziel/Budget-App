@@ -173,26 +173,42 @@ export const getBudgetRows = cache(async (month = currentBudgetMonth()): Promise
 });
 
 export const getAccountsWithBalances = cache(async (): Promise<
-  Array<Account & { balanceCents: number }>
+  Array<Account & { balanceCents: number; include_in_total: boolean }>
 > => {
   const { supabase, budget } = await requireBudget("viewer");
 
-  const [accountsRes, txnsRes] = await Promise.all([
-    supabase
+  let accountsRes: {
+    data: Array<Record<string, unknown>> | null;
+    error: { message: string } | null;
+  } = await supabase
+    .from("accounts")
+    .select("id,budget_id,name,account_type,currency,include_in_total")
+    .eq("budget_id", budget.id)
+    .order("name");
+
+  // Column may be missing until migration is applied.
+  if (
+    accountsRes.error &&
+    /include_in_total|schema cache|column/i.test(accountsRes.error.message)
+  ) {
+    accountsRes = await supabase
       .from("accounts")
       .select("id,budget_id,name,account_type,currency")
       .eq("budget_id", budget.id)
-      .order("name"),
-    supabase
-      .from("transactions")
-      .select("account_id,amount_cents")
-      .eq("budget_id", budget.id),
-  ]);
+      .order("name");
+  }
+
+  const txnsRes = await supabase
+    .from("transactions")
+    .select("account_id,amount_cents")
+    .eq("budget_id", budget.id);
 
   assertNoError(accountsRes.error, "Failed to load accounts");
   assertNoError(txnsRes.error, "Failed to load account balances");
 
-  const accounts = accountsRes.data;
+  const accounts = (accountsRes.data ?? []) as Array<
+    Account & { include_in_total?: boolean }
+  >;
   const txns = txnsRes.data;
 
   const balances = new Map<string, number>();
@@ -201,8 +217,9 @@ export const getAccountsWithBalances = cache(async (): Promise<
     balances.set(id, (balances.get(id) ?? 0) + (txn.amount_cents as number));
   }
 
-  return ((accounts as Account[] | null) ?? []).map((account) => ({
+  return accounts.map((account) => ({
     ...account,
+    include_in_total: account.include_in_total !== false,
     balanceCents: balances.get(account.id) ?? 0,
   }));
 });
@@ -212,6 +229,7 @@ export const getAccountRegister = cache(async (accountId: string): Promise<{
   transactions: Transaction[];
   balanceCents: number;
   categories: Array<{ id: string; name: string; groupName: string }>;
+  accounts: Array<{ id: string; name: string }>;
   matchSuggestions: Array<{
     id: string;
     amountDiffCents: number;
@@ -238,6 +256,7 @@ export const getAccountRegister = cache(async (accountId: string): Promise<{
     categoriesRes,
     groupsRes,
     suggestionsRes,
+    accountsRes,
   ] = await Promise.all([
       supabase
         .from("accounts")
@@ -279,6 +298,11 @@ export const getAccountRegister = cache(async (accountId: string): Promise<{
         .eq("status", "pending")
         .order("created_at", { ascending: false })
         .limit(50),
+      supabase
+        .from("accounts")
+        .select("id,name")
+        .eq("budget_id", budget.id)
+        .order("name"),
     ]);
 
   assertNoError(accountRes.error, "Failed to load account");
@@ -286,6 +310,7 @@ export const getAccountRegister = cache(async (accountId: string): Promise<{
   assertNoError(balanceRes.error, "Failed to load balance");
   assertNoError(categoriesRes.error, "Failed to load categories");
   assertNoError(groupsRes.error, "Failed to load category groups");
+  assertNoError(accountsRes.error, "Failed to load accounts");
   // Suggestions table may not exist until migration is applied.
   if (
     suggestionsRes.error &&
@@ -299,6 +324,7 @@ export const getAccountRegister = cache(async (accountId: string): Promise<{
   const balanceRows = balanceRes.data;
   const categories = categoriesRes.data;
   const groups = groupsRes.data;
+  const allAccounts = accountsRes.data;
 
   const groupMap = new Map((groups ?? []).map((g) => [g.id as string, g.name as string]));
   const balanceCents = (balanceRows ?? []).reduce(
@@ -363,6 +389,10 @@ export const getAccountRegister = cache(async (accountId: string): Promise<{
       id: c.id as string,
       name: c.name as string,
       groupName: groupMap.get(c.group_id as string) ?? "Ungrouped",
+    })),
+    accounts: (allAccounts ?? []).map((row) => ({
+      id: row.id as string,
+      name: row.name as string,
     })),
     matchSuggestions,
   };

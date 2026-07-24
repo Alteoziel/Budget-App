@@ -1,6 +1,5 @@
-import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
-import { DeleteAccountButton } from "@/components/DeleteAccountButton";
+import { AccountsList } from "@/components/AccountsList";
 import { FlashError } from "@/components/FlashError";
 import { Money } from "@/components/Money";
 import { createAccountAction } from "@/lib/actions";
@@ -13,7 +12,9 @@ export default async function AccountsPage({
 }) {
   const params = await searchParams;
   const accounts = await getAccountsWithBalances();
-  const total = accounts.reduce((sum, account) => sum + account.balanceCents, 0);
+  const included = accounts.filter((account) => account.include_in_total);
+  const total = included.reduce((sum, account) => sum + account.balanceCents, 0);
+  const excludedCount = accounts.length - included.length;
 
   return (
     <AppShell title="Accounts" subtitle="Balances from your transactions">
@@ -25,43 +26,23 @@ export default async function AccountsPage({
         <p className="mt-2 font-display text-4xl font-bold">
           <Money cents={total} className="text-sand-50" />
         </p>
+        <p className="mt-2 text-sm text-sand-100/80">
+          {accounts.length === 0
+            ? "No accounts yet"
+            : excludedCount === 0
+              ? `Including all ${accounts.length} account${accounts.length === 1 ? "" : "s"}`
+              : `Including ${included.length} of ${accounts.length} accounts`}
+        </p>
       </section>
 
       <section className="animate-rise-delay mt-5 overflow-hidden rounded-3xl bg-sand-50/80 shadow-soft">
-        {accounts.length === 0 ? (
-          <p className="px-4 py-8 text-center text-sm text-ink-600">
-            No accounts yet. Add one below or import a YNAB CSV.
+        {accounts.length > 0 ? (
+          <p className="border-b border-ink-900/5 px-4 py-3 text-xs font-semibold text-ink-600">
+            Check accounts to include them in the All accounts total. Your choices
+            are saved for this budget.
           </p>
-        ) : (
-          <ul className="divide-y divide-ink-900/5">
-            {accounts.map((account) => (
-              <li
-                key={account.id}
-                className="flex items-center gap-2 px-4 py-4 transition hover:bg-sand-100"
-              >
-                <Link
-                  href={`/accounts/${account.id}`}
-                  className="flex min-w-0 flex-1 items-center justify-between gap-3"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate font-semibold text-ink-900">{account.name}</p>
-                    <p className="text-xs uppercase tracking-wide text-ink-600">
-                      {account.account_type}
-                    </p>
-                  </div>
-                  <p className="shrink-0 font-bold">
-                    <Money cents={account.balanceCents} />
-                  </p>
-                </Link>
-                <DeleteAccountButton
-                  accountId={account.id}
-                  accountName={account.name}
-                  variant="link"
-                />
-              </li>
-            ))}
-          </ul>
-        )}
+        ) : null}
+        <AccountsList accounts={accounts} />
       </section>
 
       <section className="mt-6 rounded-3xl border border-ink-900/5 bg-sand-50/80 p-4 shadow-soft">
