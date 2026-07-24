@@ -11,7 +11,7 @@ export default function ImportPage() {
         <ImportForm />
       </section>
 
-      <section className="animate-rise-delay mt-6 rounded-3xl border border-ink-900/5 bg-sand-50/80 p-4 text-sm text-ink-700 shadow-soft">
+      <section className="animate-rise-delay mt-6 card-surface rounded-2xl p-4 text-sm text-ink-700">
         <h2 className="font-display text-lg font-bold text-ink-900">Supported exports</h2>
         <p className="mt-2">
           <span className="font-semibold text-ink-900">Preferred:</span>{" "}

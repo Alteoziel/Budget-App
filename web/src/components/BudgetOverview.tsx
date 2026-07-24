@@ -32,32 +32,25 @@ export function BudgetOverview({
       />
 
       <section
-        className={`animate-rise rounded-3xl px-5 py-5 shadow-soft ${
-          shortfall ? "bg-coral-500 text-sand-50" : "bg-ink-900 text-sand-50"
+        className={`animate-rise flex items-center gap-4 rounded-2xl px-4 py-3 ${
+          shortfall ? "hero-panel-alert" : "hero-panel"
         }`}
       >
-        <p
-          className={`text-xs font-bold uppercase tracking-[0.18em] ${
-            shortfall ? "text-sand-100" : "text-moss-300"
-          }`}
-        >
-          Ready to assign
-        </p>
-        <p className="mt-2 font-display text-4xl font-bold">
-          <Money cents={readyToAssignCents} className="text-sand-50" />
-        </p>
-        <p className={`mt-2 text-sm ${shortfall ? "text-sand-100" : "text-sand-200"}`}>
-          {shortfall
-            ? "You have assigned more than you have. Cover the shortfall before assigning more."
-            : "Assign dollars to categories until this hits zero — or use Auto-assign with your percentages."}
-        </p>
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] font-bold uppercase tracking-[0.16em] opacity-80">
+            Ready to assign
+          </p>
+          <p className="font-display text-2xl font-bold leading-tight">
+            <Money cents={readyToAssignCents} className="text-inherit" />
+          </p>
+        </div>
 
         {canAutoAssign ? (
-          <form action={autoAssignAction} className="mt-4">
+          <form action={autoAssignAction} className="shrink-0">
             <input type="hidden" name="month" value={month} />
             <PendingSubmitButton
               pendingLabel="Assigning…"
-              className="min-h-11 w-full rounded-2xl bg-moss-500 px-4 py-3 text-sm font-bold text-sand-50 disabled:opacity-60 sm:w-auto"
+              className="min-h-11 rounded-xl bg-moss-500 px-4 text-sm font-bold text-sand-50 disabled:opacity-60"
             >
               Auto-assign
             </PendingSubmitButton>
@@ -66,18 +59,23 @@ export function BudgetOverview({
           <button
             type="button"
             onClick={() => setStage("banner")}
-            className={`mt-4 min-h-11 w-full rounded-2xl px-4 py-3 text-sm font-bold sm:w-auto ${
-              shortfall ? "bg-sand-50 text-coral-600" : "bg-coral-500 text-sand-50"
+            className={`min-h-11 shrink-0 rounded-xl px-4 text-sm font-bold ${
+              shortfall
+                ? "bg-sand-50 text-coral-600 dark:bg-ink-900 dark:text-coral-500"
+                : "bg-coral-500 text-sand-50"
             }`}
           >
             Fix Now
           </button>
         ) : (
-          <p className="mt-4 text-sm font-semibold text-sand-100">
-            Nothing to assign right now.
-          </p>
+          <p className="shrink-0 text-xs font-semibold opacity-80">All assigned</p>
         )}
       </section>
+      {shortfall ? (
+        <p className="mt-2 text-xs font-semibold text-coral-600">
+          You have assigned more than you have — cover the shortfall before assigning more.
+        </p>
+      ) : null}
     </>
   );
 }

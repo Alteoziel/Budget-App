@@ -41,12 +41,12 @@ export default async function AccountRegisterPage({
           today={today}
         />
 
-        <section className="animate-rise rounded-3xl bg-ink-900 px-5 py-5 text-sand-50 shadow-soft">
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-moss-300">
+        <section className="hero-panel animate-rise rounded-2xl px-4 py-4">
+          <p className="text-[11px] font-bold uppercase tracking-[0.16em] opacity-80">
             Balance
           </p>
-          <p className="mt-2 font-display text-4xl font-bold">
-            <Money cents={balanceCents} className="text-sand-50" />
+          <p className="mt-1 font-display text-3xl font-bold">
+            <Money cents={balanceCents} className="text-inherit" />
           </p>
         </section>
 
@@ -55,7 +55,7 @@ export default async function AccountRegisterPage({
           suggestions={matchSuggestions}
         />
 
-        <section className="animate-rise-delay overflow-hidden rounded-3xl bg-sand-50/80 shadow-soft">
+        <section className="animate-rise-delay card-surface overflow-hidden rounded-2xl">
           <RegisterTransactions
             accountId={account.id}
             transactions={transactions}

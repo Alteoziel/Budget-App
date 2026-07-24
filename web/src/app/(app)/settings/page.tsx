@@ -40,8 +40,8 @@ function SettingsCard({
     <div
       className={
         danger
-          ? "space-y-3 rounded-3xl border border-coral-400/30 bg-coral-400/10 p-4"
-          : "space-y-3 rounded-3xl bg-sand-50/80 p-4 shadow-soft"
+          ? "space-y-3 rounded-2xl border border-coral-500/35 bg-coral-400/10 p-4"
+          : "card-surface space-y-3 rounded-2xl p-4"
       }
     >
       <div>

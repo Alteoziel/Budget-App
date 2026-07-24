@@ -19,14 +19,14 @@ export default async function AccountsPage({
   return (
     <AppShell title="Accounts" subtitle="Balances from your transactions">
       <FlashError message={params.error} />
-      <section className="animate-rise rounded-3xl bg-ink-900 px-5 py-5 text-sand-50 shadow-soft">
-        <p className="text-xs font-bold uppercase tracking-[0.18em] text-moss-300">
+      <section className="hero-panel animate-rise rounded-2xl px-4 py-4">
+        <p className="text-[11px] font-bold uppercase tracking-[0.16em] opacity-80">
           All accounts
         </p>
-        <p className="mt-2 font-display text-4xl font-bold">
-          <Money cents={total} className="text-sand-50" />
+        <p className="mt-1 font-display text-3xl font-bold">
+          <Money cents={total} className="text-inherit" />
         </p>
-        <p className="mt-2 text-sm text-sand-100/80">
+        <p className="mt-1 text-sm opacity-80">
           {accounts.length === 0
             ? "No accounts yet"
             : excludedCount === 0
@@ -35,7 +35,7 @@ export default async function AccountsPage({
         </p>
       </section>
 
-      <section className="animate-rise-delay mt-5 overflow-hidden rounded-3xl bg-sand-50/80 shadow-soft">
+      <section className="animate-rise-delay mt-5 card-surface overflow-hidden rounded-2xl">
         {accounts.length > 0 ? (
           <p className="border-b border-ink-900/5 px-4 py-3 text-xs font-semibold text-ink-600">
             Check accounts to include them in the All accounts total. Your choices
@@ -45,7 +45,7 @@ export default async function AccountsPage({
         <AccountsList accounts={accounts} />
       </section>
 
-      <section className="mt-6 rounded-3xl border border-ink-900/5 bg-sand-50/80 p-4 shadow-soft">
+      <section className="mt-6 card-surface rounded-2xl p-4">
         <h2 className="font-display text-lg font-bold text-ink-900">Add account</h2>
         <form action={createAccountAction} className="mt-3 space-y-3">
           <label className="block text-sm font-semibold text-ink-700">

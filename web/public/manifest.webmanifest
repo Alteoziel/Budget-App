@@ -7,7 +7,7 @@
   "id": "/",
   "display": "standalone",
   "display_override": ["standalone", "browser"],
-  "background_color": "#f7f3eb",
+  "background_color": "#e9e3d6",
   "theme_color": "#3f7a5c",
   "orientation": "portrait-primary",
   "lang": "en",

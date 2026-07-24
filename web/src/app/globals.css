@@ -31,17 +31,18 @@
   --c-moss-100: 214 233 221;
   --c-moss-50: 236 245 240;
 
+  /* Card surfaces run near-white so they separate from the page wash. */
   --c-sand-950: 60 51 38;
   --c-sand-900: 92 79 60;
   --c-sand-800: 124 108 84;
-  --c-sand-700: 158 139 111;
-  --c-sand-600: 190 170 140;
-  --c-sand-500: 214 197 170;
-  --c-sand-400: 226 211 184;
-  --c-sand-300: 231 220 197;
-  --c-sand-200: 226 211 184;
-  --c-sand-100: 239 230 214;
-  --c-sand-50: 247 243 235;
+  --c-sand-700: 152 134 108;
+  --c-sand-600: 184 165 137;
+  --c-sand-500: 209 192 166;
+  --c-sand-400: 223 209 186;
+  --c-sand-300: 233 223 205;
+  --c-sand-200: 232 224 208;
+  --c-sand-100: 243 237 226;
+  --c-sand-50: 254 253 250;
 
   --c-coral-950: 68 27 15;
   --c-coral-900: 94 38 21;
@@ -57,53 +58,60 @@
 
   --app-glow: radial-gradient(
       1200px 600px at 10% -10%,
-      rgba(90, 154, 117, 0.28),
+      rgba(63, 122, 92, 0.26),
       transparent 55%
     ),
-    radial-gradient(900px 500px at 100% 0%, rgba(196, 92, 58, 0.14), transparent 50%),
-    linear-gradient(165deg, #f7f3eb 0%, #e8f0ea 45%, #f3ebe2 100%);
-  --shadow-soft: 0 10px 30px rgba(15, 26, 23, 0.08);
-  --page-bg: #f7f3eb;
+    radial-gradient(900px 500px at 100% 0%, rgba(196, 92, 58, 0.12), transparent 50%),
+    linear-gradient(165deg, #e9e3d6 0%, #dde8de 45%, #e6ddd0 100%);
+  --shadow-soft: 0 8px 24px rgba(15, 26, 23, 0.1);
+  --shadow-card: 0 1px 2px rgba(15, 26, 23, 0.06), 0 10px 24px rgba(15, 26, 23, 0.08);
+  --card-line: rgba(21, 36, 31, 0.14);
+  --page-bg: #e9e3d6;
+  --hero-bg: linear-gradient(150deg, #16261f 0%, #1d3a2c 100%);
+  --hero-line: rgba(247, 243, 235, 0.12);
+  --hero-alert-bg: linear-gradient(150deg, #96351c 0%, #b8502f 100%);
+  --hero-alert-line: rgba(247, 243, 235, 0.18);
 }
 
 .dark {
-  /* Text and dark accents become light. */
-  --c-ink-950: 245 248 246;
-  --c-ink-900: 235 241 237;
-  --c-ink-800: 222 231 226;
-  --c-ink-700: 203 216 209;
-  --c-ink-600: 176 194 185;
-  --c-ink-500: 148 170 159;
-  --c-ink-400: 122 146 135;
-  --c-ink-300: 96 120 110;
-  --c-ink-200: 70 92 83;
-  --c-ink-100: 48 66 59;
-  --c-ink-50: 32 46 41;
+  /* Text and dark accents become light. Secondary text stays bright enough to
+   * read against elevated cards, which is where dark mode usually falls apart. */
+  --c-ink-950: 248 251 249;
+  --c-ink-900: 241 246 243;
+  --c-ink-800: 230 238 234;
+  --c-ink-700: 214 226 220;
+  --c-ink-600: 194 209 202;
+  --c-ink-500: 170 189 180;
+  --c-ink-400: 142 164 154;
+  --c-ink-300: 112 136 126;
+  --c-ink-200: 84 106 97;
+  --c-ink-100: 58 76 68;
+  --c-ink-50: 40 54 48;
 
-  --c-moss-950: 236 245 240;
-  --c-moss-900: 214 233 221;
-  --c-moss-800: 186 216 197;
-  --c-moss-700: 143 191 163;
-  --c-moss-600: 116 176 141;
-  --c-moss-500: 90 154 117;
-  --c-moss-400: 72 133 100;
-  --c-moss-300: 120 176 145;
-  --c-moss-200: 52 106 78;
-  --c-moss-100: 36 82 60;
-  --c-moss-50: 24 58 42;
+  --c-moss-950: 240 249 244;
+  --c-moss-900: 220 238 227;
+  --c-moss-800: 194 224 206;
+  --c-moss-700: 160 205 178;
+  --c-moss-600: 134 190 157;
+  --c-moss-500: 108 172 133;
+  --c-moss-400: 86 148 112;
+  --c-moss-300: 132 188 156;
+  --c-moss-200: 60 116 86;
+  --c-moss-100: 40 88 64;
+  --c-moss-50: 26 62 45;
 
-  /* Page and card surfaces become dark. */
+  /* Page and card surfaces become dark; cards sit clearly lighter than the page. */
   --c-sand-950: 247 243 235;
   --c-sand-900: 235 230 220;
   --c-sand-800: 214 207 195;
   --c-sand-700: 180 172 160;
-  --c-sand-600: 128 122 113;
-  --c-sand-500: 78 76 72;
-  --c-sand-400: 58 58 56;
-  --c-sand-300: 48 50 48;
-  --c-sand-200: 40 44 42;
-  --c-sand-100: 32 38 36;
-  --c-sand-50: 24 30 28;
+  --c-sand-600: 140 134 125;
+  --c-sand-500: 96 96 92;
+  --c-sand-400: 76 78 75;
+  --c-sand-300: 64 68 65;
+  --c-sand-200: 56 62 58;
+  --c-sand-100: 46 54 50;
+  --c-sand-50: 38 47 43;
 
   --c-coral-950: 252 240 234;
   --c-coral-900: 247 222 211;
@@ -119,13 +127,19 @@
 
   --app-glow: radial-gradient(
       1200px 600px at 10% -10%,
-      rgba(90, 154, 117, 0.22),
+      rgba(90, 154, 117, 0.16),
       transparent 55%
     ),
-    radial-gradient(900px 500px at 100% 0%, rgba(196, 92, 58, 0.12), transparent 50%),
-    linear-gradient(165deg, #131a18 0%, #16211d 45%, #191d1b 100%);
-  --shadow-soft: 0 10px 30px rgba(0, 0, 0, 0.4);
-  --page-bg: #131a18;
+    radial-gradient(900px 500px at 100% 0%, rgba(196, 92, 58, 0.09), transparent 50%),
+    linear-gradient(165deg, #080c0b 0%, #0b110f 45%, #0a0d0c 100%);
+  --shadow-soft: 0 10px 30px rgba(0, 0, 0, 0.55);
+  --shadow-card: 0 0 0 1px rgba(0, 0, 0, 0.5), 0 12px 28px rgba(0, 0, 0, 0.5);
+  --card-line: rgba(196, 214, 205, 0.28);
+  --page-bg: #080c0b;
+  --hero-bg: linear-gradient(150deg, #163024 0%, #1d4331 100%);
+  --hero-line: rgba(160, 205, 178, 0.45);
+  --hero-alert-bg: linear-gradient(150deg, #5d2314 0%, #8a3a20 100%);
+  --hero-alert-line: rgba(231, 160, 132, 0.5);
 }
 
 html,
@@ -136,6 +150,8 @@ body {
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+  /* Installed app should not pinch-zoom or double-tap zoom like a web page. */
+  touch-action: pan-x pan-y;
 }
 
 body {
@@ -147,18 +163,19 @@ body {
 .dark input,
 .dark select,
 .dark textarea {
-  background-color: rgb(var(--c-sand-100));
+  background-color: rgb(var(--c-sand-200));
   color: rgb(var(--c-ink-900));
-  border-color: rgb(var(--c-ink-200) / 0.6);
+  border-color: rgb(var(--c-ink-300));
 }
 
 .dark input::placeholder,
 .dark textarea::placeholder {
-  color: rgb(var(--c-ink-500));
+  color: rgb(var(--c-ink-400));
 }
 
 .dark .bg-white {
-  background-color: rgb(var(--c-sand-100));
+  background-color: rgb(var(--c-sand-200));
+  border-color: rgb(var(--c-ink-300));
 }
 
 /* Faster taps on iOS — avoid hover sticky / double-tap zoom on controls */
@@ -170,6 +187,51 @@ select,
 textarea,
 label {
   touch-action: manipulation;
+}
+
+@layer components {
+  /* Card surface with a visible edge so stacked cards stay distinguishable. */
+  .card-surface {
+    background-color: rgb(var(--c-sand-50));
+    border: 1px solid var(--card-line);
+    box-shadow: var(--shadow-card);
+  }
+
+  .card-header {
+    background-color: rgb(var(--c-sand-200));
+    border-bottom: 1px solid var(--card-line);
+  }
+
+  .row-divide > * + * {
+    border-top: 1px solid var(--card-line);
+  }
+
+  /*
+   * Hero summary panels (Ready to assign, account totals). These need explicit
+   * colors: a plain `bg-ink-900` flips to near-white in dark mode, which turns
+   * the panel into a glaring block.
+   */
+  .hero-panel {
+    background: var(--hero-bg);
+    border: 1px solid var(--hero-line);
+    color: rgb(var(--c-sand-50));
+    box-shadow: var(--shadow-card);
+  }
+
+  .dark .hero-panel {
+    color: rgb(var(--c-ink-900));
+  }
+
+  .hero-panel-alert {
+    background: var(--hero-alert-bg);
+    border: 1px solid var(--hero-alert-line);
+    color: rgb(var(--c-sand-50));
+    box-shadow: var(--shadow-card);
+  }
+
+  .dark .hero-panel-alert {
+    color: rgb(var(--c-ink-900));
+  }
 }
 
 @layer utilities {

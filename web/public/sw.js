@@ -1,5 +1,5 @@
 /* Alte' Budgeting service worker — offline shell + last-visited pages. */
-const VERSION = "v5";
+const VERSION = "v6";
 const STATIC_CACHE = `alte-static-${VERSION}`;
 const PAGE_CACHE = `alte-pages-${VERSION}`;
 const DATA_CACHE = `alte-data-${VERSION}`;

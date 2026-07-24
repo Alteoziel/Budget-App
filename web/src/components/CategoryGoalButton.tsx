@@ -77,16 +77,40 @@ export function CategoryGoalButton({ row }: { row: BudgetRow }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="mt-1 text-left text-xs font-semibold text-moss-500 hover:underline"
+        className="mt-1.5 block w-full text-left"
       >
         {hasGoal ? (
-          <>
-            {row.goalName ? `${row.goalName}: ` : "Goal: "}
-            {formatCents(row.goalCents!)} {frequencyLabel(row.goalFrequency).toLowerCase()}
-            {row.goalCents! > 0 ? ` · ${progressPct.toFixed(0)}% funded` : ""}
-          </>
+          <span className="block rounded-xl border border-moss-500/30 bg-moss-500/10 px-2.5 py-1.5">
+            <span className="flex items-baseline justify-between gap-2">
+              <span className="min-w-0 truncate text-sm font-bold text-ink-900">
+                {row.goalName || "Goal"}
+              </span>
+              <span className="shrink-0 text-sm font-bold text-moss-600">
+                {formatCents(row.goalCents!)}
+                <span className="text-[11px] font-semibold text-ink-500">
+                  {" / "}
+                  {frequencyLabel(row.goalFrequency).toLowerCase()}
+                </span>
+              </span>
+            </span>
+            {row.goalCents! > 0 ? (
+              <>
+                <span className="mt-1.5 block h-1.5 overflow-hidden rounded-full bg-ink-900/10">
+                  <span
+                    className="block h-full rounded-full bg-moss-500"
+                    style={{ width: `${progressPct}%` }}
+                  />
+                </span>
+                <span className="mt-1 block text-[11px] font-bold text-ink-600">
+                  {progressPct.toFixed(0)}% funded
+                </span>
+              </>
+            ) : null}
+          </span>
         ) : (
-          "Set Goal"
+          <span className="inline-flex min-h-9 items-center rounded-xl border border-dashed border-moss-500/40 px-2.5 text-sm font-bold text-moss-500">
+            Set goal
+          </span>
         )}
       </button>
 
