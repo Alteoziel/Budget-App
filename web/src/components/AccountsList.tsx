@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { DeleteAccountButton } from "@/components/DeleteAccountButton";
 import { Money } from "@/components/Money";
@@ -15,6 +16,7 @@ type AccountRow = {
 };
 
 export function AccountsList({ accounts }: { accounts: AccountRow[] }) {
+  const router = useRouter();
   const [pending, startTransition] = useTransition();
 
   if (accounts.length === 0) {
@@ -57,6 +59,7 @@ export function AccountsList({ accounts }: { accounts: AccountRow[] }) {
                 formData.set("include_in_total", include ? "true" : "false");
                 startTransition(async () => {
                   await setAccountIncludeInTotalAction(formData);
+                  router.refresh();
                 });
               }}
             />

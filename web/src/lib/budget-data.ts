@@ -1,4 +1,5 @@
 import { cache } from "react";
+import { readExcludedAccountIds } from "@/lib/account-total-filter";
 import { requireBudget } from "@/lib/budget-context";
 import { budgetMonthDateRange, currentBudgetMonth } from "@/lib/money";
 import type { Account, BudgetRow, Category, CategoryGroup, Transaction } from "@/lib/types";
@@ -186,11 +187,13 @@ export const getAccountsWithBalances = cache(async (): Promise<
     .eq("budget_id", budget.id)
     .order("name");
 
+  let usedColumn = true;
   // Column may be missing until migration is applied.
   if (
     accountsRes.error &&
     /include_in_total|schema cache|column/i.test(accountsRes.error.message)
   ) {
+    usedColumn = false;
     accountsRes = await supabase
       .from("accounts")
       .select("id,budget_id,name,account_type,currency")
@@ -217,9 +220,15 @@ export const getAccountsWithBalances = cache(async (): Promise<
     balances.set(id, (balances.get(id) ?? 0) + (txn.amount_cents as number));
   }
 
+  const cookieExcluded = usedColumn
+    ? new Set<string>()
+    : await readExcludedAccountIds(budget.id);
+
   return accounts.map((account) => ({
     ...account,
-    include_in_total: account.include_in_total !== false,
+    include_in_total: usedColumn
+      ? account.include_in_total !== false
+      : !cookieExcluded.has(account.id),
     balanceCents: balances.get(account.id) ?? 0,
   }));
 });
