@@ -11,7 +11,8 @@ function isPublicPath(path: string): boolean {
     path.startsWith("/_next") ||
     path.startsWith("/icons") ||
     path === "/manifest.webmanifest" ||
-    path === "/sw.js"
+    path === "/sw.js" ||
+    path === "/offline.html"
   );
 }
 
@@ -61,7 +62,8 @@ export async function updateSession(request: NextRequest) {
     path.startsWith("/_next") ||
     path.startsWith("/icons") ||
     path === "/manifest.webmanifest" ||
-    path === "/sw.js";
+    path === "/sw.js" ||
+    path === "/offline.html";
 
   if (
     !user &&

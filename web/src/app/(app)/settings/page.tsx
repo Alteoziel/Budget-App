@@ -1,5 +1,7 @@
+import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
 import { FlashError } from "@/components/FlashError";
+import { InstallGuide } from "@/components/InstallGuide";
 import { InviteRoleLink } from "@/components/InviteRoleLink";
 import { PendingSubmitButton } from "@/components/PendingSubmitButton";
 import { PlaidLinkButton } from "@/components/PlaidLinkButton";
@@ -136,7 +138,10 @@ export default async function SettingsPage({
     <AppShell title="Settings" subtitle={budget.name}>
       <FlashError message={params.error} />
 
-      <SettingsCategory title="You" description="Your profile and how the app looks.">
+      <SettingsCategory
+        title="You"
+        description="Your profile, appearance, and this device."
+      >
         <SettingsCard title="Profile">
           <ProfileSettings
             email={user.email ?? ""}
@@ -146,6 +151,19 @@ export default async function SettingsPage({
 
         <SettingsCard title="Appearance" description="Choose light, dark, or follow your device.">
           <ThemeToggle />
+        </SettingsCard>
+
+        <SettingsCard
+          title="Install on iPhone"
+          description="Use Alte' from your Home Screen, including offline."
+        >
+          <InstallGuide />
+          <Link
+            href="/offline"
+            className="inline-flex min-h-11 items-center text-sm font-bold text-moss-500"
+          >
+            Open offline cache →
+          </Link>
         </SettingsCard>
       </SettingsCategory>
 

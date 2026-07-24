@@ -1,4 +1,5 @@
 import { DesktopSideNav, MobileBottomNav } from "@/components/AppNav";
+import { AppOfflineShell } from "@/components/AppOfflineShell";
 import { BudgetSwitcher } from "@/components/BudgetSwitcher";
 import { PendingSubmitButton } from "@/components/PendingSubmitButton";
 import { signOutAction } from "@/lib/actions";
@@ -37,7 +38,7 @@ export async function AppChrome({ children }: { children: React.ReactNode }) {
             </form>
           </header>
           <main className="safe-pb mx-auto w-full max-w-lg flex-1 px-4 pb-8 pt-2 sm:px-6 lg:mx-0 lg:max-w-3xl lg:px-8 lg:pb-10">
-            {children}
+            <AppOfflineShell>{children}</AppOfflineShell>
           </main>
         </div>
       </div>
