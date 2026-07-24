@@ -2,14 +2,15 @@ import { AppShell } from "@/components/AppShell";
 import { BudgetManager } from "@/components/BudgetManager";
 import { FlashError } from "@/components/FlashError";
 import { Money } from "@/components/Money";
-import { createCategoryAction } from "@/lib/actions";
+import { PendingSubmitButton } from "@/components/PendingSubmitButton";
+import { autoAssignAction, createCategoryAction } from "@/lib/actions";
 import { getBudgetRows } from "@/lib/budget-data";
 import { formatBudgetMonth } from "@/lib/money";
 
 export default async function BudgetPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; assigned?: string }>;
 }) {
   const params = await searchParams;
   const { month, rows, readyToAssignCents } = await getBudgetRows();
@@ -31,10 +32,16 @@ export default async function BudgetPage({
     }
   }
   const groups = [...groupMap.values()];
+  const assignedCents = params.assigned ? Number(params.assigned) : null;
 
   return (
     <AppShell title="Budget" subtitle={formatBudgetMonth(month)}>
       <FlashError message={params.error} />
+      {assignedCents != null && Number.isFinite(assignedCents) ? (
+        <p className="mb-3 rounded-2xl bg-moss-500/15 px-3 py-2 text-sm font-semibold text-ink-800">
+          Auto-assigned <Money cents={assignedCents} /> across categories.
+        </p>
+      ) : null}
       <section className="animate-rise rounded-3xl bg-ink-900 px-5 py-5 text-sand-50 shadow-soft">
         <p className="text-xs font-bold uppercase tracking-[0.18em] text-moss-300">
           Ready to assign
@@ -43,8 +50,18 @@ export default async function BudgetPage({
           <Money cents={readyToAssignCents} className="text-sand-50" />
         </p>
         <p className="mt-2 text-sm text-sand-200">
-          Assign dollars to categories until this hits zero.
+          Assign dollars to categories until this hits zero — or use Auto-assign with your
+          percentages.
         </p>
+        <form action={autoAssignAction} className="mt-4">
+          <input type="hidden" name="month" value={month} />
+          <PendingSubmitButton
+            pendingLabel="Assigning…"
+            className="min-h-11 w-full rounded-2xl bg-moss-500 px-4 py-3 text-sm font-bold text-sand-50 disabled:opacity-60 sm:w-auto"
+          >
+            Auto-assign
+          </PendingSubmitButton>
+        </form>
       </section>
 
       <section className="animate-rise-delay mt-6">
@@ -59,7 +76,7 @@ export default async function BudgetPage({
             <input
               name="group_name"
               placeholder="Everyday"
-              className="mt-1 w-full rounded-xl border border-ink-900/10 bg-white px-3 py-3 outline-none ring-moss-400 focus:ring-2"
+              className="mt-1 min-h-11 w-full touch-manipulation rounded-xl border border-ink-900/10 bg-white px-3 py-3 outline-none ring-moss-400 focus:ring-2"
             />
           </label>
           <label className="block text-sm font-semibold text-ink-700">
@@ -68,15 +85,15 @@ export default async function BudgetPage({
               required
               name="category_name"
               placeholder="Groceries"
-              className="mt-1 w-full rounded-xl border border-ink-900/10 bg-white px-3 py-3 outline-none ring-moss-400 focus:ring-2"
+              className="mt-1 min-h-11 w-full touch-manipulation rounded-xl border border-ink-900/10 bg-white px-3 py-3 outline-none ring-moss-400 focus:ring-2"
             />
           </label>
-          <button
-            type="submit"
+          <PendingSubmitButton
+            pendingLabel="Adding…"
             className="w-full rounded-2xl bg-ink-900 px-4 py-3 text-sm font-bold text-sand-50 hover:bg-ink-800"
           >
             Add category
-          </button>
+          </PendingSubmitButton>
         </form>
       </section>
     </AppShell>

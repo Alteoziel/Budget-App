@@ -6,7 +6,9 @@ import {
   PLAID_COUNTRY_CODES,
   PLAID_PRODUCTS,
   plaidConfigured,
+  plaidErrorMessage,
 } from "@/lib/plaid/client";
+import { siteOrigin } from "@/lib/site-url";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +38,7 @@ export async function POST() {
 
   try {
     const client = getPlaidClient();
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "");
+    const siteUrl = siteOrigin();
     const response = await client.linkTokenCreate({
       user: { client_user_id: `${active.budget.id}:${user.id}` },
       client_name: "Alte' Budgeting",
@@ -48,7 +50,9 @@ export async function POST() {
 
     return NextResponse.json({ link_token: response.data.link_token });
   } catch (e) {
-    const message = e instanceof Error ? e.message : "Could not create link token.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json(
+      { error: plaidErrorMessage(e, "Could not create link token.") },
+      { status: 500 },
+    );
   }
 }

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { resolveActiveBudget, roleAtLeast } from "@/lib/budget-context";
 import { encryptSecret } from "@/lib/crypto/secrets";
-import { getPlaidClient, plaidConfigured } from "@/lib/plaid/client";
+import { getPlaidClient, plaidConfigured, plaidErrorMessage } from "@/lib/plaid/client";
 import { ensureLocalAccountsForItem, syncPlaidItem } from "@/lib/plaid/sync";
 import { createClient } from "@/lib/supabase/server";
 
@@ -115,7 +115,9 @@ export async function POST(req: Request) {
       errors: syncResult.errors,
     });
   } catch (e) {
-    const message = e instanceof Error ? e.message : "Plaid exchange failed";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json(
+      { error: plaidErrorMessage(e, "Plaid exchange failed") },
+      { status: 500 },
+    );
   }
 }

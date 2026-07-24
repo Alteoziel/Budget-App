@@ -63,3 +63,26 @@ export function mapPlaidAccountType(
   if (t.includes("cash")) return "cash";
   return "other";
 }
+
+/** Extract a user-facing message from Plaid SDK / Axios errors. */
+export function plaidErrorMessage(error: unknown, fallback = "Plaid request failed"): string {
+  if (error && typeof error === "object" && "response" in error) {
+    const data = (
+      error as {
+        response?: {
+          data?: {
+            error_message?: string;
+            error_code?: string;
+            display_message?: string | null;
+          };
+        };
+      }
+    ).response?.data;
+    if (data?.display_message) return data.display_message;
+    if (data?.error_message) {
+      return data.error_code ? `${data.error_code}: ${data.error_message}` : data.error_message;
+    }
+  }
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
+}

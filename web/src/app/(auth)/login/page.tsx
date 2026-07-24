@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PendingSubmitButton } from "@/components/PendingSubmitButton";
 import { signInAction, signUpAction } from "@/lib/actions";
 import { safeInternalPath } from "@/lib/paths";
 
@@ -65,12 +66,12 @@ export default async function LoginPage({
               placeholder="••••••••"
             />
           </label>
-          <button
-            type="submit"
+          <PendingSubmitButton
+            pendingLabel={isSignup ? "Creating…" : "Signing in…"}
             className="w-full rounded-2xl bg-ink-900 px-4 py-3.5 text-sm font-bold text-sand-50 hover:bg-ink-800"
           >
             {isSignup ? "Create account" : "Sign in"}
-          </button>
+          </PendingSubmitButton>
         </form>
 
         <p className="mt-5 text-center text-sm text-ink-600">

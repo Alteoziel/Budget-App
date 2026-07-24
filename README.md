@@ -16,7 +16,9 @@ PR quality gates from the governance stack stay in place.
 
 ## Product
 
-- Multi-budget households with role / shared invite links (Settings)
+- Multi-budget manager with role invite links (unlimited uses, Share on mobile)
+- Category auto-assign by percentage of Ready to Assign
+- Profile management (display name + password)
 - Budget screen (categories, assigned / activity / available)
 - Accounts + transaction register
 - Insights charts + rule-based trend tips
@@ -32,7 +34,7 @@ This app is meant to run on **Vercel**. Secrets live in **Doppler** and sync int
 ### 1. Supabase
 
 1. Create a Supabase project
-2. Run **all** SQL files in [`supabase/migrations/`](supabase/migrations/) in order in the SQL editor (including multi-budget + RLS grants). Skipping these causes logged-in pages to 500.
+2. Run **all** SQL files in [`supabase/migrations/`](supabase/migrations/) in order in the SQL editor (including multi-budget, Plaid, and assign-percent migrations). Skipping these causes logged-in pages to 500.
 3. Enable Email auth (password) under Authentication → Providers
 
 ### 2. Doppler (source of truth for secrets)

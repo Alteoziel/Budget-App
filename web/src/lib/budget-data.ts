@@ -21,7 +21,7 @@ export async function getBudgetRows(month = currentBudgetMonth()): Promise<{
 
   const [
     groupsRes,
-    categoriesRes,
+    categoriesWithPercentRes,
     assignmentsRes,
     priorAssignmentsRes,
     txnsRes,
@@ -35,7 +35,7 @@ export async function getBudgetRows(month = currentBudgetMonth()): Promise<{
       .order("name"),
     supabase
       .from("categories")
-      .select("id,group_id,name,sort_order,hidden,budget_id")
+      .select("id,group_id,name,sort_order,hidden,budget_id,assign_percent")
       .eq("budget_id", budget.id)
       .order("sort_order")
       .order("name"),
@@ -62,15 +62,30 @@ export async function getBudgetRows(month = currentBudgetMonth()): Promise<{
       .lt("occurred_on", range.start),
   ]);
 
+  let categoriesData = categoriesWithPercentRes.data as Array<
+    Category & { assign_percent?: number }
+  > | null;
+  let categoriesError = categoriesWithPercentRes.error;
+  if (categoriesError && /assign_percent/i.test(categoriesError.message)) {
+    const fallback = await supabase
+      .from("categories")
+      .select("id,group_id,name,sort_order,hidden,budget_id")
+      .eq("budget_id", budget.id)
+      .order("sort_order")
+      .order("name");
+    categoriesData = fallback.data as Array<Category & { assign_percent?: number }> | null;
+    categoriesError = fallback.error;
+  }
+
   assertNoError(groupsRes.error, "Failed to load category groups");
-  assertNoError(categoriesRes.error, "Failed to load categories");
+  assertNoError(categoriesError, "Failed to load categories");
   assertNoError(assignmentsRes.error, "Failed to load assignments");
   assertNoError(priorAssignmentsRes.error, "Failed to load prior assignments");
   assertNoError(txnsRes.error, "Failed to load transactions");
   assertNoError(priorTxnsRes.error, "Failed to load prior transactions");
 
   const groups = groupsRes.data;
-  const categories = categoriesRes.data;
+  const categories = categoriesData;
   const assignments = assignmentsRes.data;
   const priorAssignments = priorAssignmentsRes.data;
   const txns = txnsRes.data;
@@ -141,6 +156,7 @@ export async function getBudgetRows(month = currentBudgetMonth()): Promise<{
         assignedCents,
         activityCents,
         availableCents: carryInCents + assignedCents + activityCents,
+        assignPercent: Number(category.assign_percent ?? 0),
       };
     })
     .sort((a, b) =>

@@ -4,6 +4,7 @@ import {
   getPlaidClient,
   mapPlaidAccountType,
   plaidAmountToCents,
+  plaidErrorMessage,
 } from "@/lib/plaid/client";
 import { decryptSecret } from "@/lib/crypto/secrets";
 
@@ -93,7 +94,7 @@ export async function syncPlaidItem(
       })
       .eq("id", item.id);
   } catch (e) {
-    const message = e instanceof Error ? e.message : "Plaid sync failed";
+    const message = plaidErrorMessage(e, "Plaid sync failed");
     result.errors.push(message);
     await supabase
       .from("plaid_items")

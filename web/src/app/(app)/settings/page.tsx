@@ -1,14 +1,18 @@
 import { AppShell } from "@/components/AppShell";
 import { FlashError } from "@/components/FlashError";
+import { InviteRoleLink } from "@/components/InviteRoleLink";
+import { PendingSubmitButton } from "@/components/PendingSubmitButton";
 import { PlaidLinkButton } from "@/components/PlaidLinkButton";
+import { ProfileSettings } from "@/components/ProfileSettings";
 import {
   createBudgetAction,
-  createInviteLinkAction,
+  deleteBudgetAction,
   disconnectPlaidItemAction,
   leaveBudgetAction,
   removeMemberAction,
   renameBudgetAction,
   revokeInviteAction,
+  switchBudgetAction,
   syncPlaidNowAction,
   updateMemberRoleAction,
 } from "@/lib/actions";
@@ -26,6 +30,13 @@ export default async function SettingsPage({
   const budgets = await listUserBudgets();
   const supabase = await createClient();
   const canAdmin = roleAtLeast(role, "admin");
+  const isOwner = role === "owner";
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("display_name")
+    .eq("id", user.id)
+    .maybeSingle();
 
   const { data: memberRows } = await supabase
     .from("budget_members")
@@ -47,11 +58,9 @@ export default async function SettingsPage({
         .order("created_at", { ascending: false })
     : { data: [] as Array<Record<string, unknown>> };
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? "";
   const plaidReady = plaidConfigured();
   const plaidEnv = plaidEnvName();
 
-  // Plaid tables may be absent until that migration is applied — don't 500 Settings.
   let plaidItems: Array<Record<string, unknown>> = [];
   let lastSync: Record<string, unknown> | null = null;
   if (canAdmin) {
@@ -77,61 +86,100 @@ export default async function SettingsPage({
     <AppShell title="Settings" subtitle={budget.name}>
       <FlashError message={params.error} />
 
-      {params.invite ? (
-        <section className="mb-4 rounded-3xl bg-moss-500/10 px-4 py-4 text-sm text-ink-800 shadow-soft">
-          <p className="font-semibold text-ink-900">Invite link ready</p>
-          <p className="mt-1 break-all text-xs">
-            {siteUrl || ""}/invite/{params.invite}
-          </p>
-          <p className="mt-2 text-xs text-ink-600">
-            Kind: {params.kind ?? "shared"}. Copy now — the raw token is only shown once.
-          </p>
-        </section>
-      ) : null}
-
       <section className="space-y-3 rounded-3xl bg-sand-50/80 p-4 shadow-soft">
-        <h2 className="font-display text-lg font-bold text-ink-900">Your budgets</h2>
-        <ul className="space-y-2 text-sm">
+        <h2 className="font-display text-lg font-bold text-ink-900">Your profile</h2>
+        <ProfileSettings
+          email={user.email ?? ""}
+          displayName={profile?.display_name || user.user_metadata?.display_name || ""}
+        />
+      </section>
+
+      <section className="mt-4 space-y-3 rounded-3xl bg-sand-50/80 p-4 shadow-soft">
+        <h2 className="font-display text-lg font-bold text-ink-900">Budgets manager</h2>
+        <p className="text-xs text-ink-600">
+          Create and switch budgets. Rename or delete the active budget below.
+        </p>
+        <ul className="divide-y divide-ink-900/5">
           {budgets.map((b) => (
-            <li key={b.id} className="flex justify-between gap-2">
-              <span className="font-semibold text-ink-900">
-                {b.name}
-                {b.id === budget.id ? " · active" : ""}
-              </span>
-              <span className="text-ink-600">{b.role}</span>
+            <li
+              key={b.id}
+              className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm"
+            >
+              <div>
+                <p className="font-semibold text-ink-900">
+                  {b.name}
+                  {b.id === budget.id ? (
+                    <span className="ml-2 text-xs font-bold text-moss-500">active</span>
+                  ) : null}
+                </p>
+                <p className="text-xs text-ink-600">{b.role}</p>
+              </div>
+              {b.id !== budget.id ? (
+                <form action={switchBudgetAction}>
+                  <input type="hidden" name="budget_id" value={b.id} />
+                  <PendingSubmitButton
+                    pendingLabel="Switching…"
+                    className="rounded-xl bg-ink-900 px-3 py-2 text-xs font-bold text-sand-50"
+                  >
+                    Switch
+                  </PendingSubmitButton>
+                </form>
+              ) : null}
             </li>
           ))}
         </ul>
-        <form action={createBudgetAction} className="mt-3 flex gap-2">
+        <form action={createBudgetAction} className="mt-3 flex flex-col gap-2 sm:flex-row">
           <input
             name="name"
             placeholder="New budget name"
-            className="flex-1 rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm outline-none ring-moss-400 focus:ring-2"
+            className="min-h-11 flex-1 touch-manipulation rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm outline-none ring-moss-400 focus:ring-2"
           />
-          <button
-            type="submit"
+          <PendingSubmitButton
+            pendingLabel="Creating…"
             className="rounded-xl bg-ink-900 px-3 py-2 text-sm font-bold text-sand-50"
           >
-            Create
-          </button>
+            Create budget
+          </PendingSubmitButton>
         </form>
       </section>
 
       {canAdmin ? (
         <section className="mt-4 space-y-3 rounded-3xl bg-sand-50/80 p-4 shadow-soft">
           <h2 className="font-display text-lg font-bold text-ink-900">Rename budget</h2>
-          <form action={renameBudgetAction} className="flex gap-2">
+          <form action={renameBudgetAction} className="flex flex-col gap-2 sm:flex-row">
             <input
               name="name"
               defaultValue={budget.name}
-              className="flex-1 rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm outline-none ring-moss-400 focus:ring-2"
+              className="min-h-11 flex-1 touch-manipulation rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm outline-none ring-moss-400 focus:ring-2"
             />
-            <button
-              type="submit"
+            <PendingSubmitButton
+              pendingLabel="Saving…"
               className="rounded-xl bg-moss-500 px-3 py-2 text-sm font-bold text-sand-50"
             >
               Save
-            </button>
+            </PendingSubmitButton>
+          </form>
+        </section>
+      ) : null}
+
+      {isOwner ? (
+        <section className="mt-4 space-y-3 rounded-3xl border border-coral-400/30 bg-coral-400/10 p-4">
+          <h2 className="font-display text-lg font-bold text-ink-900">Delete budget</h2>
+          <p className="text-xs text-ink-600">
+            Permanently deletes “{budget.name}” and all of its data. Type the name to confirm.
+          </p>
+          <form action={deleteBudgetAction} className="space-y-2">
+            <input
+              name="confirm_name"
+              placeholder={budget.name}
+              className="min-h-11 w-full touch-manipulation rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm outline-none ring-moss-400 focus:ring-2"
+            />
+            <PendingSubmitButton
+              pendingLabel="Deleting…"
+              className="rounded-xl bg-coral-500 px-4 py-2 text-sm font-bold text-sand-50"
+            >
+              Delete budget
+            </PendingSubmitButton>
           </form>
         </section>
       ) : null}
@@ -148,28 +196,34 @@ export default async function SettingsPage({
                 <p className="text-xs text-ink-600">{m.role}</p>
               </div>
               {canAdmin && m.user_id !== user.id ? (
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <form action={updateMemberRoleAction} className="flex gap-1">
                     <input type="hidden" name="member_id" value={m.id} />
                     <select
                       name="role"
                       defaultValue={m.role}
-                      className="rounded-lg border border-ink-900/10 bg-white px-2 py-1 text-xs"
+                      className="min-h-11 touch-manipulation rounded-lg border border-ink-900/10 bg-white px-2 py-1 text-xs"
                     >
                       <option value="viewer">viewer</option>
                       <option value="editor">editor</option>
                       <option value="admin">admin</option>
                       <option value="owner">owner</option>
                     </select>
-                    <button type="submit" className="text-xs font-bold text-moss-500">
+                    <PendingSubmitButton
+                      pendingLabel="…"
+                      className="min-h-11 px-2 text-xs font-bold text-moss-500"
+                    >
                       Update
-                    </button>
+                    </PendingSubmitButton>
                   </form>
                   <form action={removeMemberAction}>
                     <input type="hidden" name="user_id" value={m.user_id} />
-                    <button type="submit" className="text-xs font-bold text-coral-500">
+                    <PendingSubmitButton
+                      pendingLabel="…"
+                      className="min-h-11 px-2 text-xs font-bold text-coral-500"
+                    >
                       Remove
-                    </button>
+                    </PendingSubmitButton>
                   </form>
                 </div>
               ) : null}
@@ -180,54 +234,25 @@ export default async function SettingsPage({
 
       {canAdmin ? (
         <section className="mt-4 space-y-4 rounded-3xl bg-sand-50/80 p-4 shadow-soft">
-          <h2 className="font-display text-lg font-bold text-ink-900">Invite links</h2>
-          <form action={createInviteLinkAction} className="space-y-2">
-            <input type="hidden" name="kind" value="shared" />
-            <button
-              type="submit"
-              className="w-full rounded-2xl bg-ink-900 px-4 py-3 text-sm font-bold text-sand-50"
-            >
-              Generate shared budget link
-            </button>
-            <p className="text-xs text-ink-600">Joins as editor.</p>
-          </form>
-          <form action={createInviteLinkAction} className="space-y-2 border-t border-ink-900/5 pt-4">
-            <input type="hidden" name="kind" value="role" />
-            <label className="block text-sm font-semibold text-ink-700">
-              Role invite
-              <select
-                name="role"
-                defaultValue="editor"
-                className="mt-1 w-full rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm"
-              >
-                <option value="viewer">viewer</option>
-                <option value="editor">editor</option>
-                <option value="admin">admin</option>
-                <option value="owner">owner</option>
-              </select>
-            </label>
-            <button
-              type="submit"
-              className="w-full rounded-2xl bg-moss-500 px-4 py-3 text-sm font-bold text-sand-50"
-            >
-              Generate role invite link
-            </button>
-          </form>
+          <h2 className="font-display text-lg font-bold text-ink-900">Invite by role</h2>
+          <InviteRoleLink />
           <ul className="space-y-2 border-t border-ink-900/5 pt-4 text-xs text-ink-600">
             {(invites ?? []).map((invite) => (
               <li key={String(invite.id)} className="flex items-center justify-between gap-2">
                 <span>
-                  {String(invite.kind)}
-                  {invite.role ? `/${String(invite.role)}` : ""} · uses {String(invite.uses)}
-                  {invite.max_uses != null ? `/${String(invite.max_uses)}` : ""}
+                  {String(invite.role || invite.kind)} · uses {String(invite.uses)}
+                  {invite.max_uses != null ? `/${String(invite.max_uses)}` : " (unlimited)"}
                   {invite.revoked_at ? " · revoked" : ""}
                 </span>
                 {!invite.revoked_at ? (
                   <form action={revokeInviteAction}>
                     <input type="hidden" name="invite_id" value={String(invite.id)} />
-                    <button type="submit" className="font-bold text-coral-500">
+                    <PendingSubmitButton
+                      pendingLabel="…"
+                      className="min-h-11 font-bold text-coral-500"
+                    >
                       Revoke
-                    </button>
+                    </PendingSubmitButton>
                   </form>
                 ) : null}
               </li>
@@ -294,15 +319,21 @@ export default async function SettingsPage({
                   <div className="flex gap-2">
                     <form action={syncPlaidNowAction}>
                       <input type="hidden" name="item_id" value={String(item.id)} />
-                      <button type="submit" className="text-xs font-bold text-moss-500">
+                      <PendingSubmitButton
+                        pendingLabel="Syncing…"
+                        className="min-h-11 text-xs font-bold text-moss-500"
+                      >
                         Sync now
-                      </button>
+                      </PendingSubmitButton>
                     </form>
                     <form action={disconnectPlaidItemAction}>
                       <input type="hidden" name="item_id" value={String(item.id)} />
-                      <button type="submit" className="text-xs font-bold text-coral-500">
+                      <PendingSubmitButton
+                        pendingLabel="…"
+                        className="min-h-11 text-xs font-bold text-coral-500"
+                      >
                         Disconnect
-                      </button>
+                      </PendingSubmitButton>
                     </form>
                   </div>
                 </div>
@@ -315,12 +346,12 @@ export default async function SettingsPage({
       <section className="mt-4 rounded-3xl border border-coral-400/30 bg-coral-400/10 p-4">
         <h2 className="font-display text-lg font-bold text-ink-900">Leave budget</h2>
         <form action={leaveBudgetAction} className="mt-3">
-          <button
-            type="submit"
+          <PendingSubmitButton
+            pendingLabel="Leaving…"
             className="rounded-xl bg-coral-500 px-4 py-2 text-sm font-bold text-sand-50"
           >
             Leave “{budget.name}”
-          </button>
+          </PendingSubmitButton>
         </form>
       </section>
     </AppShell>
