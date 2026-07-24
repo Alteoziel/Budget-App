@@ -18,7 +18,7 @@ export default async function AccountRegisterPage({
 }) {
   const { id } = await params;
   const query = await searchParams;
-  const { account, transactions, balanceCents, categories, matchSuggestions } =
+  const { account, transactions, balanceCents, categories, accounts, matchSuggestions } =
     await getAccountRegister(id);
   if (!account) notFound();
 
@@ -60,6 +60,7 @@ export default async function AccountRegisterPage({
             accountId={account.id}
             transactions={transactions}
             categories={categories}
+            accounts={accounts}
           />
         </section>
 

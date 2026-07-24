@@ -24,6 +24,7 @@ import {
 } from "@/lib/ynab-csv";
 import {
   balanceAnchorExternalId,
+  isBalanceAnchorExternalId,
   suggestMatchForManualTransaction,
 } from "@/lib/transaction-matching";
 
@@ -811,7 +812,8 @@ export async function denyTransactionMatchAction(formData: FormData) {
 export async function updateTransactionAction(formData: FormData) {
   const { supabase, user, budget } = await requireBudget("editor");
   const transactionId = String(formData.get("transaction_id") ?? "");
-  const accountId = String(formData.get("account_id") ?? "");
+  const fromAccountId = String(formData.get("from_account_id") ?? "").trim();
+  const targetAccountId = String(formData.get("account_id") ?? "").trim();
   const payee = String(formData.get("payee") ?? "").trim();
   const memo = String(formData.get("memo") ?? "").trim();
   const occurredOn = String(formData.get("occurred_on") ?? "");
@@ -819,29 +821,53 @@ export async function updateTransactionAction(formData: FormData) {
   const amount = dollarsToCents(String(formData.get("amount") ?? ""));
   const direction = String(formData.get("direction") ?? "outflow");
 
-  if (!transactionId || !accountId) {
+  const errorAccountId = fromAccountId || targetAccountId;
+
+  if (!transactionId || !fromAccountId || !targetAccountId) {
     redirect("/accounts");
   }
   if (amount === null || amount === 0) {
-    redirectWithError(`/accounts/${accountId}`, "Enter a valid non-zero amount.");
+    redirectWithError(`/accounts/${errorAccountId}`, "Enter a valid non-zero amount.");
   }
   const amountValue = amount as number;
   if (!isValidIsoDate(occurredOn)) {
-    redirectWithError(`/accounts/${accountId}`, "Invalid date.");
+    redirectWithError(`/accounts/${errorAccountId}`, "Invalid date.");
   }
   if (direction !== "inflow" && direction !== "outflow") {
-    redirectWithError(`/accounts/${accountId}`, "Invalid direction.");
+    redirectWithError(`/accounts/${errorAccountId}`, "Invalid direction.");
   }
 
   const existing = await supabase
     .from("transactions")
-    .select("id")
+    .select("id,account_id,external_id")
     .eq("budget_id", budget.id)
     .eq("id", transactionId)
-    .eq("account_id", accountId)
+    .eq("account_id", fromAccountId)
     .maybeSingle();
   if (!existing.data?.id) {
-    redirectWithError(`/accounts/${accountId}`, "Transaction not found.");
+    redirectWithError(`/accounts/${fromAccountId}`, "Transaction not found.");
+  }
+
+  if (
+    targetAccountId !== fromAccountId &&
+    isBalanceAnchorExternalId(existing.data.external_id)
+  ) {
+    redirectWithError(
+      `/accounts/${fromAccountId}`,
+      "Balance adjustments stay on their account. Set the balance on the other account instead.",
+    );
+  }
+
+  if (targetAccountId !== fromAccountId) {
+    const target = await supabase
+      .from("accounts")
+      .select("id")
+      .eq("budget_id", budget.id)
+      .eq("id", targetAccountId)
+      .maybeSingle();
+    if (!target.data?.id) {
+      redirectWithError(`/accounts/${fromAccountId}`, "Account not found.");
+    }
   }
 
   const categoryId: string | null = categoryIdRaw || null;
@@ -853,7 +879,7 @@ export async function updateTransactionAction(formData: FormData) {
       .eq("id", categoryId)
       .maybeSingle();
     if (!category.data?.id) {
-      redirectWithError(`/accounts/${accountId}`, "Category not found.");
+      redirectWithError(`/accounts/${fromAccountId}`, "Category not found.");
     }
   }
 
@@ -863,6 +889,7 @@ export async function updateTransactionAction(formData: FormData) {
   const { error } = await supabase
     .from("transactions")
     .update({
+      account_id: targetAccountId,
       category_id: categoryId,
       occurred_on: occurredOn,
       payee,
@@ -872,12 +899,31 @@ export async function updateTransactionAction(formData: FormData) {
     .eq("budget_id", budget.id)
     .eq("id", transactionId);
   if (error) {
-    redirectWithError(`/accounts/${accountId}`, "Could not update transaction.");
+    redirectWithError(`/accounts/${fromAccountId}`, "Could not update transaction.");
   }
 
-  revalidatePath(`/accounts/${accountId}`);
+  if (targetAccountId !== fromAccountId) {
+    // Match suggestions are account-scoped; drop pending ones for this txn.
+    await supabase
+      .from("transaction_match_suggestions")
+      .delete()
+      .eq("budget_id", budget.id)
+      .eq("status", "pending")
+      .or(
+        `manual_transaction_id.eq.${transactionId},bank_transaction_id.eq.${transactionId}`,
+      );
+  }
+
+  revalidatePath(`/accounts/${fromAccountId}`);
+  if (targetAccountId !== fromAccountId) {
+    revalidatePath(`/accounts/${targetAccountId}`);
+  }
   revalidatePath("/accounts");
   revalidatePath("/budget");
+
+  if (targetAccountId !== fromAccountId) {
+    redirect(`/accounts/${targetAccountId}`);
+  }
 }
 
 export async function deleteTransactionAction(formData: FormData) {

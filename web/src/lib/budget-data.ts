@@ -212,6 +212,7 @@ export const getAccountRegister = cache(async (accountId: string): Promise<{
   transactions: Transaction[];
   balanceCents: number;
   categories: Array<{ id: string; name: string; groupName: string }>;
+  accounts: Array<{ id: string; name: string }>;
   matchSuggestions: Array<{
     id: string;
     amountDiffCents: number;
@@ -238,6 +239,7 @@ export const getAccountRegister = cache(async (accountId: string): Promise<{
     categoriesRes,
     groupsRes,
     suggestionsRes,
+    accountsRes,
   ] = await Promise.all([
       supabase
         .from("accounts")
@@ -279,6 +281,11 @@ export const getAccountRegister = cache(async (accountId: string): Promise<{
         .eq("status", "pending")
         .order("created_at", { ascending: false })
         .limit(50),
+      supabase
+        .from("accounts")
+        .select("id,name")
+        .eq("budget_id", budget.id)
+        .order("name"),
     ]);
 
   assertNoError(accountRes.error, "Failed to load account");
@@ -286,6 +293,7 @@ export const getAccountRegister = cache(async (accountId: string): Promise<{
   assertNoError(balanceRes.error, "Failed to load balance");
   assertNoError(categoriesRes.error, "Failed to load categories");
   assertNoError(groupsRes.error, "Failed to load category groups");
+  assertNoError(accountsRes.error, "Failed to load accounts");
   // Suggestions table may not exist until migration is applied.
   if (
     suggestionsRes.error &&
@@ -299,6 +307,7 @@ export const getAccountRegister = cache(async (accountId: string): Promise<{
   const balanceRows = balanceRes.data;
   const categories = categoriesRes.data;
   const groups = groupsRes.data;
+  const allAccounts = accountsRes.data;
 
   const groupMap = new Map((groups ?? []).map((g) => [g.id as string, g.name as string]));
   const balanceCents = (balanceRows ?? []).reduce(
@@ -363,6 +372,10 @@ export const getAccountRegister = cache(async (accountId: string): Promise<{
       id: c.id as string,
       name: c.name as string,
       groupName: groupMap.get(c.group_id as string) ?? "Ungrouped",
+    })),
+    accounts: (allAccounts ?? []).map((row) => ({
+      id: row.id as string,
+      name: row.name as string,
     })),
     matchSuggestions,
   };
