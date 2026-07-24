@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { CategoryGoalButton } from "@/components/CategoryGoalButton";
 import { Money } from "@/components/Money";
 import { PendingSubmitButton } from "@/components/PendingSubmitButton";
 import {
@@ -163,11 +164,9 @@ export function BudgetManager({
                 ) : (
                   <>
                     <div className="flex items-start justify-between gap-3">
-                      <div>
+                      <div className="min-w-0">
                         <p className="font-semibold text-ink-900">{row.categoryName}</p>
-                        <p className="mt-1 text-xs text-ink-600">
-                          Activity <Money cents={row.activityCents} />
-                        </p>
+                        <CategoryGoalButton row={row} />
                       </div>
                       <div className="text-right">
                         <p className="text-xs font-semibold uppercase tracking-wide text-ink-600">

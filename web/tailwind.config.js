@@ -1,41 +1,41 @@
 /** @type {import('tailwindcss').Config} */
+
+// Palette values live as CSS variables (see globals.css) so the whole app can
+// switch between light and dark without per-component class changes.
+const themed = (name) => ({
+  50: `rgb(var(--c-${name}-50) / <alpha-value>)`,
+  100: `rgb(var(--c-${name}-100) / <alpha-value>)`,
+  200: `rgb(var(--c-${name}-200) / <alpha-value>)`,
+  300: `rgb(var(--c-${name}-300) / <alpha-value>)`,
+  400: `rgb(var(--c-${name}-400) / <alpha-value>)`,
+  500: `rgb(var(--c-${name}-500) / <alpha-value>)`,
+  600: `rgb(var(--c-${name}-600) / <alpha-value>)`,
+  700: `rgb(var(--c-${name}-700) / <alpha-value>)`,
+  800: `rgb(var(--c-${name}-800) / <alpha-value>)`,
+  900: `rgb(var(--c-${name}-900) / <alpha-value>)`,
+  950: `rgb(var(--c-${name}-950) / <alpha-value>)`,
+});
+
 module.exports = {
   content: ["./src/**/*.{js,ts,jsx,tsx,mdx}"],
+  darkMode: "class",
   theme: {
     extend: {
       colors: {
-        ink: {
-          950: "#0f1a17",
-          900: "#15241f",
-          800: "#1e332c",
-          700: "#2a463c",
-          600: "#3a5c4f",
-        },
-        moss: {
-          500: "#3f7a5c",
-          400: "#5a9a75",
-          300: "#8fbfa3",
-        },
-        sand: {
-          50: "#f7f3eb",
-          100: "#efe6d6",
-          200: "#e2d3b8",
-        },
-        coral: {
-          500: "#c45c3a",
-          400: "#d97855",
-        },
+        ink: themed("ink"),
+        moss: themed("moss"),
+        sand: themed("sand"),
+        coral: themed("coral"),
       },
       fontFamily: {
         display: ["var(--font-display)", "Georgia", "serif"],
         sans: ["var(--font-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
       },
       backgroundImage: {
-        "app-glow":
-          "radial-gradient(1200px 600px at 10% -10%, rgba(90,154,117,0.28), transparent 55%), radial-gradient(900px 500px at 100% 0%, rgba(196,92,58,0.14), transparent 50%), linear-gradient(165deg, #f7f3eb 0%, #e8f0ea 45%, #f3ebe2 100%)",
+        "app-glow": "var(--app-glow)",
       },
       boxShadow: {
-        soft: "0 10px 30px rgba(15, 26, 23, 0.08)",
+        soft: "var(--shadow-soft)",
       },
       keyframes: {
         rise: {

@@ -4,6 +4,7 @@ import { InviteRoleLink } from "@/components/InviteRoleLink";
 import { PendingSubmitButton } from "@/components/PendingSubmitButton";
 import { PlaidLinkButton } from "@/components/PlaidLinkButton";
 import { ProfileSettings } from "@/components/ProfileSettings";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import {
   createBudgetAction,
   deleteBudgetAction,
@@ -135,12 +136,16 @@ export default async function SettingsPage({
     <AppShell title="Settings" subtitle={budget.name}>
       <FlashError message={params.error} />
 
-      <SettingsCategory title="You" description="Your profile across this app.">
+      <SettingsCategory title="You" description="Your profile and how the app looks.">
         <SettingsCard title="Profile">
           <ProfileSettings
             email={user.email ?? ""}
             displayName={profile?.display_name || user.user_metadata?.display_name || ""}
           />
+        </SettingsCard>
+
+        <SettingsCard title="Appearance" description="Choose light, dark, or follow your device.">
+          <ThemeToggle />
         </SettingsCard>
       </SettingsCategory>
 

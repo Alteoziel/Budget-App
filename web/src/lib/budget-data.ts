@@ -2,7 +2,14 @@ import { cache } from "react";
 import { readExcludedAccountIds } from "@/lib/account-total-filter";
 import { requireBudget } from "@/lib/budget-context";
 import { budgetMonthDateRange, currentBudgetMonth } from "@/lib/money";
-import type { Account, BudgetRow, Category, CategoryGroup, Transaction } from "@/lib/types";
+import type {
+  Account,
+  BudgetRow,
+  Category,
+  CategoryGroup,
+  GoalFrequency,
+  Transaction,
+} from "@/lib/types";
 
 function assertNoError(error: { message: string } | null, label: string) {
   if (error) {
@@ -10,16 +17,42 @@ function assertNoError(error: { message: string } | null, label: string) {
   }
 }
 
+const CATEGORY_COLUMNS =
+  "id,group_id,name,sort_order,hidden,budget_id,assign_percent,goal_cents,goal_name,goal_frequency,goal_note";
+
+type CategoryRecord = Category & {
+  assign_percent?: number;
+  goal_cents?: number | null;
+  goal_name?: string | null;
+  goal_frequency?: string | null;
+  goal_note?: string | null;
+};
+
+const GOAL_FREQUENCIES = new Set([
+  "weekly",
+  "monthly",
+  "quarterly",
+  "yearly",
+  "once",
+]);
+
+function toGoalFrequency(value: unknown): GoalFrequency {
+  return GOAL_FREQUENCIES.has(String(value))
+    ? (String(value) as GoalFrequency)
+    : "monthly";
+}
+
 export const getBudgetRows = cache(async (month = currentBudgetMonth()): Promise<{
   month: string;
   rows: BudgetRow[];
   readyToAssignCents: number;
+  groups: Array<{ id: string; name: string }>;
 }> => {
   const ctx = await requireBudget("viewer");
   const { supabase, budget } = ctx;
 
   const range = budgetMonthDateRange(month);
-  if (!range) return { month, rows: [], readyToAssignCents: 0 };
+  if (!range) return { month, rows: [], readyToAssignCents: 0, groups: [] };
 
   const [
     groupsRes,
@@ -37,7 +70,7 @@ export const getBudgetRows = cache(async (month = currentBudgetMonth()): Promise
       .order("name"),
     supabase
       .from("categories")
-      .select("id,group_id,name,sort_order,hidden,budget_id,assign_percent")
+      .select(CATEGORY_COLUMNS)
       .eq("budget_id", budget.id)
       .order("sort_order")
       .order("name"),
@@ -64,19 +97,29 @@ export const getBudgetRows = cache(async (month = currentBudgetMonth()): Promise
       .lt("occurred_on", range.start),
   ]);
 
-  let categoriesData = categoriesWithPercentRes.data as Array<
-    Category & { assign_percent?: number }
-  > | null;
+  let categoriesData = categoriesWithPercentRes.data as CategoryRecord[] | null;
   let categoriesError = categoriesWithPercentRes.error;
-  if (categoriesError && /assign_percent/i.test(categoriesError.message)) {
-    const fallback = await supabase
+  // Older databases may be missing assign_percent and/or the goal columns.
+  if (categoriesError && /assign_percent|goal_|column|schema cache/i.test(categoriesError.message)) {
+    const withPercent = await supabase
       .from("categories")
-      .select("id,group_id,name,sort_order,hidden,budget_id")
+      .select("id,group_id,name,sort_order,hidden,budget_id,assign_percent")
       .eq("budget_id", budget.id)
       .order("sort_order")
       .order("name");
-    categoriesData = fallback.data as Array<Category & { assign_percent?: number }> | null;
-    categoriesError = fallback.error;
+    if (withPercent.error) {
+      const bare = await supabase
+        .from("categories")
+        .select("id,group_id,name,sort_order,hidden,budget_id")
+        .eq("budget_id", budget.id)
+        .order("sort_order")
+        .order("name");
+      categoriesData = bare.data as CategoryRecord[] | null;
+      categoriesError = bare.error;
+    } else {
+      categoriesData = withPercent.data as CategoryRecord[] | null;
+      categoriesError = withPercent.error;
+    }
   }
 
   assertNoError(groupsRes.error, "Failed to load category groups");
@@ -143,7 +186,7 @@ export const getBudgetRows = cache(async (month = currentBudgetMonth()): Promise
     0,
   );
 
-  const rows: BudgetRow[] = ((categories as Category[] | null) ?? [])
+  const rows: BudgetRow[] = ((categories as CategoryRecord[] | null) ?? [])
     .filter((c) => !c.hidden)
     .map((category) => {
       const group = groupMap.get(category.group_id);
@@ -159,6 +202,11 @@ export const getBudgetRows = cache(async (month = currentBudgetMonth()): Promise
         activityCents,
         availableCents: carryInCents + assignedCents + activityCents,
         assignPercent: Number(category.assign_percent ?? 0),
+        goalCents:
+          category.goal_cents == null ? null : Number(category.goal_cents),
+        goalName: category.goal_name ?? "",
+        goalFrequency: toGoalFrequency(category.goal_frequency),
+        goalNote: category.goal_note ?? "",
       };
     })
     .sort((a, b) =>
@@ -170,7 +218,14 @@ export const getBudgetRows = cache(async (month = currentBudgetMonth()): Promise
   const readyToAssignCents =
     uncategorizedPrior - priorAssignedTotal + uncategorizedCurrent - totalAssigned;
 
-  return { month, rows, readyToAssignCents };
+  return {
+    month,
+    rows,
+    readyToAssignCents,
+    groups: ((groups as CategoryGroup[] | null) ?? [])
+      .filter((group) => !group.hidden)
+      .map((group) => ({ id: group.id, name: group.name })),
+  };
 });
 
 export const getAccountsWithBalances = cache(async (): Promise<

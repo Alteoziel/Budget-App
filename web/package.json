@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "test": "tsx --tsconfig tsconfig.json src/lib/ynab-csv.test.ts && tsx --tsconfig tsconfig.json src/lib/money.test.ts && tsx --tsconfig tsconfig.json src/lib/paths.test.ts && tsx --tsconfig tsconfig.json src/lib/insights/tips.test.ts && tsx --tsconfig tsconfig.json src/lib/plaid/client.test.ts && tsx --tsconfig tsconfig.json src/lib/crypto/secrets.test.ts && tsx --tsconfig tsconfig.json src/lib/auto-assign.test.ts && tsx --tsconfig tsconfig.json src/lib/transaction-matching.test.ts"
+    "test": "tsx --tsconfig tsconfig.json src/lib/ynab-csv.test.ts && tsx --tsconfig tsconfig.json src/lib/money.test.ts && tsx --tsconfig tsconfig.json src/lib/paths.test.ts && tsx --tsconfig tsconfig.json src/lib/insights/tips.test.ts && tsx --tsconfig tsconfig.json src/lib/plaid/client.test.ts && tsx --tsconfig tsconfig.json src/lib/crypto/secrets.test.ts && tsx --tsconfig tsconfig.json src/lib/auto-assign.test.ts && tsx --tsconfig tsconfig.json src/lib/transaction-matching.test.ts && tsx --tsconfig tsconfig.json src/lib/insights/derive.test.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.3",

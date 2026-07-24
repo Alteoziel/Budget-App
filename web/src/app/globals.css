@@ -2,11 +2,130 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Light theme. `ink` is text/dark surfaces, `sand` is page/card surfaces.
+ * Dark mode swaps those two ramps so existing utility classes keep working.
+ */
 :root {
-  --ink: #15241f;
-  --moss: #3f7a5c;
-  --sand: #f7f3eb;
-  --coral: #c45c3a;
+  --c-ink-950: 15 26 23;
+  --c-ink-900: 21 36 31;
+  --c-ink-800: 30 51 44;
+  --c-ink-700: 42 70 60;
+  --c-ink-600: 58 92 79;
+  --c-ink-500: 82 118 103;
+  --c-ink-400: 116 150 134;
+  --c-ink-300: 155 182 168;
+  --c-ink-200: 195 212 202;
+  --c-ink-100: 223 233 227;
+  --c-ink-50: 241 246 243;
+
+  --c-moss-950: 16 40 29;
+  --c-moss-900: 22 54 39;
+  --c-moss-800: 28 70 50;
+  --c-moss-700: 42 96 70;
+  --c-moss-600: 52 106 78;
+  --c-moss-500: 63 122 92;
+  --c-moss-400: 90 154 117;
+  --c-moss-300: 143 191 163;
+  --c-moss-200: 186 216 197;
+  --c-moss-100: 214 233 221;
+  --c-moss-50: 236 245 240;
+
+  --c-sand-950: 60 51 38;
+  --c-sand-900: 92 79 60;
+  --c-sand-800: 124 108 84;
+  --c-sand-700: 158 139 111;
+  --c-sand-600: 190 170 140;
+  --c-sand-500: 214 197 170;
+  --c-sand-400: 226 211 184;
+  --c-sand-300: 231 220 197;
+  --c-sand-200: 226 211 184;
+  --c-sand-100: 239 230 214;
+  --c-sand-50: 247 243 235;
+
+  --c-coral-950: 68 27 15;
+  --c-coral-900: 94 38 21;
+  --c-coral-800: 122 52 29;
+  --c-coral-700: 156 68 40;
+  --c-coral-600: 178 79 47;
+  --c-coral-500: 196 92 58;
+  --c-coral-400: 217 120 85;
+  --c-coral-300: 231 160 132;
+  --c-coral-200: 240 195 176;
+  --c-coral-100: 247 222 211;
+  --c-coral-50: 252 240 234;
+
+  --app-glow: radial-gradient(
+      1200px 600px at 10% -10%,
+      rgba(90, 154, 117, 0.28),
+      transparent 55%
+    ),
+    radial-gradient(900px 500px at 100% 0%, rgba(196, 92, 58, 0.14), transparent 50%),
+    linear-gradient(165deg, #f7f3eb 0%, #e8f0ea 45%, #f3ebe2 100%);
+  --shadow-soft: 0 10px 30px rgba(15, 26, 23, 0.08);
+  --page-bg: #f7f3eb;
+}
+
+.dark {
+  /* Text and dark accents become light. */
+  --c-ink-950: 245 248 246;
+  --c-ink-900: 235 241 237;
+  --c-ink-800: 222 231 226;
+  --c-ink-700: 203 216 209;
+  --c-ink-600: 176 194 185;
+  --c-ink-500: 148 170 159;
+  --c-ink-400: 122 146 135;
+  --c-ink-300: 96 120 110;
+  --c-ink-200: 70 92 83;
+  --c-ink-100: 48 66 59;
+  --c-ink-50: 32 46 41;
+
+  --c-moss-950: 236 245 240;
+  --c-moss-900: 214 233 221;
+  --c-moss-800: 186 216 197;
+  --c-moss-700: 143 191 163;
+  --c-moss-600: 116 176 141;
+  --c-moss-500: 90 154 117;
+  --c-moss-400: 72 133 100;
+  --c-moss-300: 120 176 145;
+  --c-moss-200: 52 106 78;
+  --c-moss-100: 36 82 60;
+  --c-moss-50: 24 58 42;
+
+  /* Page and card surfaces become dark. */
+  --c-sand-950: 247 243 235;
+  --c-sand-900: 235 230 220;
+  --c-sand-800: 214 207 195;
+  --c-sand-700: 180 172 160;
+  --c-sand-600: 128 122 113;
+  --c-sand-500: 78 76 72;
+  --c-sand-400: 58 58 56;
+  --c-sand-300: 48 50 48;
+  --c-sand-200: 40 44 42;
+  --c-sand-100: 32 38 36;
+  --c-sand-50: 24 30 28;
+
+  --c-coral-950: 252 240 234;
+  --c-coral-900: 247 222 211;
+  --c-coral-800: 240 195 176;
+  --c-coral-700: 231 160 132;
+  --c-coral-600: 226 138 108;
+  --c-coral-500: 213 111 78;
+  --c-coral-400: 196 92 58;
+  --c-coral-300: 173 80 50;
+  --c-coral-200: 142 64 39;
+  --c-coral-100: 104 46 27;
+  --c-coral-50: 74 32 19;
+
+  --app-glow: radial-gradient(
+      1200px 600px at 10% -10%,
+      rgba(90, 154, 117, 0.22),
+      transparent 55%
+    ),
+    radial-gradient(900px 500px at 100% 0%, rgba(196, 92, 58, 0.12), transparent 50%),
+    linear-gradient(165deg, #131a18 0%, #16211d 45%, #191d1b 100%);
+  --shadow-soft: 0 10px 30px rgba(0, 0, 0, 0.4);
+  --page-bg: #131a18;
 }
 
 html,
@@ -20,8 +139,26 @@ html {
 }
 
 body {
-  color: var(--ink);
-  background: #f7f3eb;
+  color: rgb(var(--c-ink-900));
+  background: var(--page-bg);
+}
+
+/* Inputs are explicitly bg-white in markup; keep them readable when dark. */
+.dark input,
+.dark select,
+.dark textarea {
+  background-color: rgb(var(--c-sand-100));
+  color: rgb(var(--c-ink-900));
+  border-color: rgb(var(--c-ink-200) / 0.6);
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: rgb(var(--c-ink-500));
+}
+
+.dark .bg-white {
+  background-color: rgb(var(--c-sand-100));
 }
 
 /* Faster taps on iOS — avoid hover sticky / double-tap zoom on controls */
