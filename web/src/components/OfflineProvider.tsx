@@ -149,6 +149,11 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
         if (!navigator.onLine || cancelled) return;
         await refreshSnapshot();
         await flushOutbox();
+        // Warm the Offline page in the service-worker page cache.
+        void fetch("/offline", {
+          credentials: "same-origin",
+          headers: { Accept: "text/html" },
+        });
       })();
     }, 0);
     return () => {

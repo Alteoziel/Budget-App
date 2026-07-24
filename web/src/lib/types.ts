@@ -60,6 +60,15 @@ export type Transaction = {
   external_id?: string | null;
 };
 
+export type GoalFrequency = "weekly" | "monthly" | "quarterly" | "yearly" | "once";
+
+export type CategoryGoal = {
+  goalCents: number | null;
+  goalName: string;
+  goalFrequency: GoalFrequency;
+  goalNote: string;
+};
+
 export type BudgetRow = {
   categoryId: string;
   groupId: string;
@@ -69,7 +78,7 @@ export type BudgetRow = {
   activityCents: number;
   availableCents: number;
   assignPercent: number;
-};
+} & CategoryGoal;
 
 export type TrendFinding = {
   id: string;
