@@ -6,6 +6,7 @@ import { InviteRoleLink } from "@/components/InviteRoleLink";
 import { PendingSubmitButton } from "@/components/PendingSubmitButton";
 import { PlaidLinkButton } from "@/components/PlaidLinkButton";
 import { ProfileSettings } from "@/components/ProfileSettings";
+import { SettingsCategory } from "@/components/SettingsCategory";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import {
   createBudgetAction,
@@ -23,26 +24,6 @@ import {
 import { listUserBudgets, requireBudget, roleAtLeast } from "@/lib/budget-context";
 import { createClient } from "@/lib/supabase/server";
 import { plaidConfigured, plaidEnvName } from "@/lib/plaid/client";
-
-function SettingsCategory({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="mt-8 first:mt-0">
-      <div className="mb-3 px-1">
-        <h2 className="font-display text-xl font-bold text-ink-900">{title}</h2>
-        {description ? <p className="mt-1 text-sm text-ink-600">{description}</p> : null}
-      </div>
-      <div className="space-y-4">{children}</div>
-    </section>
-  );
-}
 
 function SettingsCard({
   title,

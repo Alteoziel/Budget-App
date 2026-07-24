@@ -4,6 +4,7 @@ import { requireBudget } from "@/lib/budget-context";
 import { budgetMonthDateRange, currentBudgetMonth } from "@/lib/money";
 import type {
   Account,
+  AssignMode,
   BudgetRow,
   Category,
   CategoryGroup,
@@ -18,15 +19,21 @@ function assertNoError(error: { message: string } | null, label: string) {
 }
 
 const CATEGORY_COLUMNS =
-  "id,group_id,name,sort_order,hidden,budget_id,assign_percent,goal_cents,goal_name,goal_frequency,goal_note";
+  "id,group_id,name,sort_order,hidden,budget_id,assign_percent,assign_mode,assign_fixed_cents,goal_cents,goal_name,goal_frequency,goal_note";
 
 type CategoryRecord = Category & {
   assign_percent?: number;
+  assign_mode?: string | null;
+  assign_fixed_cents?: number | null;
   goal_cents?: number | null;
   goal_name?: string | null;
   goal_frequency?: string | null;
   goal_note?: string | null;
 };
+
+function toAssignMode(value: unknown): AssignMode {
+  return value === "fixed" ? "fixed" : "percent";
+}
 
 const GOAL_FREQUENCIES = new Set([
   "weekly",
@@ -99,8 +106,13 @@ export const getBudgetRows = cache(async (month = currentBudgetMonth()): Promise
 
   let categoriesData = categoriesWithPercentRes.data as CategoryRecord[] | null;
   let categoriesError = categoriesWithPercentRes.error;
-  // Older databases may be missing assign_percent and/or the goal columns.
-  if (categoriesError && /assign_percent|goal_|column|schema cache/i.test(categoriesError.message)) {
+  // Older databases may be missing assign / goal columns.
+  if (
+    categoriesError &&
+    /assign_percent|assign_mode|assign_fixed|goal_|column|schema cache/i.test(
+      categoriesError.message,
+    )
+  ) {
     const withPercent = await supabase
       .from("categories")
       .select("id,group_id,name,sort_order,hidden,budget_id,assign_percent")
@@ -202,6 +214,8 @@ export const getBudgetRows = cache(async (month = currentBudgetMonth()): Promise
         activityCents,
         availableCents: carryInCents + assignedCents + activityCents,
         assignPercent: Number(category.assign_percent ?? 0),
+        assignMode: toAssignMode(category.assign_mode),
+        assignFixedCents: Number(category.assign_fixed_cents ?? 0),
         goalCents:
           category.goal_cents == null ? null : Number(category.goal_cents),
         goalName: category.goal_name ?? "",

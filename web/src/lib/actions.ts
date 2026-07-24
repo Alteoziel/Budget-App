@@ -538,17 +538,48 @@ export async function deleteCategoryGroupAction(formData: FormData) {
   revalidatePath("/accounts");
 }
 
-export async function assignCategoryAction(formData: FormData) {
+async function upsertAssignedCents(options: {
+  supabase: Awaited<ReturnType<typeof requireBudget>>["supabase"];
+  userId: string;
+  budgetId: string;
+  categoryId: string;
+  month: string;
+  assignedCents: number;
+}) {
+  const monthUpsert = await options.supabase.from("budget_months").upsert(
+    { user_id: options.userId, budget_id: options.budgetId, month: options.month },
+    { onConflict: "budget_id,month" },
+  );
+  if (monthUpsert.error) {
+    redirectWithError("/budget", "Could not save budget month.");
+  }
+
+  const { error } = await options.supabase.from("category_months").upsert(
+    {
+      user_id: options.userId,
+      budget_id: options.budgetId,
+      category_id: options.categoryId,
+      month: options.month,
+      assigned_cents: options.assignedCents,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "budget_id,category_id,month" },
+  );
+  if (error) {
+    redirectWithError("/budget", "Could not save assignment.");
+  }
+}
+
+/** One amount box: +, −, set, auto:%, auto:# */
+export async function categoryAmountAction(formData: FormData) {
   const { supabase, user, budget } = await requireBudget("editor");
   const categoryId = String(formData.get("category_id") ?? "");
   const month = String(formData.get("month") ?? currentBudgetMonth());
-  const assigned = dollarsToCents(String(formData.get("assigned") ?? "0"));
+  const intent = String(formData.get("intent") ?? "");
+  const amountRaw = String(formData.get("amount") ?? "").trim();
 
   if (!categoryId || !isBudgetMonth(month)) {
     redirectWithError("/budget", "Invalid assignment.");
-  }
-  if (assigned === null) {
-    redirectWithError("/budget", "Enter a valid dollar amount.");
   }
 
   const owned = await supabase
@@ -561,55 +592,106 @@ export async function assignCategoryAction(formData: FormData) {
     redirectWithError("/budget", "Category not found.");
   }
 
-  const monthUpsert = await supabase.from("budget_months").upsert(
-    { user_id: user.id, budget_id: budget.id, month },
-    { onConflict: "budget_id,month" },
-  );
-  if (monthUpsert.error) {
-    redirectWithError("/budget", "Could not save budget month.");
+  if (intent === "auto_percent") {
+    const percent = Number(amountRaw);
+    if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
+      redirectWithError("/budget", "Enter a percentage between 0 and 100.");
+    }
+    const { error } = await supabase
+      .from("categories")
+      .update({
+        assign_mode: "percent",
+        assign_percent: Math.round(percent * 100) / 100,
+      })
+      .eq("budget_id", budget.id)
+      .eq("id", categoryId);
+    if (error) {
+      redirectWithError(
+        "/budget",
+        /assign_mode|assign_percent|column|schema cache/i.test(error.message)
+          ? "Run the assign_fixed_cents migration in Supabase, then try again."
+          : "Could not save auto:% rule.",
+      );
+    }
+    revalidatePath("/budget");
+    return;
   }
 
-  const { error } = await supabase.from("category_months").upsert(
-    {
-      user_id: user.id,
-      budget_id: budget.id,
-      category_id: categoryId,
-      month,
-      assigned_cents: assigned,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "budget_id,category_id,month" },
-  );
-  if (error) {
-    redirectWithError("/budget", "Could not save assignment.");
+  if (intent === "auto_fixed") {
+    const cents = dollarsToCents(amountRaw || "0");
+    if (cents === null || cents < 0) {
+      redirectWithError("/budget", "Enter a valid dollar amount for auto:#.");
+    }
+    const { error } = await supabase
+      .from("categories")
+      .update({
+        assign_mode: "fixed",
+        assign_fixed_cents: cents,
+      })
+      .eq("budget_id", budget.id)
+      .eq("id", categoryId);
+    if (error) {
+      redirectWithError(
+        "/budget",
+        /assign_mode|assign_fixed|column|schema cache/i.test(error.message)
+          ? "Run the assign_fixed_cents migration in Supabase, then try again."
+          : "Could not save auto:# rule.",
+      );
+    }
+    revalidatePath("/budget");
+    return;
   }
 
+  const delta = dollarsToCents(amountRaw || "0");
+  if (delta === null) {
+    redirectWithError("/budget", "Enter a valid dollar amount.");
+  }
+
+  const currentRes = await supabase
+    .from("category_months")
+    .select("assigned_cents")
+    .eq("budget_id", budget.id)
+    .eq("category_id", categoryId)
+    .eq("month", month)
+    .maybeSingle();
+  if (currentRes.error) {
+    redirectWithError("/budget", "Could not load current assignment.");
+  }
+  const current = Number(currentRes.data?.assigned_cents ?? 0);
+
+  let next = current;
+  if (intent === "add") next = current + delta;
+  else if (intent === "sub") next = current - delta;
+  else if (intent === "set") next = delta;
+  else redirectWithError("/budget", "Unknown amount action.");
+
+  await upsertAssignedCents({
+    supabase,
+    userId: user.id,
+    budgetId: budget.id,
+    categoryId,
+    month,
+    assignedCents: next,
+  });
   revalidatePath("/budget");
 }
 
-export async function setCategoryAssignPercentAction(formData: FormData) {
-  const { supabase, budget } = await requireBudget("editor");
-  const categoryId = String(formData.get("category_id") ?? "");
-  const raw = String(formData.get("assign_percent") ?? "").trim();
-  const percent = Number(raw);
-  if (!categoryId || !Number.isFinite(percent) || percent < 0 || percent > 100) {
-    redirectWithError("/budget", "Enter a percentage between 0 and 100.");
+/** @deprecated Prefer categoryAmountAction with intent=set */
+export async function assignCategoryAction(formData: FormData) {
+  if (!formData.get("intent")) formData.set("intent", "set");
+  if (!formData.get("amount") && formData.get("assigned") != null) {
+    formData.set("amount", String(formData.get("assigned")));
   }
+  return categoryAmountAction(formData);
+}
 
-  const { error } = await supabase
-    .from("categories")
-    .update({ assign_percent: Math.round(percent * 100) / 100 })
-    .eq("budget_id", budget.id)
-    .eq("id", categoryId);
-  if (error) {
-    redirectWithError(
-      "/budget",
-      /assign_percent/i.test(error.message)
-        ? "Run the assign_percent migration in Supabase, then try again."
-        : "Could not save percentage.",
-    );
+/** @deprecated Prefer categoryAmountAction with intent=auto_percent */
+export async function setCategoryAssignPercentAction(formData: FormData) {
+  if (!formData.get("intent")) formData.set("intent", "auto_percent");
+  if (!formData.get("amount") && formData.get("assign_percent") != null) {
+    formData.set("amount", String(formData.get("assign_percent")));
   }
-  revalidatePath("/budget");
+  return categoryAmountAction(formData);
 }
 
 export async function autoAssignAction(formData: FormData) {
@@ -630,7 +712,9 @@ export async function autoAssignAction(formData: FormData) {
     readyToAssignCents,
     rows.map((row) => ({
       categoryId: row.categoryId,
+      assignMode: row.assignMode,
       assignPercent: row.assignPercent,
+      assignFixedCents: row.assignFixedCents,
       currentAssignedCents: row.assignedCents,
     })),
   );

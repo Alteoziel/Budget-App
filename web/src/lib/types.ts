@@ -31,6 +31,8 @@ export type CategoryGroup = {
   hidden: boolean;
 };
 
+export type AssignMode = "percent" | "fixed";
+
 export type Category = {
   id: string;
   budget_id: string;
@@ -39,6 +41,8 @@ export type Category = {
   sort_order: number;
   hidden: boolean;
   assign_percent?: number;
+  assign_mode?: AssignMode;
+  assign_fixed_cents?: number;
 };
 
 export type CategoryMonth = {
@@ -78,6 +82,8 @@ export type BudgetRow = {
   activityCents: number;
   availableCents: number;
   assignPercent: number;
+  assignMode: AssignMode;
+  assignFixedCents: number;
 } & CategoryGoal;
 
 export type TrendFinding = {
