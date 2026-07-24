@@ -928,13 +928,14 @@ export async function createBudgetAction(formData: FormData) {
   if (created.error || !created.data?.id) {
     redirectWithError("/settings", "Could not create budget.");
   }
+  const newBudgetId = created.data!.id;
   await supabase.from("budget_members").insert({
-    budget_id: created.data.id,
+    budget_id: newBudgetId,
     user_id: user.id,
     role: "owner",
   });
-  await setActiveBudgetId(created.data.id);
-  await supabase.from("profiles").update({ current_budget_id: created.data.id }).eq("id", user.id);
+  await setActiveBudgetId(newBudgetId);
+  await supabase.from("profiles").update({ current_budget_id: newBudgetId }).eq("id", user.id);
   revalidatePath("/", "layout");
   redirect("/settings");
 }

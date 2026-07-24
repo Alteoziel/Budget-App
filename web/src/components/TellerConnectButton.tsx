@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useSyncExternalStore, useState } from "react";
 
 declare global {
   interface Window {
@@ -26,40 +26,80 @@ type Props = {
   disabled?: boolean;
 };
 
+let tellerScriptPromise: Promise<void> | null = null;
+const listeners = new Set<() => void>();
+
+function subscribeTellerReady(cb: () => void) {
+  listeners.add(cb);
+  ensureTellerScript();
+  return () => listeners.delete(cb);
+}
+
+function getTellerReadySnapshot() {
+  return Boolean(typeof window !== "undefined" && window.TellerConnect);
+}
+
+function getTellerReadyServerSnapshot() {
+  return false;
+}
+
+function notifyReady() {
+  for (const cb of listeners) cb();
+}
+
+function ensureTellerScript() {
+  if (typeof window === "undefined") return;
+  if (window.TellerConnect) {
+    notifyReady();
+    return;
+  }
+  if (tellerScriptPromise) return;
+
+  tellerScriptPromise = new Promise((resolve) => {
+    const existing = document.querySelector<HTMLScriptElement>(
+      'script[data-teller-connect="1"]',
+    );
+    if (existing) {
+      existing.addEventListener("load", () => {
+        notifyReady();
+        resolve();
+      });
+      if (window.TellerConnect) {
+        notifyReady();
+        resolve();
+      }
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://cdn.teller.io/connect/connect.js";
+    script.async = true;
+    script.dataset.tellerConnect = "1";
+    script.onload = () => {
+      notifyReady();
+      resolve();
+    };
+    script.onerror = () => resolve();
+    document.body.appendChild(script);
+  });
+}
+
 export function TellerConnectButton({
   applicationId,
   environment,
   disabled,
 }: Props) {
   const router = useRouter();
-  const [ready, setReady] = useState(false);
+  const ready = useSyncExternalStore(
+    subscribeTellerReady,
+    getTellerReadySnapshot,
+    getTellerReadyServerSnapshot,
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!applicationId) return;
-    const existing = document.querySelector<HTMLScriptElement>(
-      'script[data-teller-connect="1"]',
-    );
-    if (existing && window.TellerConnect) {
-      setReady(true);
-      return;
-    }
-    const script = existing ?? document.createElement("script");
-    if (!existing) {
-      script.src = "https://cdn.teller.io/connect/connect.js";
-      script.async = true;
-      script.dataset.tellerConnect = "1";
-      document.body.appendChild(script);
-    }
-    const onLoad = () => setReady(Boolean(window.TellerConnect));
-    script.addEventListener("load", onLoad);
-    if (window.TellerConnect) setReady(true);
-    return () => script.removeEventListener("load", onLoad);
-  }, [applicationId]);
-
   async function openConnect() {
     setError(null);
+    ensureTellerScript();
     if (!window.TellerConnect || !applicationId) {
       setError("Teller Connect is not available.");
       return;
