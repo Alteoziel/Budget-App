@@ -278,6 +278,36 @@ export async function deleteAccountAction(formData: FormData) {
   redirect("/accounts");
 }
 
+async function nextGroupSortOrder(
+  supabase: Awaited<ReturnType<typeof requireBudget>>["supabase"],
+  budgetId: string,
+): Promise<number> {
+  const { data } = await supabase
+    .from("category_groups")
+    .select("sort_order")
+    .eq("budget_id", budgetId)
+    .order("sort_order", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return Number(data?.sort_order ?? -1) + 1;
+}
+
+async function nextCategorySortOrder(
+  supabase: Awaited<ReturnType<typeof requireBudget>>["supabase"],
+  budgetId: string,
+  groupId: string,
+): Promise<number> {
+  const { data } = await supabase
+    .from("categories")
+    .select("sort_order")
+    .eq("budget_id", budgetId)
+    .eq("group_id", groupId)
+    .order("sort_order", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return Number(data?.sort_order ?? -1) + 1;
+}
+
 async function resolveCategoryGroupId(
   supabase: Awaited<ReturnType<typeof requireBudget>>["supabase"],
   userId: string,
@@ -292,9 +322,15 @@ async function resolveCategoryGroupId(
     .maybeSingle();
   if (existing.data?.id) return existing.data.id as string;
 
+  const sortOrder = await nextGroupSortOrder(supabase, budgetId);
   const created = await supabase
     .from("category_groups")
-    .insert({ user_id: userId, budget_id: budgetId, name: groupName })
+    .insert({
+      user_id: userId,
+      budget_id: budgetId,
+      name: groupName,
+      sort_order: sortOrder,
+    })
     .select("id")
     .single();
   if (created.data?.id) return created.data.id as string;
@@ -306,6 +342,61 @@ async function resolveCategoryGroupId(
     .ilike("name", escapeIlikeExact(groupName))
     .maybeSingle();
   return (again.data?.id as string | undefined) ?? null;
+}
+
+type SortableRow = { id: string; sort_order: number; name: string };
+
+function compareSortable(a: SortableRow, b: SortableRow) {
+  if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
+  const byName = a.name.localeCompare(b.name);
+  if (byName !== 0) return byName;
+  return a.id.localeCompare(b.id);
+}
+
+async function swapSortOrder(options: {
+  supabase: Awaited<ReturnType<typeof requireBudget>>["supabase"];
+  table: "category_groups" | "categories";
+  budgetId: string;
+  rows: SortableRow[];
+  targetId: string;
+  direction: "up" | "down";
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const ordered = [...options.rows].sort(compareSortable);
+  // Normalize so all-zero / tied rows become stable 0..n-1 before swapping.
+  for (let i = 0; i < ordered.length; i += 1) {
+    if (ordered[i].sort_order !== i) {
+      const { error } = await options.supabase
+        .from(options.table)
+        .update({ sort_order: i })
+        .eq("budget_id", options.budgetId)
+        .eq("id", ordered[i].id);
+      if (error) return { ok: false, error: "Could not update order." };
+      ordered[i] = { ...ordered[i], sort_order: i };
+    }
+  }
+
+  const index = ordered.findIndex((row) => row.id === options.targetId);
+  if (index < 0) return { ok: false, error: "Item not found." };
+  const swapWith = options.direction === "up" ? index - 1 : index + 1;
+  if (swapWith < 0 || swapWith >= ordered.length) {
+    return { ok: false, error: "Already at the end." };
+  }
+
+  const a = ordered[index];
+  const b = ordered[swapWith];
+  const updates = [
+    { id: a.id, sort_order: b.sort_order },
+    { id: b.id, sort_order: a.sort_order },
+  ];
+  for (const update of updates) {
+    const { error } = await options.supabase
+      .from(options.table)
+      .update({ sort_order: update.sort_order })
+      .eq("budget_id", options.budgetId)
+      .eq("id", update.id);
+    if (error) return { ok: false, error: "Could not update order." };
+  }
+  return { ok: true };
 }
 
 export async function createCategoryGroupAction(
@@ -357,11 +448,13 @@ export async function createCategoryAction(formData: FormData) {
     redirectWithError("/budget", "Could not create category group.");
   }
 
+  const sortOrder = await nextCategorySortOrder(supabase, budget.id, groupId);
   const { error } = await supabase.from("categories").insert({
     user_id: user.id,
     budget_id: budget.id,
     group_id: groupId,
     name: categoryName,
+    sort_order: sortOrder,
   });
   if (error) {
     redirectWithError(
@@ -518,7 +611,7 @@ export async function renameCategoryGroupAction(formData: FormData) {
 }
 
 export async function deleteCategoryGroupAction(formData: FormData) {
-  const { supabase, user, budget } = await requireBudget("editor");
+  const { supabase, budget } = await requireBudget("editor");
   const groupId = String(formData.get("group_id") ?? "");
   if (!groupId) {
     redirectWithError("/budget", "Group not found.");
@@ -536,6 +629,105 @@ export async function deleteCategoryGroupAction(formData: FormData) {
 
   revalidatePath("/budget");
   revalidatePath("/accounts");
+}
+
+export async function reorderCategoryGroupAction(formData: FormData) {
+  const { supabase, budget } = await requireBudget("editor");
+  const groupId = String(formData.get("group_id") ?? "");
+  const direction = String(formData.get("direction") ?? "");
+  if (!groupId || (direction !== "up" && direction !== "down")) {
+    redirectWithError("/budget", "Invalid reorder.");
+  }
+
+  const { data, error } = await supabase
+    .from("category_groups")
+    .select("id,name,sort_order,hidden")
+    .eq("budget_id", budget.id);
+  if (error) {
+    redirectWithError("/budget", "Could not load groups.");
+  }
+
+  const rows = ((data ?? []) as Array<{
+    id: string;
+    name: string;
+    sort_order: number;
+    hidden: boolean;
+  }>)
+    .filter((row) => !row.hidden)
+    .map((row) => ({
+      id: row.id,
+      name: row.name,
+      sort_order: Number(row.sort_order ?? 0),
+    }));
+
+  const result = await swapSortOrder({
+    supabase,
+    table: "category_groups",
+    budgetId: budget.id,
+    rows,
+    targetId: groupId,
+    direction,
+  });
+  if (!result.ok) {
+    redirectWithError("/budget", result.error);
+  }
+
+  revalidatePath("/budget");
+}
+
+export async function reorderCategoryAction(formData: FormData) {
+  const { supabase, budget } = await requireBudget("editor");
+  const categoryId = String(formData.get("category_id") ?? "");
+  const direction = String(formData.get("direction") ?? "");
+  if (!categoryId || (direction !== "up" && direction !== "down")) {
+    redirectWithError("/budget", "Invalid reorder.");
+  }
+
+  const owned = await supabase
+    .from("categories")
+    .select("id,group_id")
+    .eq("budget_id", budget.id)
+    .eq("id", categoryId)
+    .maybeSingle();
+  if (!owned.data?.id) {
+    redirectWithError("/budget", "Category not found.");
+  }
+
+  const { data, error } = await supabase
+    .from("categories")
+    .select("id,name,sort_order,hidden")
+    .eq("budget_id", budget.id)
+    .eq("group_id", owned.data.group_id as string);
+  if (error) {
+    redirectWithError("/budget", "Could not load categories.");
+  }
+
+  const rows = ((data ?? []) as Array<{
+    id: string;
+    name: string;
+    sort_order: number;
+    hidden: boolean;
+  }>)
+    .filter((row) => !row.hidden)
+    .map((row) => ({
+      id: row.id,
+      name: row.name,
+      sort_order: Number(row.sort_order ?? 0),
+    }));
+
+  const result = await swapSortOrder({
+    supabase,
+    table: "categories",
+    budgetId: budget.id,
+    rows,
+    targetId: categoryId,
+    direction,
+  });
+  if (!result.ok) {
+    redirectWithError("/budget", result.error);
+  }
+
+  revalidatePath("/budget");
 }
 
 async function upsertAssignedCents(options: {

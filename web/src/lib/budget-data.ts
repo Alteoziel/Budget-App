@@ -209,7 +209,9 @@ export const getBudgetRows = cache(async (month = currentBudgetMonth()): Promise
         categoryId: category.id,
         groupId: category.group_id,
         groupName: group?.name ?? "Ungrouped",
+        groupSortOrder: Number(group?.sort_order ?? 0),
         categoryName: category.name,
+        categorySortOrder: Number(category.sort_order ?? 0),
         assignedCents,
         activityCents,
         availableCents: carryInCents + assignedCents + activityCents,
@@ -223,11 +225,17 @@ export const getBudgetRows = cache(async (month = currentBudgetMonth()): Promise
         goalNote: category.goal_note ?? "",
       };
     })
-    .sort((a, b) =>
-      a.groupName === b.groupName
-        ? a.categoryName.localeCompare(b.categoryName)
-        : a.groupName.localeCompare(b.groupName),
-    );
+    .sort((a, b) => {
+      if (a.groupSortOrder !== b.groupSortOrder) {
+        return a.groupSortOrder - b.groupSortOrder;
+      }
+      const byGroupName = a.groupName.localeCompare(b.groupName);
+      if (byGroupName !== 0) return byGroupName;
+      if (a.categorySortOrder !== b.categorySortOrder) {
+        return a.categorySortOrder - b.categorySortOrder;
+      }
+      return a.categoryName.localeCompare(b.categoryName);
+    });
 
   const readyToAssignCents =
     uncategorizedPrior - priorAssignedTotal + uncategorizedCurrent - totalAssigned;
@@ -238,6 +246,11 @@ export const getBudgetRows = cache(async (month = currentBudgetMonth()): Promise
     readyToAssignCents,
     groups: ((groups as CategoryGroup[] | null) ?? [])
       .filter((group) => !group.hidden)
+      .slice()
+      .sort((a, b) => {
+        if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
+        return a.name.localeCompare(b.name);
+      })
       .map((group) => ({ id: group.id, name: group.name })),
   };
 });

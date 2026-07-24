@@ -77,7 +77,9 @@ export type BudgetRow = {
   categoryId: string;
   groupId: string;
   groupName: string;
+  groupSortOrder: number;
   categoryName: string;
+  categorySortOrder: number;
   assignedCents: number;
   activityCents: number;
   availableCents: number;

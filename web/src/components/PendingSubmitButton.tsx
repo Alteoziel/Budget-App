@@ -10,6 +10,7 @@ type Props = {
   type?: "submit" | "button";
   name?: string;
   value?: string;
+  "aria-label"?: string;
   onClick?: (event: React.MouseEvent<HTMLButtonElement>) => void;
 };
 
@@ -21,6 +22,7 @@ export function PendingSubmitButton({
   type = "submit",
   name,
   value,
+  "aria-label": ariaLabel,
   onClick,
 }: Props) {
   const { pending } = useFormStatus();
@@ -33,6 +35,7 @@ export function PendingSubmitButton({
       value={value}
       disabled={isDisabled}
       onClick={onClick}
+      aria-label={ariaLabel}
       aria-busy={pending || undefined}
       className={`touch-manipulation min-h-11 disabled:cursor-wait disabled:opacity-60 ${className}`}
     >
