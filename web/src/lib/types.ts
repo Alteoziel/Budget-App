@@ -37,6 +37,7 @@ export type Category = {
   name: string;
   sort_order: number;
   hidden: boolean;
+  assign_percent?: number;
 };
 
 export type CategoryMonth = {
@@ -66,6 +67,7 @@ export type BudgetRow = {
   assignedCents: number;
   activityCents: number;
   availableCents: number;
+  assignPercent: number;
 };
 
 export type TrendFinding = {

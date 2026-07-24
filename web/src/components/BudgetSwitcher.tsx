@@ -28,7 +28,7 @@ export function BudgetSwitcher({
           name="budget_id"
           defaultValue={activeId}
           onChange={(event) => event.currentTarget.form?.requestSubmit()}
-          className="mt-1 w-full max-w-[12rem] rounded-lg border border-ink-900/10 bg-white px-2 py-1.5 text-sm font-semibold text-ink-900 outline-none ring-moss-400 focus:ring-2"
+          className="mt-1 min-h-11 w-full max-w-[14rem] touch-manipulation rounded-lg border border-ink-900/10 bg-white px-2 py-2 text-sm font-semibold text-ink-900 outline-none ring-moss-400 focus:ring-2"
         >
           {budgets.map((budget) => (
             <option key={budget.id} value={budget.id}>

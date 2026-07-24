@@ -2,12 +2,14 @@
 
 import { useState } from "react";
 import { Money } from "@/components/Money";
+import { PendingSubmitButton } from "@/components/PendingSubmitButton";
 import {
   assignCategoryAction,
   deleteCategoryAction,
   deleteCategoryGroupAction,
   renameCategoryAction,
   renameCategoryGroupAction,
+  setCategoryAssignPercentAction,
 } from "@/lib/actions";
 import type { BudgetRow } from "@/lib/types";
 
@@ -38,8 +40,19 @@ export function BudgetManager({
     );
   }
 
+  const percentTotal = groups
+    .flatMap((g) => g.categories)
+    .reduce((sum, row) => sum + (row.assignPercent || 0), 0);
+
   return (
     <div className="space-y-4">
+      <p className="text-xs text-ink-600">
+        Auto-assign shares:{" "}
+        <span className={percentTotal > 100 ? "font-bold text-coral-500" : "font-bold text-ink-800"}>
+          {percentTotal.toFixed(1)}%
+        </span>{" "}
+        of Ready to Assign
+      </p>
       {groups.map((group) => (
         <div
           key={group.groupId}
@@ -59,19 +72,19 @@ export function BudgetManager({
                     name="name"
                     required
                     defaultValue={group.groupName}
-                    className="mt-1 w-full rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm font-bold text-ink-900 outline-none ring-moss-400 focus:ring-2"
+                    className="mt-1 min-h-11 w-full touch-manipulation rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm font-bold text-ink-900 outline-none ring-moss-400 focus:ring-2"
                   />
                 </label>
-                <button
-                  type="submit"
+                <PendingSubmitButton
+                  pendingLabel="Saving…"
                   className="rounded-xl bg-moss-500 px-3 py-2 text-sm font-bold text-sand-50"
                 >
                   Save
-                </button>
+                </PendingSubmitButton>
                 <button
                   type="button"
                   onClick={() => setEditingGroupId(null)}
-                  className="rounded-xl px-3 py-2 text-sm font-semibold text-ink-600"
+                  className="min-h-11 touch-manipulation rounded-xl px-3 py-2 text-sm font-semibold text-ink-600"
                 >
                   Cancel
                 </button>
@@ -85,15 +98,15 @@ export function BudgetManager({
                   <button
                     type="button"
                     onClick={() => setEditingGroupId(group.groupId)}
-                    className="text-xs font-bold text-moss-500"
+                    className="min-h-11 touch-manipulation px-2 text-sm font-bold text-moss-500"
                   >
                     Rename
                   </button>
                   <form action={deleteCategoryGroupAction}>
                     <input type="hidden" name="group_id" value={group.groupId} />
-                    <button
-                      type="submit"
-                      className="text-xs font-bold text-coral-500"
+                    <PendingSubmitButton
+                      pendingLabel="…"
+                      className="min-h-11 px-2 text-sm font-bold text-coral-500"
                       onClick={(event) => {
                         if (
                           !confirm(
@@ -105,7 +118,7 @@ export function BudgetManager({
                       }}
                     >
                       Delete
-                    </button>
+                    </PendingSubmitButton>
                   </form>
                 </div>
               </div>
@@ -128,20 +141,20 @@ export function BudgetManager({
                         name="name"
                         required
                         defaultValue={row.categoryName}
-                        className="mt-1 w-full rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm outline-none ring-moss-400 focus:ring-2"
+                        className="mt-1 min-h-11 w-full touch-manipulation rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm outline-none ring-moss-400 focus:ring-2"
                       />
                     </label>
                     <div className="flex gap-2">
-                      <button
-                        type="submit"
+                      <PendingSubmitButton
+                        pendingLabel="Saving…"
                         className="rounded-xl bg-moss-500 px-3 py-2 text-sm font-bold text-sand-50"
                       >
                         Save name
-                      </button>
+                      </PendingSubmitButton>
                       <button
                         type="button"
                         onClick={() => setEditingCategoryId(null)}
-                        className="rounded-xl px-3 py-2 text-sm font-semibold text-ink-600"
+                        className="min-h-11 touch-manipulation rounded-xl px-3 py-2 text-sm font-semibold text-ink-600"
                       >
                         Cancel
                       </button>
@@ -169,15 +182,15 @@ export function BudgetManager({
                       <button
                         type="button"
                         onClick={() => setEditingCategoryId(row.categoryId)}
-                        className="text-xs font-bold text-moss-500"
+                        className="min-h-11 touch-manipulation px-1 text-sm font-bold text-moss-500"
                       >
                         Rename
                       </button>
                       <form action={deleteCategoryAction}>
                         <input type="hidden" name="category_id" value={row.categoryId} />
-                        <button
-                          type="submit"
-                          className="text-xs font-bold text-coral-500"
+                        <PendingSubmitButton
+                          pendingLabel="…"
+                          className="min-h-11 px-1 text-sm font-bold text-coral-500"
                           onClick={(event) => {
                             if (
                               !confirm(
@@ -189,30 +202,55 @@ export function BudgetManager({
                           }}
                         >
                           Delete
-                        </button>
+                        </PendingSubmitButton>
                       </form>
                     </div>
                   </>
                 )}
 
-                <form action={assignCategoryAction} className="mt-3 flex items-end gap-2">
+                <form
+                  action={assignCategoryAction}
+                  className="mt-3 flex flex-wrap items-end gap-2"
+                >
                   <input type="hidden" name="category_id" value={row.categoryId} />
                   <input type="hidden" name="month" value={month} />
-                  <label className="flex-1 text-xs font-semibold text-ink-600">
+                  <label className="min-w-[7rem] flex-1 text-xs font-semibold text-ink-600">
                     Assigned
                     <input
                       name="assigned"
                       inputMode="decimal"
                       defaultValue={(row.assignedCents / 100).toFixed(2)}
-                      className="mt-1 w-full rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm outline-none ring-moss-400 focus:ring-2"
+                      className="mt-1 min-h-11 w-full touch-manipulation rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm outline-none ring-moss-400 focus:ring-2"
                     />
                   </label>
-                  <button
-                    type="submit"
+                  <PendingSubmitButton
+                    pendingLabel="Saving…"
                     className="rounded-xl bg-moss-500 px-3 py-2 text-sm font-bold text-sand-50 hover:bg-moss-400"
                   >
                     Save
-                  </button>
+                  </PendingSubmitButton>
+                </form>
+
+                <form
+                  action={setCategoryAssignPercentAction}
+                  className="mt-2 flex flex-wrap items-end gap-2"
+                >
+                  <input type="hidden" name="category_id" value={row.categoryId} />
+                  <label className="min-w-[7rem] flex-1 text-xs font-semibold text-ink-600">
+                    Auto-assign %
+                    <input
+                      name="assign_percent"
+                      inputMode="decimal"
+                      defaultValue={String(row.assignPercent || 0)}
+                      className="mt-1 min-h-11 w-full touch-manipulation rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm outline-none ring-moss-400 focus:ring-2"
+                    />
+                  </label>
+                  <PendingSubmitButton
+                    pendingLabel="…"
+                    className="rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm font-bold text-ink-800"
+                  >
+                    Set %
+                  </PendingSubmitButton>
                 </form>
               </li>
             ))}

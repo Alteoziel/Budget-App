@@ -14,13 +14,36 @@ body {
   min-height: 100%;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
   color: var(--ink);
   background: #f7f3eb;
 }
 
+/* Faster taps on iOS — avoid hover sticky / double-tap zoom on controls */
+button,
+a,
+[role="button"],
+input,
+select,
+textarea,
+label {
+  touch-action: manipulation;
+}
+
 @layer utilities {
   .safe-pb {
-    padding-bottom: calc(5.5rem + env(safe-area-inset-bottom));
+    /* Bottom nav clearance on phones; desktop uses side nav so less padding */
+    padding-bottom: calc(5.75rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  @media (min-width: 1024px) {
+    .safe-pb {
+      padding-bottom: 2rem;
+    }
   }
 }

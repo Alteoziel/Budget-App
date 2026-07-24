@@ -10,8 +10,11 @@ import {
   isBudgetMonth,
   isValidIsoDate,
 } from "@/lib/money";
+import { distributeByPercent } from "@/lib/auto-assign";
+import { getBudgetRows } from "@/lib/budget-data";
 import { requireBudget, setActiveBudgetId } from "@/lib/budget-context";
 import { safeInternalPath } from "@/lib/paths";
+import { absoluteUrl } from "@/lib/site-url";
 import { createClient } from "@/lib/supabase/server";
 import type { BudgetRole } from "@/lib/types";
 import {
@@ -37,7 +40,7 @@ async function requireUser() {
   return { supabase, user };
 }
 
-function redirectWithError(path: string, message: string, extra = "") {
+function redirectWithError(path: string, message: string, extra = ""): never {
   const url = `${path}?error=${encodeURIComponent(message)}${extra}`;
   redirect(url);
 }
@@ -87,6 +90,44 @@ export async function signOutAction() {
   const supabase = await createClient();
   await supabase.auth.signOut();
   redirect("/login");
+}
+
+export async function updateDisplayNameAction(
+  formData: FormData,
+): Promise<{ ok: true; message: string } | { ok: false; error: string }> {
+  const { supabase, user } = await requireUser();
+  const displayName = String(formData.get("display_name") ?? "").trim();
+  if (!displayName) return { ok: false, error: "Display name is required." };
+  if (displayName.length > 80) return { ok: false, error: "Name must be 80 characters or fewer." };
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({ display_name: displayName, updated_at: new Date().toISOString() })
+    .eq("id", user.id);
+  if (error) return { ok: false, error: "Could not update display name." };
+
+  await supabase.auth.updateUser({ data: { display_name: displayName } });
+  revalidatePath("/settings");
+  return { ok: true, message: "Display name saved." };
+}
+
+export async function updatePasswordAction(
+  formData: FormData,
+): Promise<{ ok: true; message: string } | { ok: false; error: string }> {
+  await requireUser();
+  const password = String(formData.get("password") ?? "");
+  const confirm = String(formData.get("password_confirm") ?? "");
+  if (password.length < 8) {
+    return { ok: false, error: "Password must be at least 8 characters." };
+  }
+  if (password !== confirm) {
+    return { ok: false, error: "Passwords do not match." };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, message: "Password updated." };
 }
 
 export async function createAccountAction(formData: FormData) {
@@ -366,6 +407,84 @@ export async function assignCategoryAction(formData: FormData) {
   }
 
   revalidatePath("/budget");
+}
+
+export async function setCategoryAssignPercentAction(formData: FormData) {
+  const { supabase, budget } = await requireBudget("editor");
+  const categoryId = String(formData.get("category_id") ?? "");
+  const raw = String(formData.get("assign_percent") ?? "").trim();
+  const percent = Number(raw);
+  if (!categoryId || !Number.isFinite(percent) || percent < 0 || percent > 100) {
+    redirectWithError("/budget", "Enter a percentage between 0 and 100.");
+  }
+
+  const { error } = await supabase
+    .from("categories")
+    .update({ assign_percent: Math.round(percent * 100) / 100 })
+    .eq("budget_id", budget.id)
+    .eq("id", categoryId);
+  if (error) {
+    redirectWithError(
+      "/budget",
+      /assign_percent/i.test(error.message)
+        ? "Run the assign_percent migration in Supabase, then try again."
+        : "Could not save percentage.",
+    );
+  }
+  revalidatePath("/budget");
+}
+
+export async function autoAssignAction(formData: FormData) {
+  const { supabase, user, budget } = await requireBudget("editor");
+  const month = String(formData.get("month") ?? currentBudgetMonth());
+  if (!isBudgetMonth(month)) {
+    redirectWithError("/budget", "Invalid month.");
+  }
+
+  const { readyToAssignCents, rows } = await getBudgetRows(month);
+  const { assignments, totalAdded, error: distError } = distributeByPercent(
+    readyToAssignCents,
+    rows.map((row) => ({
+      categoryId: row.categoryId,
+      assignPercent: row.assignPercent,
+      currentAssignedCents: row.assignedCents,
+    })),
+  );
+  if (distError) {
+    redirectWithError("/budget", distError);
+  }
+  if (totalAdded <= 0) {
+    redirectWithError("/budget", "Nothing to auto-assign.");
+  }
+
+  const monthUpsert = await supabase.from("budget_months").upsert(
+    { user_id: user.id, budget_id: budget.id, month },
+    { onConflict: "budget_id,month" },
+  );
+  if (monthUpsert.error) {
+    redirectWithError("/budget", "Could not save budget month.");
+  }
+
+  for (const assignment of assignments) {
+    if (assignment.addedCents <= 0) continue;
+    const { error } = await supabase.from("category_months").upsert(
+      {
+        user_id: user.id,
+        budget_id: budget.id,
+        category_id: assignment.categoryId,
+        month,
+        assigned_cents: assignment.assignedCents,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "budget_id,category_id,month" },
+    );
+    if (error) {
+      redirectWithError("/budget", "Auto-assign failed partway — try again.");
+    }
+  }
+
+  revalidatePath("/budget");
+  redirect(`/budget?assigned=${totalAdded}`);
 }
 
 export async function createTransactionAction(formData: FormData) {
@@ -998,19 +1117,39 @@ export async function renameBudgetAction(formData: FormData) {
   redirect("/settings");
 }
 
+export async function deleteBudgetAction(formData: FormData) {
+  const { supabase, user, budget, role } = await requireBudget("owner");
+  const confirmName = String(formData.get("confirm_name") ?? "").trim();
+  if (confirmName !== budget.name) {
+    redirectWithError("/settings", "Type the budget name exactly to delete it.");
+  }
+  if (role !== "owner") {
+    redirectWithError("/settings", "Only an owner can delete a budget.");
+  }
+
+  const { error } = await supabase.from("budgets").delete().eq("id", budget.id);
+  if (error) redirectWithError("/settings", "Could not delete budget.");
+
+  await supabase.from("profiles").update({ current_budget_id: null }).eq("id", user.id);
+  revalidatePath("/", "layout");
+  redirect("/settings");
+}
+
 function hashInviteToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
-export async function createInviteLinkAction(formData: FormData) {
+/** Role invite with unlimited uses. Returns a complete URL for the client UI. */
+export async function generateRoleInviteAction(
+  roleInput: string,
+): Promise<
+  | { ok: true; url: string; token: string; role: BudgetRole }
+  | { ok: false; error: string }
+> {
   const { supabase, user, budget } = await requireBudget("admin");
-  const kind = String(formData.get("kind") ?? "shared");
-  const role = String(formData.get("role") ?? "editor") as BudgetRole;
-  if (kind !== "role" && kind !== "shared") {
-    redirectWithError("/settings", "Invalid invite kind.");
-  }
-  if (kind === "role" && !["owner", "admin", "editor", "viewer"].includes(role)) {
-    redirectWithError("/settings", "Invalid role.");
+  const role = roleInput as BudgetRole;
+  if (!["owner", "admin", "editor", "viewer"].includes(role)) {
+    return { ok: false, error: "Invalid role." };
   }
 
   const token = createHash("sha256")
@@ -1021,15 +1160,33 @@ export async function createInviteLinkAction(formData: FormData) {
   const { error } = await supabase.from("budget_invites").insert({
     budget_id: budget.id,
     token_hash: tokenHash,
-    kind,
-    role: kind === "role" ? role : null,
+    kind: "role",
+    role,
     created_by: user.id,
-    expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 14).toISOString(),
-    max_uses: kind === "shared" ? null : 10,
+    expires_at: null,
+    max_uses: null,
   });
-  if (error) redirectWithError("/settings", "Could not create invite link.");
+  if (error) return { ok: false, error: "Could not create invite link." };
 
-  redirect(`/settings?invite=${encodeURIComponent(token)}&kind=${encodeURIComponent(kind)}`);
+  const url = absoluteUrl(`/invite/${token}`);
+  if (!url.startsWith("http")) {
+    return {
+      ok: false,
+      error:
+        "Set NEXT_PUBLIC_SITE_URL in Doppler so invite links are absolute (e.g. https://your-app.vercel.app).",
+    };
+  }
+
+  revalidatePath("/settings");
+  return { ok: true, url, token, role };
+}
+
+/** @deprecated Prefer generateRoleInviteAction — kept for any leftover forms. */
+export async function createInviteLinkAction(formData: FormData) {
+  const role = String(formData.get("role") ?? "editor");
+  const result = await generateRoleInviteAction(role);
+  if (!result.ok) redirectWithError("/settings", result.error);
+  redirect(`/settings?invite=${encodeURIComponent(result.token)}&kind=role`);
 }
 
 export async function revokeInviteAction(formData: FormData) {
@@ -1124,6 +1281,28 @@ export async function disconnectPlaidItemAction(formData: FormData) {
   const { supabase, budget } = await requireBudget("admin");
   const itemId = String(formData.get("item_id") ?? "");
   if (!itemId) redirectWithError("/settings", "Bank connection required.");
+
+  const { data: item } = await supabase
+    .from("plaid_items")
+    .select("id,access_token_encrypted,status")
+    .eq("id", itemId)
+    .eq("budget_id", budget.id)
+    .maybeSingle();
+
+  if (item?.access_token_encrypted && item.status !== "disconnected") {
+    try {
+      const { getPlaidClient, plaidConfigured } = await import("@/lib/plaid/client");
+      const { decryptSecret } = await import("@/lib/crypto/secrets");
+      if (plaidConfigured()) {
+        const client = getPlaidClient();
+        await client.itemRemove({
+          access_token: decryptSecret(item.access_token_encrypted),
+        });
+      }
+    } catch {
+      // Still disconnect locally if Plaid itemRemove fails (already revoked, etc.).
+    }
+  }
 
   await supabase
     .from("plaid_accounts")

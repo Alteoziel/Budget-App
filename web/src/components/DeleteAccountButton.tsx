@@ -1,6 +1,7 @@
 "use client";
 
 import { deleteAccountAction } from "@/lib/actions";
+import { PendingSubmitButton } from "@/components/PendingSubmitButton";
 
 export function DeleteAccountButton({
   accountId,
@@ -32,8 +33,8 @@ export function DeleteAccountButton({
       }}
     >
       <input type="hidden" name="account_id" value={accountId} />
-      <button
-        type="submit"
+      <PendingSubmitButton
+        pendingLabel={variant === "link" ? "…" : "Deleting…"}
         className={
           variant === "link"
             ? "text-xs font-bold text-coral-500 hover:underline"
@@ -41,7 +42,7 @@ export function DeleteAccountButton({
         }
       >
         {variant === "link" ? "Delete" : "Delete account"}
-      </button>
+      </PendingSubmitButton>
     </form>
   );
 }
