@@ -7,6 +7,7 @@ import {
   plaidErrorMessage,
 } from "@/lib/plaid/client";
 import { decryptSecret } from "@/lib/crypto/secrets";
+import { suggestMatchForBankTransaction } from "@/lib/transaction-matching";
 
 export type SyncResult = {
   inserted: number;
@@ -169,13 +170,32 @@ async function upsertPlaidTransaction(
     return { inserted: 0, updated: 1 };
   }
 
-  const { error } = await supabase.from("transactions").insert(row);
+  const { data: inserted, error } = await supabase
+    .from("transactions")
+    .insert(row)
+    .select("id")
+    .single();
   if (error) {
     if (error.message.toLowerCase().includes("duplicate")) {
       return { inserted: 0, updated: 0 };
     }
     throw error;
   }
+
+  if (inserted?.id) {
+    try {
+      await suggestMatchForBankTransaction(supabase, {
+        budgetId: args.budgetId,
+        accountId,
+        bankTransactionId: inserted.id,
+        amountCents,
+        occurredOn: args.txn.date,
+      });
+    } catch {
+      // Matching is best-effort; sync should still succeed.
+    }
+  }
+
   return { inserted: 1, updated: 0 };
 }
 

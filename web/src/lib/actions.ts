@@ -22,6 +22,10 @@ import {
   ynabRowFingerprint,
   type ParsedYnabRow,
 } from "@/lib/ynab-csv";
+import {
+  balanceAnchorExternalId,
+  suggestMatchForManualTransaction,
+} from "@/lib/transaction-matching";
 
 const ACCOUNT_TYPES = new Set([
   "checking",
@@ -537,24 +541,271 @@ export async function createTransactionAction(formData: FormData) {
   const amountCents =
     direction === "inflow" ? Math.abs(amountValue) : -Math.abs(amountValue);
 
-  const { error } = await supabase.from("transactions").insert({
-    user_id: user.id,
-    budget_id: budget.id,
-    account_id: accountId,
-    category_id: categoryId,
-    occurred_on: occurredOn,
-    payee,
-    memo,
-    amount_cents: amountCents,
-    cleared: true,
-  });
-  if (error) {
+  const { data: created, error } = await supabase
+    .from("transactions")
+    .insert({
+      user_id: user.id,
+      budget_id: budget.id,
+      account_id: accountId,
+      category_id: categoryId,
+      occurred_on: occurredOn,
+      payee,
+      memo,
+      amount_cents: amountCents,
+      cleared: true,
+    })
+    .select("id")
+    .single();
+  if (error || !created?.id) {
     redirectWithError(`/accounts/${accountId}`, "Could not save transaction.");
+  }
+
+  try {
+    await suggestMatchForManualTransaction(supabase, {
+      budgetId: budget.id,
+      accountId,
+      manualTransactionId: created.id,
+      amountCents,
+      occurredOn,
+    });
+  } catch {
+    // Matching is best-effort.
   }
 
   revalidatePath(`/accounts/${accountId}`);
   revalidatePath("/accounts");
   revalidatePath("/budget");
+}
+
+export async function setAccountBalanceAction(formData: FormData) {
+  const { supabase, user, budget } = await requireBudget("editor");
+  const accountId = String(formData.get("account_id") ?? "").trim();
+  const balance = dollarsToCents(String(formData.get("balance") ?? ""));
+
+  if (!accountId) {
+    redirect("/accounts");
+  }
+  if (balance === null) {
+    redirectWithError(`/accounts/${accountId}`, "Enter a valid account balance.");
+  }
+
+  const account = await supabase
+    .from("accounts")
+    .select("id")
+    .eq("budget_id", budget.id)
+    .eq("id", accountId)
+    .maybeSingle();
+  if (!account.data?.id) {
+    redirect("/accounts");
+  }
+
+  const externalId = balanceAnchorExternalId(accountId);
+  const { data: rows, error: sumError } = await supabase
+    .from("transactions")
+    .select("id,amount_cents,external_id")
+    .eq("budget_id", budget.id)
+    .eq("account_id", accountId);
+  if (sumError) {
+    redirectWithError(`/accounts/${accountId}`, "Could not load account balance.");
+  }
+
+  const nonAnchorSum = (rows ?? [])
+    .filter((row) => row.external_id !== externalId)
+    .reduce((sum, row) => sum + (row.amount_cents as number), 0);
+  const anchorAmount = (balance as number) - nonAnchorSum;
+  const existingAnchor = (rows ?? []).find((row) => row.external_id === externalId);
+  const today = new Date().toISOString().slice(0, 10);
+
+  if (anchorAmount === 0) {
+    if (existingAnchor?.id) {
+      const { error } = await supabase
+        .from("transactions")
+        .delete()
+        .eq("id", existingAnchor.id)
+        .eq("budget_id", budget.id);
+      if (error) {
+        redirectWithError(`/accounts/${accountId}`, "Could not clear balance adjustment.");
+      }
+    }
+  } else if (existingAnchor?.id) {
+    const { error } = await supabase
+      .from("transactions")
+      .update({
+        amount_cents: anchorAmount,
+        occurred_on: today,
+        payee: "Balance adjustment",
+        memo: "Manual balance set — future transactions still change this total",
+        cleared: true,
+      })
+      .eq("id", existingAnchor.id)
+      .eq("budget_id", budget.id);
+    if (error) {
+      redirectWithError(`/accounts/${accountId}`, "Could not update account balance.");
+    }
+  } else {
+    const { error } = await supabase.from("transactions").insert({
+      user_id: user.id,
+      budget_id: budget.id,
+      account_id: accountId,
+      category_id: null,
+      occurred_on: today,
+      payee: "Balance adjustment",
+      memo: "Manual balance set — future transactions still change this total",
+      amount_cents: anchorAmount,
+      cleared: true,
+      external_id: externalId,
+    });
+    if (error) {
+      redirectWithError(`/accounts/${accountId}`, "Could not set account balance.");
+    }
+  }
+
+  revalidatePath(`/accounts/${accountId}`);
+  revalidatePath("/accounts");
+  revalidatePath("/budget");
+}
+
+export async function approveTransactionMatchAction(formData: FormData) {
+  const { supabase, budget } = await requireBudget("editor");
+  const suggestionId = String(formData.get("suggestion_id") ?? "").trim();
+  const accountId = String(formData.get("account_id") ?? "").trim();
+  if (!suggestionId || !accountId) {
+    redirect("/accounts");
+  }
+
+  const { data: suggestion, error: lookupError } = await supabase
+    .from("transaction_match_suggestions")
+    .select(
+      "id,status,manual_transaction_id,bank_transaction_id,account_id",
+    )
+    .eq("id", suggestionId)
+    .eq("budget_id", budget.id)
+    .eq("account_id", accountId)
+    .maybeSingle();
+
+  if (lookupError || !suggestion || suggestion.status !== "pending") {
+    redirectWithError(`/accounts/${accountId}`, "Match suggestion not found.");
+  }
+
+  const [manualRes, bankRes] = await Promise.all([
+    supabase
+      .from("transactions")
+      .select("id,category_id,payee,memo,amount_cents,occurred_on")
+      .eq("budget_id", budget.id)
+      .eq("id", suggestion.manual_transaction_id)
+      .maybeSingle(),
+    supabase
+      .from("transactions")
+      .select("id,external_id,amount_cents,occurred_on,payee,cleared")
+      .eq("budget_id", budget.id)
+      .eq("id", suggestion.bank_transaction_id)
+      .maybeSingle(),
+  ]);
+
+  if (!manualRes.data?.id || !bankRes.data?.id || !bankRes.data.external_id) {
+    redirectWithError(
+      `/accounts/${accountId}`,
+      "Linked transactions are missing. Deny this match or sync again.",
+    );
+  }
+
+  const manual = manualRes.data;
+  const bank = bankRes.data;
+  const bankExternalId = bank.external_id as string;
+  const manualId = manual.id as string;
+  const bankId = bank.id as string;
+
+  // Free the unique external_id before attaching it to the manual row.
+  const { error: clearError } = await supabase
+    .from("transactions")
+    .update({ external_id: null })
+    .eq("id", bankId)
+    .eq("budget_id", budget.id);
+  if (clearError) {
+    redirectWithError(`/accounts/${accountId}`, "Could not approve match.");
+  }
+
+  const { error: updateError } = await supabase
+    .from("transactions")
+    .update({
+      external_id: bankExternalId,
+      amount_cents: bank.amount_cents,
+      occurred_on: bank.occurred_on,
+      cleared: true,
+      payee: manual.payee?.trim() ? manual.payee : bank.payee,
+      category_id: manual.category_id,
+      memo: manual.memo,
+    })
+    .eq("id", manualId)
+    .eq("budget_id", budget.id);
+
+  if (updateError) {
+    // Best-effort restore so the bank row stays importable.
+    await supabase
+      .from("transactions")
+      .update({ external_id: bankExternalId })
+      .eq("id", bankId)
+      .eq("budget_id", budget.id);
+    redirectWithError(
+      `/accounts/${accountId}`,
+      isUniqueViolation(updateError)
+        ? "That bank transaction is already linked."
+        : "Could not approve match.",
+    );
+  }
+
+  await supabase
+    .from("transactions")
+    .delete()
+    .eq("id", bankId)
+    .eq("budget_id", budget.id);
+
+  // Bank delete cascades suggestions that pointed at it; clear other pending for the manual.
+  await supabase
+    .from("transaction_match_suggestions")
+    .delete()
+    .eq("budget_id", budget.id)
+    .eq("status", "pending")
+    .or(
+      `manual_transaction_id.eq.${manualId},bank_transaction_id.eq.${manualId}`,
+    );
+
+  revalidatePath(`/accounts/${accountId}`);
+  revalidatePath("/accounts");
+  revalidatePath("/budget");
+}
+
+export async function denyTransactionMatchAction(formData: FormData) {
+  const { supabase, budget } = await requireBudget("editor");
+  const suggestionId = String(formData.get("suggestion_id") ?? "").trim();
+  const accountId = String(formData.get("account_id") ?? "").trim();
+  if (!suggestionId || !accountId) {
+    redirect("/accounts");
+  }
+
+  const { data: suggestion, error } = await supabase
+    .from("transaction_match_suggestions")
+    .select("id,status")
+    .eq("id", suggestionId)
+    .eq("budget_id", budget.id)
+    .eq("account_id", accountId)
+    .maybeSingle();
+
+  if (error || !suggestion || suggestion.status !== "pending") {
+    redirectWithError(`/accounts/${accountId}`, "Match suggestion not found.");
+  }
+
+  const { error: updateError } = await supabase
+    .from("transaction_match_suggestions")
+    .update({ status: "denied", resolved_at: new Date().toISOString() })
+    .eq("id", suggestion.id)
+    .eq("budget_id", budget.id);
+
+  if (updateError) {
+    redirectWithError(`/accounts/${accountId}`, "Could not deny match.");
+  }
+
+  revalidatePath(`/accounts/${accountId}`);
 }
 
 export async function updateTransactionAction(formData: FormData) {
