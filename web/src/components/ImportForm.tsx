@@ -38,8 +38,8 @@ export function ImportForm() {
           {pending ? "Importing…" : "Upload YNAB CSV"}
         </span>
         <span className="mt-2 max-w-xs text-sm text-ink-600">
-          Export Budget from YNAB web, then upload the register CSV
-          (`…Register….csv`).
+          Upload a YNAB Reflect Income vs Expense CSV
+          (`ynab-reflect-income-expense-….csv`), or a register export.
         </span>
         <input
           type="file"
@@ -51,9 +51,9 @@ export function ImportForm() {
       </label>
 
       <div className="rounded-2xl bg-coral-400/10 px-4 py-3 text-sm text-ink-700">
-        Fresh exports are safe — already-imported transactions are skipped by
-        fingerprint. Exact file re-uploads of a completed import are blocked;
-        failed imports can be retried.
+        Reflect imports create one transaction per category/payee per month.
+        Master category totals are skipped so spending isn&apos;t double-counted.
+        Re-uploads skip duplicates by fingerprint.
       </div>
 
       {result ? (

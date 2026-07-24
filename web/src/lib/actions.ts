@@ -13,7 +13,7 @@ import {
 import { safeInternalPath } from "@/lib/paths";
 import { createClient } from "@/lib/supabase/server";
 import {
-  parseYnabRegisterCsv,
+  parseYnabCsv,
   ynabRowFingerprint,
   type ParsedYnabRow,
 } from "@/lib/ynab-csv";
@@ -348,15 +348,18 @@ export async function importYnabCsvAction(
     };
   }
 
-  const { rows, skipped, errors } = parseYnabRegisterCsv(parsedInput.data.csvText);
+  const { rows, skipped, errors, kind } = parseYnabCsv(parsedInput.data.csvText);
 
-  if (rows.length === 0) {
+  if (kind === "unknown" || rows.length === 0) {
     return {
       ok: false,
       inserted: 0,
       skipped,
       errors,
-      message: "No importable transactions found. Use a YNAB register CSV export.",
+      message:
+        kind === "unknown"
+          ? "Unrecognized CSV. Export YNAB Reflect → Income vs Expense, or a register CSV."
+          : "No importable transactions found in that CSV.",
     };
   }
 
@@ -365,7 +368,7 @@ export async function importYnabCsvAction(
     .insert({
       user_id: user.id,
       filename: parsedInput.data.filename,
-      source: "ynab_csv",
+      source: kind === "reflect" ? "ynab_reflect_csv" : "ynab_csv",
       content_hash: contentHash,
       status: "pending",
       inserted_count: 0,
