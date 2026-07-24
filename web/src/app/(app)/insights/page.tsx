@@ -56,7 +56,8 @@ export default async function InsightsPage({
   return (
     <AppShell title="Insights" subtitle="Trends & tips">
       <p className="mb-4 text-sm text-ink-600">
-        Charts from your transactions, plus rule-based tips (LLM rewrite later).
+        Charts and trends show what happened. Tips below turn those signals into
+        next steps.
       </p>
 
       <div className="mb-4 flex flex-wrap gap-2 text-xs">
@@ -145,9 +146,16 @@ export default async function InsightsPage({
       </section>
 
       <section className="mt-6 space-y-3">
-        <h2 className="font-display text-lg font-bold text-ink-900">Tips for you</h2>
+        <div>
+          <h2 className="font-display text-lg font-bold text-ink-900">Tips for you</h2>
+          <p className="mt-1 text-sm text-ink-600">
+            Actionable next steps based on your trends — not the same cards again.
+          </p>
+        </div>
         {!tips.length ? (
-          <p className="text-sm text-ink-600">Tips appear when trends fire.</p>
+          <p className="text-sm text-ink-600">
+            Tips show up once there is enough history for a clear recommendation.
+          </p>
         ) : (
           <ul className="space-y-2">
             {tips.map((tip) => (
@@ -161,7 +169,7 @@ export default async function InsightsPage({
                         <Link
                           key={a.href + a.label}
                           href={a.href}
-                          className="text-xs font-bold text-moss-500 underline-offset-2 hover:underline"
+                          className="rounded-lg bg-moss-500 px-2.5 py-1 text-xs font-bold text-sand-50"
                         >
                           {a.label}
                         </Link>

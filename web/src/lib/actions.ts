@@ -23,6 +23,10 @@ import {
   type ParsedYnabRow,
 } from "@/lib/ynab-csv";
 import {
+  readExcludedAccountIds,
+  writeExcludedAccountIds,
+} from "@/lib/account-total-filter";
+import {
   balanceAnchorExternalId,
   isBalanceAnchorExternalId,
   suggestMatchForManualTransaction,
@@ -146,13 +150,21 @@ export async function createAccountAction(formData: FormData) {
     redirectWithError("/accounts", "Invalid account type.");
   }
 
-  const { error } = await supabase.from("accounts").insert({
+  let { error } = await supabase.from("accounts").insert({
     user_id: user.id,
     budget_id: budget.id,
     name,
     account_type: accountType,
     include_in_total: true,
   });
+  if (error && /include_in_total|schema cache|column/i.test(error.message)) {
+    ({ error } = await supabase.from("accounts").insert({
+      user_id: user.id,
+      budget_id: budget.id,
+      name,
+      account_type: accountType,
+    }));
+  }
   if (error) {
     redirectWithError(
       "/accounts",
@@ -186,14 +198,35 @@ export async function setAccountIncludeInTotalAction(formData: FormData) {
     redirectWithError("/accounts", "Account not found.");
   }
 
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from("accounts")
     .update({ include_in_total: includeInTotal })
     .eq("id", accountId)
-    .eq("budget_id", budget.id);
+    .eq("budget_id", budget.id)
+    .select("id")
+    .maybeSingle();
 
   if (error) {
-    redirectWithError("/accounts", "Could not update account filter.");
+    // Column missing / schema cache — fall back to an httpOnly cookie until migration runs.
+    if (/include_in_total|schema cache|column/i.test(error.message)) {
+      const excluded = await readExcludedAccountIds(budget.id);
+      if (includeInTotal) excluded.delete(accountId);
+      else excluded.add(accountId);
+      await writeExcludedAccountIds(budget.id, excluded);
+      revalidatePath("/accounts");
+      return;
+    }
+    redirectWithError(
+      "/accounts",
+      `Could not update account filter: ${error.message.slice(0, 160)}`,
+    );
+  }
+
+  if (!updated?.id) {
+    redirectWithError(
+      "/accounts",
+      "Could not update account filter. Check you have editor access.",
+    );
   }
 
   revalidatePath("/accounts");
@@ -1531,6 +1564,46 @@ export async function revokeInviteAction(formData: FormData) {
     .eq("id", inviteId)
     .eq("budget_id", budget.id);
   if (error) redirectWithError("/settings", "Could not revoke invite.");
+  revalidatePath("/settings");
+}
+
+export async function deleteInviteAction(formData: FormData) {
+  const { supabase, budget } = await requireBudget("admin");
+  const inviteId = String(formData.get("invite_id") ?? "").trim();
+  if (!inviteId) redirectWithError("/settings", "Invite required.");
+
+  const { data: invite, error: lookupError } = await supabase
+    .from("budget_invites")
+    .select("id,revoked_at")
+    .eq("id", inviteId)
+    .eq("budget_id", budget.id)
+    .maybeSingle();
+
+  if (lookupError || !invite) {
+    redirectWithError("/settings", "Invite not found.");
+  }
+  if (!invite.revoked_at) {
+    redirectWithError(
+      "/settings",
+      "Revoke the invite first, then you can delete it from history.",
+    );
+  }
+
+  const { error } = await supabase
+    .from("budget_invites")
+    .delete()
+    .eq("id", inviteId)
+    .eq("budget_id", budget.id);
+
+  if (error) {
+    redirectWithError(
+      "/settings",
+      /policy|permission|rls|denied/i.test(error.message)
+        ? "Could not delete invite. Run the invite-delete migration in Supabase."
+        : `Could not delete invite: ${error.message.slice(0, 160)}`,
+    );
+  }
+
   revalidatePath("/settings");
 }
 
