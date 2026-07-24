@@ -176,6 +176,99 @@ export async function createCategoryAction(formData: FormData) {
   revalidatePath("/budget");
 }
 
+export async function renameCategoryAction(formData: FormData) {
+  const { supabase, user } = await requireUser();
+  const categoryId = String(formData.get("category_id") ?? "");
+  const name = String(formData.get("name") ?? "").trim();
+  if (!categoryId || !name) {
+    redirectWithError("/budget", "Category name is required.");
+  }
+
+  const { error } = await supabase
+    .from("categories")
+    .update({ name })
+    .eq("user_id", user.id)
+    .eq("id", categoryId);
+  if (error) {
+    redirectWithError(
+      "/budget",
+      isUniqueViolation(error)
+        ? "A category with that name already exists in this group."
+        : "Could not rename category.",
+    );
+  }
+
+  revalidatePath("/budget");
+  revalidatePath("/accounts");
+}
+
+export async function deleteCategoryAction(formData: FormData) {
+  const { supabase, user } = await requireUser();
+  const categoryId = String(formData.get("category_id") ?? "");
+  if (!categoryId) {
+    redirectWithError("/budget", "Category not found.");
+  }
+
+  const { error } = await supabase
+    .from("categories")
+    .delete()
+    .eq("user_id", user.id)
+    .eq("id", categoryId);
+  if (error) {
+    redirectWithError("/budget", "Could not delete category.");
+  }
+
+  revalidatePath("/budget");
+  revalidatePath("/accounts");
+}
+
+export async function renameCategoryGroupAction(formData: FormData) {
+  const { supabase, user } = await requireUser();
+  const groupId = String(formData.get("group_id") ?? "");
+  const name = String(formData.get("name") ?? "").trim();
+  if (!groupId || !name) {
+    redirectWithError("/budget", "Group name is required.");
+  }
+
+  const { error } = await supabase
+    .from("category_groups")
+    .update({ name })
+    .eq("user_id", user.id)
+    .eq("id", groupId);
+  if (error) {
+    redirectWithError(
+      "/budget",
+      isUniqueViolation(error)
+        ? "A group with that name already exists."
+        : "Could not rename group.",
+    );
+  }
+
+  revalidatePath("/budget");
+  revalidatePath("/accounts");
+}
+
+export async function deleteCategoryGroupAction(formData: FormData) {
+  const { supabase, user } = await requireUser();
+  const groupId = String(formData.get("group_id") ?? "");
+  if (!groupId) {
+    redirectWithError("/budget", "Group not found.");
+  }
+
+  // Cascades to categories; transactions.category_id becomes null via FK.
+  const { error } = await supabase
+    .from("category_groups")
+    .delete()
+    .eq("user_id", user.id)
+    .eq("id", groupId);
+  if (error) {
+    redirectWithError("/budget", "Could not delete group.");
+  }
+
+  revalidatePath("/budget");
+  revalidatePath("/accounts");
+}
+
 export async function assignCategoryAction(formData: FormData) {
   const { supabase, user } = await requireUser();
   const categoryId = String(formData.get("category_id") ?? "");
@@ -286,6 +379,143 @@ export async function createTransactionAction(formData: FormData) {
   });
   if (error) {
     redirectWithError(`/accounts/${accountId}`, "Could not save transaction.");
+  }
+
+  revalidatePath(`/accounts/${accountId}`);
+  revalidatePath("/accounts");
+  revalidatePath("/budget");
+}
+
+export async function updateTransactionAction(formData: FormData) {
+  const { supabase, user } = await requireUser();
+  const transactionId = String(formData.get("transaction_id") ?? "");
+  const accountId = String(formData.get("account_id") ?? "");
+  const payee = String(formData.get("payee") ?? "").trim();
+  const memo = String(formData.get("memo") ?? "").trim();
+  const occurredOn = String(formData.get("occurred_on") ?? "");
+  const categoryIdRaw = String(formData.get("category_id") ?? "");
+  const amount = dollarsToCents(String(formData.get("amount") ?? ""));
+  const direction = String(formData.get("direction") ?? "outflow");
+
+  if (!transactionId || !accountId) {
+    redirect("/accounts");
+  }
+  if (amount === null || amount === 0) {
+    redirectWithError(`/accounts/${accountId}`, "Enter a valid non-zero amount.");
+  }
+  const amountValue = amount as number;
+  if (!isValidIsoDate(occurredOn)) {
+    redirectWithError(`/accounts/${accountId}`, "Invalid date.");
+  }
+  if (direction !== "inflow" && direction !== "outflow") {
+    redirectWithError(`/accounts/${accountId}`, "Invalid direction.");
+  }
+
+  const existing = await supabase
+    .from("transactions")
+    .select("id")
+    .eq("user_id", user.id)
+    .eq("id", transactionId)
+    .eq("account_id", accountId)
+    .maybeSingle();
+  if (!existing.data?.id) {
+    redirectWithError(`/accounts/${accountId}`, "Transaction not found.");
+  }
+
+  const categoryId: string | null = categoryIdRaw || null;
+  if (categoryId) {
+    const category = await supabase
+      .from("categories")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("id", categoryId)
+      .maybeSingle();
+    if (!category.data?.id) {
+      redirectWithError(`/accounts/${accountId}`, "Category not found.");
+    }
+  }
+
+  const amountCents =
+    direction === "inflow" ? Math.abs(amountValue) : -Math.abs(amountValue);
+
+  const { error } = await supabase
+    .from("transactions")
+    .update({
+      category_id: categoryId,
+      occurred_on: occurredOn,
+      payee,
+      memo,
+      amount_cents: amountCents,
+    })
+    .eq("user_id", user.id)
+    .eq("id", transactionId);
+  if (error) {
+    redirectWithError(`/accounts/${accountId}`, "Could not update transaction.");
+  }
+
+  revalidatePath(`/accounts/${accountId}`);
+  revalidatePath("/accounts");
+  revalidatePath("/budget");
+}
+
+export async function deleteTransactionAction(formData: FormData) {
+  const { supabase, user } = await requireUser();
+  const transactionId = String(formData.get("transaction_id") ?? "");
+  const accountId = String(formData.get("account_id") ?? "");
+  if (!transactionId || !accountId) {
+    redirect("/accounts");
+  }
+
+  const { error } = await supabase
+    .from("transactions")
+    .delete()
+    .eq("user_id", user.id)
+    .eq("id", transactionId)
+    .eq("account_id", accountId);
+  if (error) {
+    redirectWithError(`/accounts/${accountId}`, "Could not delete transaction.");
+  }
+
+  revalidatePath(`/accounts/${accountId}`);
+  revalidatePath("/accounts");
+  revalidatePath("/budget");
+}
+
+const BATCH_DELETE_LIMIT = 500;
+
+export async function batchDeleteTransactionsAction(formData: FormData) {
+  const { supabase, user } = await requireUser();
+  const accountId = String(formData.get("account_id") ?? "");
+  const ids = formData
+    .getAll("transaction_ids")
+    .map((value) => String(value).trim())
+    .filter(Boolean);
+
+  if (!accountId) {
+    redirect("/accounts");
+  }
+  if (ids.length === 0) {
+    redirectWithError(`/accounts/${accountId}`, "Select at least one transaction.");
+  }
+  if (ids.length > BATCH_DELETE_LIMIT) {
+    redirectWithError(
+      `/accounts/${accountId}`,
+      `You can delete at most ${BATCH_DELETE_LIMIT} transactions at once.`,
+    );
+  }
+
+  const { error, count } = await supabase
+    .from("transactions")
+    .delete({ count: "exact" })
+    .eq("user_id", user.id)
+    .eq("account_id", accountId)
+    .in("id", ids);
+
+  if (error) {
+    redirectWithError(`/accounts/${accountId}`, "Could not delete selected transactions.");
+  }
+  if (!count) {
+    redirectWithError(`/accounts/${accountId}`, "No matching transactions to delete.");
   }
 
   revalidatePath(`/accounts/${accountId}`);
