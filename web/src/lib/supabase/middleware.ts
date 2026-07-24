@@ -5,6 +5,7 @@ function isPublicPath(path: string): boolean {
   return (
     path === "/" ||
     path.startsWith("/login") ||
+    path.startsWith("/invite") ||
     path.startsWith("/_next") ||
     path.startsWith("/icons") ||
     path === "/manifest.webmanifest" ||
@@ -51,13 +52,14 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const isAuthRoute = path.startsWith("/login");
+  const isInviteRoute = path.startsWith("/invite");
   const isPublicAsset =
     path.startsWith("/_next") ||
     path.startsWith("/icons") ||
     path === "/manifest.webmanifest" ||
     path === "/sw.js";
 
-  if (!user && !isAuthRoute && !isPublicAsset && path !== "/") {
+  if (!user && !isAuthRoute && !isInviteRoute && !isPublicAsset && path !== "/") {
     const redirectUrl = new URL("/login", request.url);
     redirectUrl.searchParams.set("next", path);
     return NextResponse.redirect(redirectUrl);

@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "test": "tsx --tsconfig tsconfig.json src/lib/ynab-csv.test.ts && tsx --tsconfig tsconfig.json src/lib/money.test.ts && tsx --tsconfig tsconfig.json src/lib/paths.test.ts"
+    "test": "tsx --tsconfig tsconfig.json src/lib/ynab-csv.test.ts && tsx --tsconfig tsconfig.json src/lib/money.test.ts && tsx --tsconfig tsconfig.json src/lib/paths.test.ts && tsx --tsconfig tsconfig.json src/lib/insights/tips.test.ts && tsx --tsconfig tsconfig.json src/lib/teller/client.test.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.3",
@@ -17,6 +17,7 @@
     "papaparse": "^5.5.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "recharts": "^3.10.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {

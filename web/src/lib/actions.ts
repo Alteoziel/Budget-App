@@ -10,8 +10,10 @@ import {
   isBudgetMonth,
   isValidIsoDate,
 } from "@/lib/money";
+import { requireBudget, setActiveBudgetId } from "@/lib/budget-context";
 import { safeInternalPath } from "@/lib/paths";
 import { createClient } from "@/lib/supabase/server";
+import type { BudgetRole } from "@/lib/types";
 import {
   parseYnabCsv,
   ynabRowFingerprint,
@@ -65,6 +67,7 @@ export async function signUpAction(formData: FormData) {
   const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
   const displayName = String(formData.get("displayName") ?? "").trim();
+  const next = safeInternalPath(String(formData.get("next") ?? "/budget"));
 
   const supabase = await createClient();
   const { error } = await supabase.auth.signUp({
@@ -77,7 +80,7 @@ export async function signUpAction(formData: FormData) {
   if (error) {
     redirectWithError("/login", error.message, "&mode=signup");
   }
-  redirect("/budget");
+  redirect(next);
 }
 
 export async function signOutAction() {
@@ -87,7 +90,7 @@ export async function signOutAction() {
 }
 
 export async function createAccountAction(formData: FormData) {
-  const { supabase, user } = await requireUser();
+  const { supabase, user, budget } = await requireBudget("editor");
   const name = String(formData.get("name") ?? "").trim();
   const accountType = String(formData.get("account_type") ?? "checking");
   if (!name) {
@@ -99,6 +102,7 @@ export async function createAccountAction(formData: FormData) {
 
   const { error } = await supabase.from("accounts").insert({
     user_id: user.id,
+    budget_id: budget.id,
     name,
     account_type: accountType,
   });
@@ -115,7 +119,7 @@ export async function createAccountAction(formData: FormData) {
 }
 
 export async function createCategoryAction(formData: FormData) {
-  const { supabase, user } = await requireUser();
+  const { supabase, user, budget } = await requireBudget("editor");
   const groupName = String(formData.get("group_name") ?? "").trim() || "Everyday";
   const categoryName = String(formData.get("category_name") ?? "").trim();
   if (!categoryName) {
@@ -126,7 +130,7 @@ export async function createCategoryAction(formData: FormData) {
   const existing = await supabase
     .from("category_groups")
     .select("id")
-    .eq("user_id", user.id)
+    .eq("budget_id", budget.id)
     .ilike("name", escapeIlikeExact(groupName))
     .maybeSingle();
 
@@ -135,14 +139,14 @@ export async function createCategoryAction(formData: FormData) {
   } else {
     const created = await supabase
       .from("category_groups")
-      .insert({ user_id: user.id, name: groupName })
+      .insert({ user_id: user.id, budget_id: budget.id, name: groupName })
       .select("id")
       .single();
     if (created.error && isUniqueViolation(created.error)) {
       const again = await supabase
         .from("category_groups")
         .select("id")
-        .eq("user_id", user.id)
+        .eq("budget_id", budget.id)
         .ilike("name", escapeIlikeExact(groupName))
         .maybeSingle();
       groupId = again.data?.id ?? null;
@@ -161,6 +165,7 @@ export async function createCategoryAction(formData: FormData) {
 
   const { error } = await supabase.from("categories").insert({
     user_id: user.id,
+    budget_id: budget.id,
     group_id: groupId,
     name: categoryName,
   });
@@ -177,7 +182,7 @@ export async function createCategoryAction(formData: FormData) {
 }
 
 export async function renameCategoryAction(formData: FormData) {
-  const { supabase, user } = await requireUser();
+  const { supabase, user, budget } = await requireBudget("editor");
   const categoryId = String(formData.get("category_id") ?? "");
   const name = String(formData.get("name") ?? "").trim();
   if (!categoryId || !name) {
@@ -187,7 +192,7 @@ export async function renameCategoryAction(formData: FormData) {
   const { error } = await supabase
     .from("categories")
     .update({ name })
-    .eq("user_id", user.id)
+    .eq("budget_id", budget.id)
     .eq("id", categoryId);
   if (error) {
     redirectWithError(
@@ -203,7 +208,7 @@ export async function renameCategoryAction(formData: FormData) {
 }
 
 export async function deleteCategoryAction(formData: FormData) {
-  const { supabase, user } = await requireUser();
+  const { supabase, user, budget } = await requireBudget("editor");
   const categoryId = String(formData.get("category_id") ?? "");
   if (!categoryId) {
     redirectWithError("/budget", "Category not found.");
@@ -212,7 +217,7 @@ export async function deleteCategoryAction(formData: FormData) {
   const { error } = await supabase
     .from("categories")
     .delete()
-    .eq("user_id", user.id)
+    .eq("budget_id", budget.id)
     .eq("id", categoryId);
   if (error) {
     redirectWithError("/budget", "Could not delete category.");
@@ -223,7 +228,7 @@ export async function deleteCategoryAction(formData: FormData) {
 }
 
 export async function renameCategoryGroupAction(formData: FormData) {
-  const { supabase, user } = await requireUser();
+  const { supabase, user, budget } = await requireBudget("editor");
   const groupId = String(formData.get("group_id") ?? "");
   const name = String(formData.get("name") ?? "").trim();
   if (!groupId || !name) {
@@ -233,7 +238,7 @@ export async function renameCategoryGroupAction(formData: FormData) {
   const { error } = await supabase
     .from("category_groups")
     .update({ name })
-    .eq("user_id", user.id)
+    .eq("budget_id", budget.id)
     .eq("id", groupId);
   if (error) {
     redirectWithError(
@@ -249,7 +254,7 @@ export async function renameCategoryGroupAction(formData: FormData) {
 }
 
 export async function deleteCategoryGroupAction(formData: FormData) {
-  const { supabase, user } = await requireUser();
+  const { supabase, user, budget } = await requireBudget("editor");
   const groupId = String(formData.get("group_id") ?? "");
   if (!groupId) {
     redirectWithError("/budget", "Group not found.");
@@ -259,7 +264,7 @@ export async function deleteCategoryGroupAction(formData: FormData) {
   const { error } = await supabase
     .from("category_groups")
     .delete()
-    .eq("user_id", user.id)
+    .eq("budget_id", budget.id)
     .eq("id", groupId);
   if (error) {
     redirectWithError("/budget", "Could not delete group.");
@@ -270,7 +275,7 @@ export async function deleteCategoryGroupAction(formData: FormData) {
 }
 
 export async function assignCategoryAction(formData: FormData) {
-  const { supabase, user } = await requireUser();
+  const { supabase, user, budget } = await requireBudget("editor");
   const categoryId = String(formData.get("category_id") ?? "");
   const month = String(formData.get("month") ?? currentBudgetMonth());
   const assigned = dollarsToCents(String(formData.get("assigned") ?? "0"));
@@ -285,7 +290,7 @@ export async function assignCategoryAction(formData: FormData) {
   const owned = await supabase
     .from("categories")
     .select("id")
-    .eq("user_id", user.id)
+    .eq("budget_id", budget.id)
     .eq("id", categoryId)
     .maybeSingle();
   if (!owned.data?.id) {
@@ -293,8 +298,8 @@ export async function assignCategoryAction(formData: FormData) {
   }
 
   const monthUpsert = await supabase.from("budget_months").upsert(
-    { user_id: user.id, month },
-    { onConflict: "user_id,month" },
+    { user_id: user.id, budget_id: budget.id, month },
+    { onConflict: "budget_id,month" },
   );
   if (monthUpsert.error) {
     redirectWithError("/budget", "Could not save budget month.");
@@ -303,12 +308,13 @@ export async function assignCategoryAction(formData: FormData) {
   const { error } = await supabase.from("category_months").upsert(
     {
       user_id: user.id,
+      budget_id: budget.id,
       category_id: categoryId,
       month,
       assigned_cents: assigned,
       updated_at: new Date().toISOString(),
     },
-    { onConflict: "user_id,category_id,month" },
+    { onConflict: "budget_id,category_id,month" },
   );
   if (error) {
     redirectWithError("/budget", "Could not save assignment.");
@@ -318,7 +324,7 @@ export async function assignCategoryAction(formData: FormData) {
 }
 
 export async function createTransactionAction(formData: FormData) {
-  const { supabase, user } = await requireUser();
+  const { supabase, user, budget } = await requireBudget("editor");
   const accountId = String(formData.get("account_id") ?? "");
   const payee = String(formData.get("payee") ?? "").trim();
   const memo = String(formData.get("memo") ?? "").trim();
@@ -344,7 +350,7 @@ export async function createTransactionAction(formData: FormData) {
   const account = await supabase
     .from("accounts")
     .select("id")
-    .eq("user_id", user.id)
+    .eq("budget_id", budget.id)
     .eq("id", accountId)
     .maybeSingle();
   if (!account.data?.id) {
@@ -356,7 +362,7 @@ export async function createTransactionAction(formData: FormData) {
     const category = await supabase
       .from("categories")
       .select("id")
-      .eq("user_id", user.id)
+      .eq("budget_id", budget.id)
       .eq("id", categoryId)
       .maybeSingle();
     if (!category.data?.id) {
@@ -369,6 +375,7 @@ export async function createTransactionAction(formData: FormData) {
 
   const { error } = await supabase.from("transactions").insert({
     user_id: user.id,
+    budget_id: budget.id,
     account_id: accountId,
     category_id: categoryId,
     occurred_on: occurredOn,
@@ -387,7 +394,7 @@ export async function createTransactionAction(formData: FormData) {
 }
 
 export async function updateTransactionAction(formData: FormData) {
-  const { supabase, user } = await requireUser();
+  const { supabase, user, budget } = await requireBudget("editor");
   const transactionId = String(formData.get("transaction_id") ?? "");
   const accountId = String(formData.get("account_id") ?? "");
   const payee = String(formData.get("payee") ?? "").trim();
@@ -414,7 +421,7 @@ export async function updateTransactionAction(formData: FormData) {
   const existing = await supabase
     .from("transactions")
     .select("id")
-    .eq("user_id", user.id)
+    .eq("budget_id", budget.id)
     .eq("id", transactionId)
     .eq("account_id", accountId)
     .maybeSingle();
@@ -427,7 +434,7 @@ export async function updateTransactionAction(formData: FormData) {
     const category = await supabase
       .from("categories")
       .select("id")
-      .eq("user_id", user.id)
+      .eq("budget_id", budget.id)
       .eq("id", categoryId)
       .maybeSingle();
     if (!category.data?.id) {
@@ -447,7 +454,7 @@ export async function updateTransactionAction(formData: FormData) {
       memo,
       amount_cents: amountCents,
     })
-    .eq("user_id", user.id)
+    .eq("budget_id", budget.id)
     .eq("id", transactionId);
   if (error) {
     redirectWithError(`/accounts/${accountId}`, "Could not update transaction.");
@@ -459,7 +466,7 @@ export async function updateTransactionAction(formData: FormData) {
 }
 
 export async function deleteTransactionAction(formData: FormData) {
-  const { supabase, user } = await requireUser();
+  const { supabase, user, budget } = await requireBudget("editor");
   const transactionId = String(formData.get("transaction_id") ?? "");
   const accountId = String(formData.get("account_id") ?? "");
   if (!transactionId || !accountId) {
@@ -469,7 +476,7 @@ export async function deleteTransactionAction(formData: FormData) {
   const { error } = await supabase
     .from("transactions")
     .delete()
-    .eq("user_id", user.id)
+    .eq("budget_id", budget.id)
     .eq("id", transactionId)
     .eq("account_id", accountId);
   if (error) {
@@ -484,7 +491,7 @@ export async function deleteTransactionAction(formData: FormData) {
 const BATCH_DELETE_LIMIT = 500;
 
 export async function batchDeleteTransactionsAction(formData: FormData) {
-  const { supabase, user } = await requireUser();
+  const { supabase, user, budget } = await requireBudget("editor");
   const accountId = String(formData.get("account_id") ?? "");
   const ids = formData
     .getAll("transaction_ids")
@@ -507,7 +514,7 @@ export async function batchDeleteTransactionsAction(formData: FormData) {
   const { error, count } = await supabase
     .from("transactions")
     .delete({ count: "exact" })
-    .eq("user_id", user.id)
+    .eq("budget_id", budget.id)
     .eq("account_id", accountId)
     .in("id", ids);
 
@@ -554,7 +561,7 @@ export async function importYnabCsvAction(
     };
   }
 
-  const { supabase, user } = await requireUser();
+  const { supabase, user, budget } = await requireBudget("editor");
   const contentHash = createHash("sha256")
     .update(parsedInput.data.csvText)
     .digest("hex");
@@ -562,7 +569,7 @@ export async function importYnabCsvAction(
   const priorImport = await supabase
     .from("import_batches")
     .select("id,inserted_count,status")
-    .eq("user_id", user.id)
+    .eq("budget_id", budget.id)
     .eq("content_hash", contentHash)
     .eq("status", "completed")
     .maybeSingle();
@@ -597,6 +604,7 @@ export async function importYnabCsvAction(
     .from("import_batches")
     .insert({
       user_id: user.id,
+      budget_id: budget.id,
       filename: parsedInput.data.filename,
       source: kind === "reflect" ? "ynab_reflect_csv" : "ynab_csv",
       content_hash: contentHash,
@@ -629,9 +637,9 @@ export async function importYnabCsvAction(
     { data: existingGroups, error: groupsError },
     { data: existingCategories, error: categoriesError },
   ] = await Promise.all([
-    supabase.from("accounts").select("id,name").eq("user_id", user.id),
-    supabase.from("category_groups").select("id,name").eq("user_id", user.id),
-    supabase.from("categories").select("id,name,group_id").eq("user_id", user.id),
+    supabase.from("accounts").select("id,name").eq("budget_id", budget.id),
+    supabase.from("category_groups").select("id,name").eq("budget_id", budget.id),
+    supabase.from("categories").select("id,name,group_id").eq("budget_id", budget.id),
   ]);
 
   if (accountsError || groupsError || categoriesError) {
@@ -639,7 +647,7 @@ export async function importYnabCsvAction(
       .from("import_batches")
       .update({ status: "failed", error_count: 1 })
       .eq("id", batchId)
-      .eq("user_id", user.id);
+      .eq("budget_id", budget.id);
     return {
       ok: false,
       inserted: 0,
@@ -677,7 +685,7 @@ export async function importYnabCsvAction(
 
     const created = await supabase
       .from("accounts")
-      .insert({ user_id: user.id, name, account_type: "checking" })
+      .insert({ user_id: user.id, budget_id: budget.id, name, account_type: "checking" })
       .select("id")
       .single();
 
@@ -690,7 +698,7 @@ export async function importYnabCsvAction(
       const again = await supabase
         .from("accounts")
         .select("id")
-        .eq("user_id", user.id)
+        .eq("budget_id", budget.id)
         .ilike("name", escapeIlikeExact(name))
         .maybeSingle();
       if (again.data?.id) {
@@ -712,7 +720,7 @@ export async function importYnabCsvAction(
     if (!groupId) {
       const createdGroup = await supabase
         .from("category_groups")
-        .insert({ user_id: user.id, name: resolvedGroup })
+        .insert({ user_id: user.id, budget_id: budget.id, name: resolvedGroup })
         .select("id")
         .single();
 
@@ -722,7 +730,7 @@ export async function importYnabCsvAction(
         const again = await supabase
           .from("category_groups")
           .select("id")
-          .eq("user_id", user.id)
+          .eq("budget_id", budget.id)
           .ilike("name", escapeIlikeExact(resolvedGroup))
           .maybeSingle();
         groupId = again.data?.id;
@@ -738,6 +746,7 @@ export async function importYnabCsvAction(
       .from("categories")
       .insert({
         user_id: user.id,
+        budget_id: budget.id,
         group_id: groupId,
         name: categoryName,
       })
@@ -753,7 +762,7 @@ export async function importYnabCsvAction(
       const again = await supabase
         .from("categories")
         .select("id")
-        .eq("user_id", user.id)
+        .eq("budget_id", budget.id)
         .eq("group_id", groupId)
         .ilike("name", escapeIlikeExact(categoryName))
         .maybeSingle();
@@ -768,6 +777,7 @@ export async function importYnabCsvAction(
 
   const payload: Array<{
     user_id: string;
+    budget_id: string;
     account_id: string;
     category_id: string | null;
     occurred_on: string;
@@ -787,6 +797,7 @@ export async function importYnabCsvAction(
       const categoryId = await ensureCategory(row.categoryGroup, row.categoryName);
       payload.push({
         user_id: user.id,
+        budget_id: budget.id,
         account_id: accountId,
         category_id: categoryId,
         occurred_on: row.occurredOn,
@@ -857,7 +868,7 @@ export async function importYnabCsvAction(
       error_count: localErrors.length,
     })
     .eq("id", batchId)
-    .eq("user_id", user.id);
+    .eq("budget_id", budget.id);
 
   revalidatePath("/budget");
   revalidatePath("/accounts");
@@ -881,3 +892,250 @@ export async function importYnabCsvAction(
             : "Import finished without inserting rows.",
   };
 }
+
+
+// ── Budget / household management ───────────────────────────────────
+
+export async function switchBudgetAction(formData: FormData) {
+  const { supabase, user } = await requireUser();
+  const budgetId = String(formData.get("budget_id") ?? "");
+  if (!budgetId) redirectWithError("/settings", "Budget required.");
+
+  const membership = await supabase
+    .from("budget_members")
+    .select("role")
+    .eq("budget_id", budgetId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!membership.data) {
+    redirectWithError("/settings", "You are not a member of that budget.");
+  }
+
+  await setActiveBudgetId(budgetId);
+  await supabase.from("profiles").update({ current_budget_id: budgetId }).eq("id", user.id);
+  revalidatePath("/", "layout");
+  redirect("/budget");
+}
+
+export async function createBudgetAction(formData: FormData) {
+  const { supabase, user } = await requireUser();
+  const name = String(formData.get("name") ?? "").trim() || "New budget";
+  const created = await supabase
+    .from("budgets")
+    .insert({ name, created_by: user.id })
+    .select("id")
+    .single();
+  if (created.error || !created.data?.id) {
+    redirectWithError("/settings", "Could not create budget.");
+  }
+  await supabase.from("budget_members").insert({
+    budget_id: created.data.id,
+    user_id: user.id,
+    role: "owner",
+  });
+  await setActiveBudgetId(created.data.id);
+  await supabase.from("profiles").update({ current_budget_id: created.data.id }).eq("id", user.id);
+  revalidatePath("/", "layout");
+  redirect("/settings");
+}
+
+export async function renameBudgetAction(formData: FormData) {
+  const { supabase, budget } = await requireBudget("admin");
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) redirectWithError("/settings", "Budget name is required.");
+  const { error } = await supabase
+    .from("budgets")
+    .update({ name, updated_at: new Date().toISOString() })
+    .eq("id", budget.id);
+  if (error) redirectWithError("/settings", "Could not rename budget.");
+  revalidatePath("/", "layout");
+  redirect("/settings");
+}
+
+function hashInviteToken(token: string) {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+export async function createInviteLinkAction(formData: FormData) {
+  const { supabase, user, budget } = await requireBudget("admin");
+  const kind = String(formData.get("kind") ?? "shared");
+  const role = String(formData.get("role") ?? "editor") as BudgetRole;
+  if (kind !== "role" && kind !== "shared") {
+    redirectWithError("/settings", "Invalid invite kind.");
+  }
+  if (kind === "role" && !["owner", "admin", "editor", "viewer"].includes(role)) {
+    redirectWithError("/settings", "Invalid role.");
+  }
+
+  const token = createHash("sha256")
+    .update(`${budget.id}:${user.id}:${Date.now()}:${Math.random()}`)
+    .digest("hex")
+    .slice(0, 48);
+  const tokenHash = hashInviteToken(token);
+  const { error } = await supabase.from("budget_invites").insert({
+    budget_id: budget.id,
+    token_hash: tokenHash,
+    kind,
+    role: kind === "role" ? role : null,
+    created_by: user.id,
+    expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 14).toISOString(),
+    max_uses: kind === "shared" ? null : 10,
+  });
+  if (error) redirectWithError("/settings", "Could not create invite link.");
+
+  redirect(`/settings?invite=${encodeURIComponent(token)}&kind=${encodeURIComponent(kind)}`);
+}
+
+export async function revokeInviteAction(formData: FormData) {
+  const { supabase, budget } = await requireBudget("admin");
+  const inviteId = String(formData.get("invite_id") ?? "");
+  if (!inviteId) redirectWithError("/settings", "Invite required.");
+  const { error } = await supabase
+    .from("budget_invites")
+    .update({ revoked_at: new Date().toISOString() })
+    .eq("id", inviteId)
+    .eq("budget_id", budget.id);
+  if (error) redirectWithError("/settings", "Could not revoke invite.");
+  revalidatePath("/settings");
+}
+
+export async function acceptInviteAction(formData: FormData) {
+  const { supabase } = await requireUser();
+  const token = String(formData.get("token") ?? "").trim();
+  if (!token) redirectWithError("/login", "Invite token missing.");
+  const tokenHash = hashInviteToken(token);
+  const { data, error } = await supabase.rpc("accept_budget_invite", {
+    p_token_hash: tokenHash,
+  });
+  if (error) {
+    redirectWithError(`/invite/${token}`, error.message);
+  }
+  const budgetId = String(data);
+  await setActiveBudgetId(budgetId);
+  revalidatePath("/", "layout");
+  redirect("/budget");
+}
+
+export async function updateMemberRoleAction(formData: FormData) {
+  const { supabase, budget } = await requireBudget("admin");
+  const memberId = String(formData.get("member_id") ?? "");
+  const role = String(formData.get("role") ?? "") as BudgetRole;
+  if (!memberId || !["owner", "admin", "editor", "viewer"].includes(role)) {
+    redirectWithError("/settings", "Invalid member update.");
+  }
+  const { error } = await supabase
+    .from("budget_members")
+    .update({ role })
+    .eq("id", memberId)
+    .eq("budget_id", budget.id);
+  if (error) redirectWithError("/settings", "Could not update member role.");
+  revalidatePath("/settings");
+}
+
+export async function removeMemberAction(formData: FormData) {
+  const { supabase, user, budget } = await requireBudget("admin");
+  const memberUserId = String(formData.get("user_id") ?? "");
+  if (!memberUserId) redirectWithError("/settings", "Member required.");
+  if (memberUserId === user.id) {
+    redirectWithError("/settings", "Use Leave budget to remove yourself.");
+  }
+  const { error } = await supabase
+    .from("budget_members")
+    .delete()
+    .eq("budget_id", budget.id)
+    .eq("user_id", memberUserId);
+  if (error) redirectWithError("/settings", "Could not remove member.");
+  revalidatePath("/settings");
+}
+
+export async function leaveBudgetAction() {
+  const { supabase, user, budget, role } = await requireBudget("viewer");
+  if (role === "owner") {
+    const owners = await supabase
+      .from("budget_members")
+      .select("id")
+      .eq("budget_id", budget.id)
+      .eq("role", "owner");
+    if ((owners.data?.length ?? 0) <= 1) {
+      redirectWithError(
+        "/settings",
+        "Transfer ownership before leaving as the only owner.",
+      );
+    }
+  }
+  const { error } = await supabase
+    .from("budget_members")
+    .delete()
+    .eq("budget_id", budget.id)
+    .eq("user_id", user.id);
+  if (error) redirectWithError("/settings", "Could not leave budget.");
+  await supabase.from("profiles").update({ current_budget_id: null }).eq("id", user.id);
+  revalidatePath("/", "layout");
+  redirect("/settings");
+}
+
+export async function disconnectTellerEnrollmentAction(formData: FormData) {
+  const { supabase, budget } = await requireBudget("admin");
+  const enrollmentId = String(formData.get("enrollment_id") ?? "");
+  if (!enrollmentId) redirectWithError("/settings", "Enrollment required.");
+
+  await supabase
+    .from("teller_accounts")
+    .delete()
+    .eq("enrollment_id", enrollmentId)
+    .eq("budget_id", budget.id);
+
+  const { error } = await supabase
+    .from("teller_enrollments")
+    .update({
+      status: "disconnected",
+      updated_at: new Date().toISOString(),
+      last_error: null,
+    })
+    .eq("id", enrollmentId)
+    .eq("budget_id", budget.id);
+
+  if (error) redirectWithError("/settings", "Could not disconnect bank.");
+  revalidatePath("/settings");
+  revalidatePath("/accounts");
+  redirect("/settings");
+}
+
+export async function syncTellerNowAction(formData: FormData) {
+  const { supabase, budget } = await requireBudget("admin");
+  const enrollmentId = String(formData.get("enrollment_id") ?? "");
+  if (!enrollmentId) redirectWithError("/settings", "Enrollment required.");
+
+  const { data: enrollment, error } = await supabase
+    .from("teller_enrollments")
+    .select("id,budget_id,access_token_encrypted,last_synced_at,created_by,status")
+    .eq("id", enrollmentId)
+    .eq("budget_id", budget.id)
+    .maybeSingle();
+
+  if (error || !enrollment || enrollment.status === "disconnected") {
+    redirectWithError("/settings", "Enrollment not found.");
+  }
+
+  const { syncEnrollment } = await import("@/lib/teller/sync");
+  const started = new Date().toISOString();
+  const result = await syncEnrollment(supabase, enrollment!);
+  await supabase.from("sync_runs").insert({
+    budget_id: budget.id,
+    enrollment_id: enrollment!.id,
+    source: "manual",
+    started_at: started,
+    finished_at: new Date().toISOString(),
+    inserted: result.inserted,
+    updated: result.updated,
+    errors: result.errors.length ? result.errors.join("\n").slice(0, 4000) : null,
+  });
+
+  revalidatePath("/settings");
+  revalidatePath("/accounts");
+  if (result.errors.length) {
+    redirectWithError("/settings", result.errors[0] || "Sync finished with errors.");
+  }
+  redirect("/settings");
+}
+
