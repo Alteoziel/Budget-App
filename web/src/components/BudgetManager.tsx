@@ -1,17 +1,17 @@
 "use client";
 
 import { useState } from "react";
+import { CategoryAssignControl } from "@/components/CategoryAssignControl";
 import { CategoryGoalButton } from "@/components/CategoryGoalButton";
 import { Money } from "@/components/Money";
 import { PendingSubmitButton } from "@/components/PendingSubmitButton";
 import {
-  assignCategoryAction,
   deleteCategoryAction,
   deleteCategoryGroupAction,
   renameCategoryAction,
   renameCategoryGroupAction,
-  setCategoryAssignPercentAction,
 } from "@/lib/actions";
+import { formatCents } from "@/lib/money";
 import type { BudgetRow } from "@/lib/types";
 
 type GroupBlock = {
@@ -41,17 +41,30 @@ export function BudgetManager({
     );
   }
 
-  const percentTotal = groups
-    .flatMap((g) => g.categories)
+  const allRows = groups.flatMap((g) => g.categories);
+  const percentTotal = allRows
+    .filter((row) => row.assignMode !== "fixed")
     .reduce((sum, row) => sum + (row.assignPercent || 0), 0);
+  const fixedTotal = allRows
+    .filter((row) => row.assignMode === "fixed")
+    .reduce((sum, row) => sum + (row.assignFixedCents || 0), 0);
 
   return (
     <div className="space-y-4">
       <p className="text-xs text-ink-600">
         Auto-assign shares:{" "}
-        <span className={percentTotal > 100 ? "font-bold text-coral-500" : "font-bold text-ink-800"}>
+        <span
+          className={percentTotal > 100 ? "font-bold text-coral-500" : "font-bold text-ink-800"}
+        >
           {percentTotal.toFixed(1)}%
-        </span>{" "}
+        </span>
+        {fixedTotal > 0 ? (
+          <>
+            {" "}
+            +{" "}
+            <span className="font-bold text-ink-800">{formatCents(fixedTotal)}</span>
+          </>
+        ) : null}{" "}
         of Ready to Assign
       </p>
       {groups.map((group) => (
@@ -219,50 +232,7 @@ export function BudgetManager({
                   </>
                 )}
 
-                <form
-                  action={assignCategoryAction}
-                  className="mt-3 flex flex-wrap items-end gap-2"
-                >
-                  <input type="hidden" name="category_id" value={row.categoryId} />
-                  <input type="hidden" name="month" value={month} />
-                  <label className="min-w-[7rem] flex-1 text-xs font-semibold text-ink-600">
-                    Assigned
-                    <input
-                      name="assigned"
-                      inputMode="decimal"
-                      defaultValue={(row.assignedCents / 100).toFixed(2)}
-                      className="mt-1 min-h-11 w-full touch-manipulation rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm outline-none ring-moss-400 focus:ring-2"
-                    />
-                  </label>
-                  <PendingSubmitButton
-                    pendingLabel="Saving…"
-                    className="rounded-xl bg-moss-500 px-3 py-2 text-sm font-bold text-sand-50 hover:bg-moss-400"
-                  >
-                    Save
-                  </PendingSubmitButton>
-                </form>
-
-                <form
-                  action={setCategoryAssignPercentAction}
-                  className="mt-2 flex flex-wrap items-end gap-2"
-                >
-                  <input type="hidden" name="category_id" value={row.categoryId} />
-                  <label className="min-w-[7rem] flex-1 text-xs font-semibold text-ink-600">
-                    Auto-assign %
-                    <input
-                      name="assign_percent"
-                      inputMode="decimal"
-                      defaultValue={String(row.assignPercent || 0)}
-                      className="mt-1 min-h-11 w-full touch-manipulation rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm outline-none ring-moss-400 focus:ring-2"
-                    />
-                  </label>
-                  <PendingSubmitButton
-                    pendingLabel="…"
-                    className="rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm font-bold text-ink-800"
-                  >
-                    Set %
-                  </PendingSubmitButton>
-                </form>
+                <CategoryAssignControl month={month} row={row} />
               </li>
             ))}
           </ul>
