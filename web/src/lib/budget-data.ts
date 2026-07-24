@@ -211,11 +211,33 @@ export async function getAccountRegister(accountId: string): Promise<{
   transactions: Transaction[];
   balanceCents: number;
   categories: Array<{ id: string; name: string; groupName: string }>;
+  matchSuggestions: Array<{
+    id: string;
+    amountDiffCents: number;
+    manual: {
+      id: string;
+      payee: string;
+      occurred_on: string;
+      amount_cents: number;
+    };
+    bank: {
+      id: string;
+      payee: string;
+      occurred_on: string;
+      amount_cents: number;
+    };
+  }>;
 }> {
   const { supabase, budget } = await requireBudget("viewer");
 
-  const [accountRes, transactionsRes, balanceRes, categoriesRes, groupsRes] =
-    await Promise.all([
+  const [
+    accountRes,
+    transactionsRes,
+    balanceRes,
+    categoriesRes,
+    groupsRes,
+    suggestionsRes,
+  ] = await Promise.all([
       supabase
         .from("accounts")
         .select("id,budget_id,name,account_type,currency")
@@ -246,6 +268,16 @@ export async function getAccountRegister(accountId: string): Promise<{
         .from("category_groups")
         .select("id,name")
         .eq("budget_id", budget.id),
+      supabase
+        .from("transaction_match_suggestions")
+        .select(
+          "id,amount_diff_cents,manual_transaction_id,bank_transaction_id",
+        )
+        .eq("budget_id", budget.id)
+        .eq("account_id", accountId)
+        .eq("status", "pending")
+        .order("created_at", { ascending: false })
+        .limit(50),
     ]);
 
   assertNoError(accountRes.error, "Failed to load account");
@@ -253,6 +285,13 @@ export async function getAccountRegister(accountId: string): Promise<{
   assertNoError(balanceRes.error, "Failed to load balance");
   assertNoError(categoriesRes.error, "Failed to load categories");
   assertNoError(groupsRes.error, "Failed to load category groups");
+  // Suggestions table may not exist until migration is applied.
+  if (
+    suggestionsRes.error &&
+    !/does not exist|schema cache|relation/i.test(suggestionsRes.error.message)
+  ) {
+    assertNoError(suggestionsRes.error, "Failed to load match suggestions");
+  }
 
   const account = accountRes.data;
   const transactions = transactionsRes.data;
@@ -266,6 +305,55 @@ export async function getAccountRegister(accountId: string): Promise<{
     0,
   );
 
+  const txnById = new Map(
+    ((transactions as Transaction[] | null) ?? []).map((txn) => [txn.id, txn]),
+  );
+
+  const missingIds = [
+    ...new Set(
+      (suggestionsRes.data ?? []).flatMap((row) => [
+        row.manual_transaction_id as string,
+        row.bank_transaction_id as string,
+      ]),
+    ),
+  ].filter((id) => !txnById.has(id));
+
+  if (missingIds.length > 0) {
+    const { data: extraTxns } = await supabase
+      .from("transactions")
+      .select("id,payee,occurred_on,amount_cents")
+      .eq("budget_id", budget.id)
+      .eq("account_id", accountId)
+      .in("id", missingIds);
+    for (const txn of extraTxns ?? []) {
+      txnById.set(txn.id as string, txn as Transaction);
+    }
+  }
+
+  const matchSuggestions = (suggestionsRes.data ?? [])
+    .map((row) => {
+      const manual = txnById.get(row.manual_transaction_id as string);
+      const bank = txnById.get(row.bank_transaction_id as string);
+      if (!manual || !bank) return null;
+      return {
+        id: row.id as string,
+        amountDiffCents: (row.amount_diff_cents as number) ?? 0,
+        manual: {
+          id: manual.id,
+          payee: manual.payee,
+          occurred_on: manual.occurred_on,
+          amount_cents: manual.amount_cents,
+        },
+        bank: {
+          id: bank.id,
+          payee: bank.payee,
+          occurred_on: bank.occurred_on,
+          amount_cents: bank.amount_cents,
+        },
+      };
+    })
+    .filter((row): row is NonNullable<typeof row> => row !== null);
+
   return {
     account: (account as Account | null) ?? null,
     transactions: (transactions as Transaction[] | null) ?? [],
@@ -275,5 +363,6 @@ export async function getAccountRegister(accountId: string): Promise<{
       name: c.name as string,
       groupName: groupMap.get(c.group_id as string) ?? "Ungrouped",
     })),
+    matchSuggestions,
   };
 }
