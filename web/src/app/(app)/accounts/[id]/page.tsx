@@ -14,7 +14,7 @@ export default async function AccountRegisterPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; notice?: string }>;
 }) {
   const { id } = await params;
   const query = await searchParams;
@@ -32,6 +32,7 @@ export default async function AccountRegisterPage({
         </Link>
       </div>
       <FlashError message={query.error} />
+      <FlashError message={query.notice} tone="success" />
 
       <div className="space-y-5">
         <RegisterAccountMenu

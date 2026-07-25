@@ -5,6 +5,7 @@ import {
   createTransactionAction,
   setAccountBalanceAction,
 } from "@/lib/actions";
+import { PendingSubmitButton } from "@/components/PendingSubmitButton";
 import { formatCents } from "@/lib/money";
 
 type CategoryOption = { id: string; name: string; groupName: string };
@@ -155,12 +156,12 @@ export function RegisterAccountMenu({
                   className="mt-1 w-full rounded-xl border border-ink-900/10 bg-white px-3 py-3 outline-none ring-moss-400 focus:ring-2"
                 />
               </label>
-              <button
-                type="submit"
+              <PendingSubmitButton
+                pendingLabel="Saving…"
                 className="w-full rounded-2xl bg-ink-900 px-4 py-3 text-sm font-bold text-sand-50 hover:bg-ink-800"
               >
                 Save transaction
-              </button>
+              </PendingSubmitButton>
             </form>
           ) : (
             <form action={setAccountBalanceAction} className="mt-3 space-y-3">
