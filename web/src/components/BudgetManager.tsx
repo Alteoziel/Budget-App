@@ -291,20 +291,41 @@ export function BudgetManager({
                               <span className="block truncate text-[15px] font-bold text-ink-900">
                                 {row.categoryName}
                               </span>
-                              <span className="block truncate text-[11px] font-semibold text-ink-500">
-                                Assigned {formatCents(row.assignedCents)}
-                                {row.assignMode === "fixed" && row.assignFixedCents > 0
-                                  ? ` · auto ${formatCents(row.assignFixedCents)}`
-                                  : row.assignMode !== "fixed" && row.assignPercent > 0
-                                    ? ` · auto ${row.assignPercent.toFixed(1)}%`
-                                    : ""}
+                              <span className="mt-1 flex flex-wrap items-center gap-1.5">
+                                <span className="inline-flex items-center rounded-lg bg-sand-400/55 px-2 py-0.5 text-[11px] font-bold text-sand-950 dark:bg-sand-700/80 dark:text-sand-50">
+                                  Assigned{" "}
+                                  <span className="ml-1 tabular-nums">
+                                    {formatCents(row.assignedCents)}
+                                  </span>
+                                </span>
+                                {row.assignMode === "fixed" && row.assignFixedCents > 0 ? (
+                                  <span className="text-[11px] font-semibold text-ink-500">
+                                    auto {formatCents(row.assignFixedCents)}
+                                  </span>
+                                ) : row.assignMode !== "fixed" && row.assignPercent > 0 ? (
+                                  <span className="text-[11px] font-semibold text-ink-500">
+                                    auto {row.assignPercent.toFixed(1)}%
+                                  </span>
+                                ) : null}
                               </span>
                             </span>
-                            <span className="shrink-0 text-right">
+                            <span
+                              className={`shrink-0 rounded-lg px-2.5 py-1 text-right ${
+                                row.availableCents < 0
+                                  ? "bg-coral-500/15"
+                                  : "bg-moss-500/15"
+                              }`}
+                            >
                               <span className="block text-[15px] font-bold leading-tight">
                                 <Money cents={row.availableCents} />
                               </span>
-                              <span className="block text-[10px] font-bold uppercase tracking-wide text-ink-500">
+                              <span
+                                className={`block text-[10px] font-bold uppercase tracking-wide ${
+                                  row.availableCents < 0
+                                    ? "text-coral-600"
+                                    : "text-moss-700 dark:text-moss-300"
+                                }`}
+                              >
                                 {row.availableCents < 0 ? "Overspent" : "Available"}
                               </span>
                             </span>
