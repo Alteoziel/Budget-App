@@ -507,4 +507,49 @@ revoke all on function public.purge_expired_budget_change_log(uuid)
 grant execute on function public.purge_expired_budget_change_log(uuid)
   to authenticated, service_role;
 
+-- CHECKPOINT 10: authorize private Presence/Broadcast channels by membership.
+create or replace function public.can_access_budget_realtime_topic(p_topic text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1
+    from public.budget_members m
+    where m.user_id = auth.uid()
+      and p_topic = 'budget-live:' || m.budget_id::text
+  );
+$$;
+
+revoke all on function public.can_access_budget_realtime_topic(text)
+  from public, anon;
+grant execute on function public.can_access_budget_realtime_topic(text)
+  to authenticated, service_role;
+
+drop policy if exists "budget members read private realtime"
+  on realtime.messages;
+create policy "budget members read private realtime"
+on realtime.messages for select
+to authenticated
+using (
+  realtime.messages.extension in ('broadcast', 'presence')
+  and public.can_access_budget_realtime_topic(
+    (select realtime.topic())
+  )
+);
+
+drop policy if exists "budget members write private realtime"
+  on realtime.messages;
+create policy "budget members write private realtime"
+on realtime.messages for insert
+to authenticated
+with check (
+  realtime.messages.extension in ('broadcast', 'presence')
+  and public.can_access_budget_realtime_topic(
+    (select realtime.topic())
+  )
+);
+
 notify pgrst, 'reload schema';
