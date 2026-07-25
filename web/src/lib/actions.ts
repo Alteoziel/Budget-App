@@ -32,6 +32,7 @@ import {
   writeExcludedAccountIds,
 } from "@/lib/account-total-filter";
 import { READY_TO_ASSIGN_TARGET_ID } from "@/lib/overspend-fix";
+import { suggestCategoryForPayee } from "@/lib/payee-categorization";
 import {
   balanceAnchorExternalId,
   isBalanceAnchorExternalId,
@@ -1586,7 +1587,7 @@ export async function createTransactionAction(formData: FormData) {
     redirect(returnTo.startsWith("/transactions") ? "/transactions" : "/accounts");
   }
 
-  const categoryId: string | null = categoryIdRaw || null;
+  let categoryId: string | null = categoryIdRaw || null;
   if (categoryId) {
     const category = await supabase
       .from("categories")
@@ -1597,6 +1598,9 @@ export async function createTransactionAction(formData: FormData) {
     if (!category.data?.id) {
       redirectWithError(errorPath, "Category not found.");
     }
+  } else if (payee) {
+    // Reuse the last / closest category you’ve assigned this payee to.
+    categoryId = await suggestCategoryForPayee(supabase, budget.id, payee);
   }
 
   const amountCents =

@@ -7,6 +7,11 @@ import {
   plaidErrorMessage,
 } from "@/lib/plaid/client";
 import { decryptSecret } from "@/lib/crypto/secrets";
+import {
+  loadPayeeCategoryMemory,
+  resolveCategoryFromPayeeMemory,
+  type PayeeCategoryMemory,
+} from "@/lib/payee-categorization";
 import { suggestMatchForBankTransaction } from "@/lib/transaction-matching";
 
 export type SyncResult = {
@@ -45,6 +50,9 @@ export async function syncPlaidItem(
     (maps ?? []).map((m) => [m.plaid_account_id as string, m.account_id as string]),
   );
 
+  // Learn categories from prior payee assignments once per sync pass.
+  const payeeMemory = await loadPayeeCategoryMemory(supabase, item.budget_id);
+
   let cursor = item.sync_cursor ?? undefined;
   let hasMore = true;
 
@@ -61,6 +69,7 @@ export async function syncPlaidItem(
           budgetId: item.budget_id,
           userId: item.created_by,
           accountByPlaid,
+          payeeMemory,
           txn,
         });
         result.inserted += counts.inserted;
@@ -71,6 +80,7 @@ export async function syncPlaidItem(
           budgetId: item.budget_id,
           userId: item.created_by,
           accountByPlaid,
+          payeeMemory,
           txn,
         });
         result.inserted += counts.inserted;
@@ -116,6 +126,7 @@ async function upsertPlaidTransaction(
     budgetId: string;
     userId: string;
     accountByPlaid: Map<string, string>;
+    payeeMemory: PayeeCategoryMemory;
     txn: PlaidTxn;
   },
 ): Promise<{ inserted: number; updated: number }> {
@@ -131,11 +142,15 @@ async function upsertPlaidTransaction(
     0,
     200,
   );
+  const suggestedCategoryId = resolveCategoryFromPayeeMemory(
+    payee,
+    args.payeeMemory,
+  );
   const row = {
     user_id: args.userId,
     budget_id: args.budgetId,
     account_id: accountId,
-    category_id: null as string | null,
+    category_id: suggestedCategoryId,
     occurred_on: args.txn.date,
     payee,
     memo: "",
