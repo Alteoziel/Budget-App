@@ -4,7 +4,8 @@ export type ChangeEntityType =
   | "transaction"
   | "account"
   | "category"
-  | "category_group";
+  | "category_group"
+  | "assignment";
 
 export type ChangeAction = "delete" | "update";
 
@@ -304,6 +305,64 @@ async function restoreCategoryDelete(
   }
 }
 
+async function restoreAssignmentUpdate(
+  supabase: AnyClient,
+  budgetId: string,
+  before: Record<string, unknown>,
+  afterSnapshot: Record<string, unknown> | null,
+) {
+  const month = String(before.month ?? "");
+  if (!month) throw new Error("Assignment month missing.");
+
+  const beforeRows = asArray(before.category_months);
+  const afterRows = asArray(afterSnapshot?.category_months);
+  const beforeByCategory = new Map(
+    beforeRows.map((row) => [String(row.category_id), row]),
+  );
+  const touchedIds = new Set<string>([
+    ...beforeRows.map((row) => String(row.category_id)),
+    ...afterRows.map((row) => String(row.category_id)),
+    ...(Array.isArray(before.touched_category_ids)
+      ? before.touched_category_ids.map(String)
+      : []),
+  ]);
+
+  for (const categoryId of touchedIds) {
+    const beforeRow = beforeByCategory.get(categoryId);
+    const assignedCents = beforeRow
+      ? Number(beforeRow.assigned_cents ?? 0)
+      : 0;
+    const userId = String(
+      beforeRow?.user_id ?? afterRows.find((row) => String(row.category_id) === categoryId)?.user_id ?? "",
+    );
+
+    if (!userId) {
+      // No ownership context — best effort update of existing row only.
+      const { error } = await supabase
+        .from("category_months")
+        .update({ assigned_cents: assignedCents })
+        .eq("budget_id", budgetId)
+        .eq("category_id", categoryId)
+        .eq("month", month);
+      if (error) throw new Error(error.message);
+      continue;
+    }
+
+    const { error } = await supabase.from("category_months").upsert(
+      {
+        user_id: userId,
+        budget_id: budgetId,
+        category_id: categoryId,
+        month,
+        assigned_cents: assignedCents,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "budget_id,category_id,month" },
+    );
+    if (error) throw new Error(error.message);
+  }
+}
+
 async function restoreCategoryGroupDelete(
   supabase: AnyClient,
   budgetId: string,
@@ -422,6 +481,8 @@ export async function restoreBudgetChange(
         .eq("budget_id", budgetId)
         .eq("id", String(row.id));
       if (error) throw new Error(error.message);
+    } else if (entry.entity_type === "assignment") {
+      await restoreAssignmentUpdate(supabase, budgetId, before, entry.after_snapshot);
     } else {
       throw new Error("Unsupported change type.");
     }

@@ -7,6 +7,7 @@ import { z } from "zod";
 import {
   currentBudgetMonth,
   dollarsToCents,
+  formatCents,
   isBudgetMonth,
   isValidIsoDate,
 } from "@/lib/money";
@@ -1302,6 +1303,16 @@ export async function autoAssignAction(formData: FormData) {
     redirectWithError("/budget", "Nothing to auto-assign.");
   }
 
+  const touchedCategoryIds = assignments
+    .filter((assignment) => assignment.addedCents > 0)
+    .map((assignment) => assignment.categoryId);
+
+  const { data: beforeMonths } = await supabase
+    .from("category_months")
+    .select("*")
+    .eq("budget_id", budget.id)
+    .eq("month", month);
+
   const monthUpsert = await supabase.from("budget_months").upsert(
     { user_id: user.id, budget_id: budget.id, month },
     { onConflict: "budget_id,month" },
@@ -1328,7 +1339,36 @@ export async function autoAssignAction(formData: FormData) {
     }
   }
 
+  const { data: afterMonths } = await supabase
+    .from("category_months")
+    .select("*")
+    .eq("budget_id", budget.id)
+    .eq("month", month);
+
+  await recordBudgetChange(supabase, {
+    budgetId: budget.id,
+    actorUserId: user.id,
+    entityType: "assignment",
+    entityId: null,
+    action: "update",
+    summary: `Auto-assigned ${formatCents(totalAdded)} for ${month}`,
+    beforeSnapshot: {
+      kind: "auto_assign",
+      month,
+      category_months: beforeMonths ?? [],
+      touched_category_ids: touchedCategoryIds,
+    },
+    afterSnapshot: {
+      kind: "auto_assign",
+      month,
+      category_months: afterMonths ?? [],
+      touched_category_ids: touchedCategoryIds,
+      total_added_cents: totalAdded,
+    },
+  });
+
   revalidatePath("/budget");
+  revalidatePath("/settings");
   redirect(`/budget?assigned=${totalAdded}`);
 }
 

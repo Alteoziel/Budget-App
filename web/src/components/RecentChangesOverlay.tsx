@@ -16,9 +16,16 @@ function entityLabel(type: BudgetChangeLogRow["entity_type"]) {
       return "Category";
     case "category_group":
       return "Group";
+    case "assignment":
+      return "Auto-assign";
     default:
       return "Change";
   }
+}
+
+function actionLabel(change: BudgetChangeLogRow) {
+  if (change.entity_type === "assignment") return "Assigned";
+  return change.action === "delete" ? "Deleted" : "Changed";
 }
 
 function daysLeft(expiresAt: string) {
@@ -104,8 +111,7 @@ export function RecentChangesOverlay({
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
                               <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-moss-500">
-                                {change.action === "delete" ? "Deleted" : "Changed"}{" "}
-                                · {entityLabel(change.entity_type)}
+                                {actionLabel(change)} · {entityLabel(change.entity_type)}
                               </p>
                               <p className="mt-1 text-sm font-semibold text-ink-900">
                                 {change.summary}
