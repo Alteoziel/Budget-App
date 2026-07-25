@@ -1,5 +1,6 @@
 "use client";
 
+import { useNotifyBudgetChange } from "@/components/BudgetRealtimeProvider";
 import { PendingSubmitButton } from "@/components/PendingSubmitButton";
 import { categoryAmountAction } from "@/lib/actions";
 import type { BudgetRow } from "@/lib/types";
@@ -14,8 +15,20 @@ export function CategoryAssignControl({
   month: string;
   row: BudgetRow;
 }) {
+  const notifyChange = useNotifyBudgetChange();
+
   return (
-    <form action={categoryAmountAction} className="mt-2 space-y-2">
+    <form
+      action={async (formData) => {
+        try {
+          await categoryAmountAction(formData);
+        } finally {
+          // Broadcast even when the action redirects — peers need the update.
+          notifyChange();
+        }
+      }}
+      className="mt-2 space-y-2"
+    >
       <input type="hidden" name="category_id" value={row.categoryId} />
       <input type="hidden" name="month" value={month} />
 

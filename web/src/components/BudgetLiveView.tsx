@@ -147,7 +147,7 @@ export function BudgetLiveView({
       }
       actions={
         groups.length > 0 ? (
-          <div className="flex flex-col items-end gap-1.5 sm:flex-row">
+          <div className="flex max-w-[min(100%,20rem)] flex-row flex-wrap items-center justify-end gap-1.5">
             <div ref={filtersRef} className="relative">
               <button
                 type="button"
