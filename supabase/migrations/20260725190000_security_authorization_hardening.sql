@@ -442,3 +442,69 @@ with check (
       and t.account_id = transaction_match_suggestions.account_id
   )
 );
+
+-- CHECKPOINT 7: authenticated users may not control unscoped sync logs.
+delete from public.sync_runs where budget_id is null;
+
+drop policy if exists "sync_runs_select" on public.sync_runs;
+create policy "sync_runs_select"
+on public.sync_runs for select
+using (
+  budget_id is not null
+  and public.is_budget_member(budget_id)
+);
+
+drop policy if exists "sync_runs_write" on public.sync_runs;
+create policy "sync_runs_write"
+on public.sync_runs for all
+using (
+  budget_id is not null
+  and public.has_budget_role(budget_id, 'admin')
+)
+with check (
+  budget_id is not null
+  and public.has_budget_role(budget_id, 'admin')
+);
+
+-- Authenticated callers must scope cleanup to a budget they can access.
+-- The service role may still perform global expiry maintenance.
+create or replace function public.purge_expired_budget_change_log(
+  p_budget_id uuid default null
+)
+returns integer
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  deleted_count integer;
+begin
+  if p_budget_id is null then
+    if coalesce(auth.role(), '') <> 'service_role' then
+      raise exception 'A budget is required';
+    end if;
+
+    delete from public.budget_change_log
+    where expires_at < pg_catalog.now();
+  else
+    if coalesce(auth.role(), '') <> 'service_role'
+       and not public.is_budget_member(p_budget_id) then
+      raise exception 'Not a budget member';
+    end if;
+
+    delete from public.budget_change_log
+    where budget_id = p_budget_id
+      and expires_at < pg_catalog.now();
+  end if;
+
+  get diagnostics deleted_count = row_count;
+  return deleted_count;
+end;
+$$;
+
+revoke all on function public.purge_expired_budget_change_log(uuid)
+  from public, anon;
+grant execute on function public.purge_expired_budget_change_log(uuid)
+  to authenticated, service_role;
+
+notify pgrst, 'reload schema';
