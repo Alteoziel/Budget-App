@@ -72,6 +72,8 @@ export type CategoryGoal = {
   goalName: string;
   goalFrequency: GoalFrequency;
   goalNote: string;
+  /** ISO date YYYY-MM-DD when a due date is enabled; null otherwise. */
+  goalDueOn: string | null;
 };
 
 export type BudgetRow = {

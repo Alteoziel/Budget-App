@@ -36,6 +36,12 @@ import {
   isBalanceAnchorExternalId,
   suggestMatchForManualTransaction,
 } from "@/lib/transaction-matching";
+import {
+  listRecentBudgetChanges,
+  recordBudgetChange,
+  restoreBudgetChange,
+  type BudgetChangeLogRow,
+} from "@/lib/change-log";
 
 const ACCOUNT_TYPES = new Set([
   "checking",
@@ -388,7 +394,7 @@ export async function setAccountIncludeInTotalAction(formData: FormData) {
 }
 
 export async function deleteAccountAction(formData: FormData) {
-  const { supabase, budget } = await requireBudget("editor");
+  const { supabase, user, budget } = await requireBudget("editor");
   const accountId = String(formData.get("account_id") ?? "").trim();
   if (!accountId) {
     redirectWithError("/accounts", "Account not found.");
@@ -396,7 +402,7 @@ export async function deleteAccountAction(formData: FormData) {
 
   const { data: account, error: lookupError } = await supabase
     .from("accounts")
-    .select("id,name")
+    .select("*")
     .eq("id", accountId)
     .eq("budget_id", budget.id)
     .maybeSingle();
@@ -404,6 +410,25 @@ export async function deleteAccountAction(formData: FormData) {
   if (lookupError || !account) {
     redirectWithError("/accounts", "Account not found.");
   }
+
+  const { data: accountTxns } = await supabase
+    .from("transactions")
+    .select("*")
+    .eq("budget_id", budget.id)
+    .eq("account_id", accountId);
+
+  await recordBudgetChange(supabase, {
+    budgetId: budget.id,
+    actorUserId: user.id,
+    entityType: "account",
+    entityId: accountId,
+    action: "delete",
+    summary: `Deleted account “${account.name}” (${(accountTxns ?? []).length} transactions)`,
+    beforeSnapshot: {
+      account,
+      transactions: accountTxns ?? [],
+    },
+  });
 
   // Clear bank mapping first (also cascades from account delete; explicit for clarity).
   await supabase
@@ -428,6 +453,7 @@ export async function deleteAccountAction(formData: FormData) {
   revalidatePath("/accounts");
   revalidatePath("/budget");
   revalidatePath("/insights");
+  revalidatePath("/transactions");
   revalidatePath("/settings");
   redirect("/accounts");
 }
@@ -629,6 +655,8 @@ export async function setCategoryGoalAction(
     goalName: string;
     frequency: string;
     note: string;
+    dueOnEnabled?: boolean;
+    dueOn?: string;
   },
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const { supabase, budget } = await requireBudget("editor");
@@ -648,6 +676,15 @@ export async function setCategoryGoalAction(
     goalCents = parsed;
   }
 
+  let goalDueOn: string | null = null;
+  if (goalCents != null && input.dueOnEnabled) {
+    const dueOn = String(input.dueOn ?? "").trim();
+    if (!isValidIsoDate(dueOn)) {
+      return { ok: false, error: "Pick a valid due date, or turn due date off." };
+    }
+    goalDueOn = dueOn;
+  }
+
   const owned = await supabase
     .from("categories")
     .select("id")
@@ -656,16 +693,39 @@ export async function setCategoryGoalAction(
     .maybeSingle();
   if (!owned.data?.id) return { ok: false, error: "Category not found." };
 
-  const { error } = await supabase
+  const payload = {
+    goal_cents: goalCents,
+    goal_name: goalCents == null ? "" : input.goalName.trim().slice(0, 120),
+    goal_frequency: frequency,
+    goal_note: goalCents == null ? "" : input.note.trim().slice(0, 500),
+    goal_due_on: goalDueOn,
+  };
+
+  let { error } = await supabase
     .from("categories")
-    .update({
-      goal_cents: goalCents,
-      goal_name: input.goalName.trim().slice(0, 120),
-      goal_frequency: frequency,
-      goal_note: input.note.trim().slice(0, 500),
-    })
+    .update(payload)
     .eq("budget_id", budget.id)
     .eq("id", categoryId);
+
+  if (error && /goal_due_on|column|schema cache/i.test(error.message)) {
+    const withoutDue = {
+      goal_cents: payload.goal_cents,
+      goal_name: payload.goal_name,
+      goal_frequency: payload.goal_frequency,
+      goal_note: payload.goal_note,
+    };
+    ({ error } = await supabase
+      .from("categories")
+      .update(withoutDue)
+      .eq("budget_id", budget.id)
+      .eq("id", categoryId));
+    if (!error && goalDueOn) {
+      return {
+        ok: false,
+        error: "Run the goal due-date migration in Supabase, then try again.",
+      };
+    }
+  }
 
   if (error) {
     return {
@@ -689,6 +749,8 @@ export async function clearCategoryGoalAction(
     goalName: "",
     frequency: "monthly",
     note: "",
+    dueOnEnabled: false,
+    dueOn: "",
   });
 }
 
@@ -699,6 +761,13 @@ export async function renameCategoryAction(formData: FormData) {
   if (!categoryId || !name) {
     redirectWithError("/budget", "Category name is required.");
   }
+
+  const { data: before } = await supabase
+    .from("categories")
+    .select("*")
+    .eq("budget_id", budget.id)
+    .eq("id", categoryId)
+    .maybeSingle();
 
   const { error } = await supabase
     .from("categories")
@@ -714,8 +783,22 @@ export async function renameCategoryAction(formData: FormData) {
     );
   }
 
+  if (before) {
+    await recordBudgetChange(supabase, {
+      budgetId: budget.id,
+      actorUserId: user.id,
+      entityType: "category",
+      entityId: categoryId,
+      action: "update",
+      summary: `Renamed category “${before.name}” → “${name}”`,
+      beforeSnapshot: { category: before },
+      afterSnapshot: { category: { ...before, name } },
+    });
+  }
+
   revalidatePath("/budget");
   revalidatePath("/accounts");
+  revalidatePath("/transactions");
 }
 
 export async function deleteCategoryAction(formData: FormData) {
@@ -724,6 +807,43 @@ export async function deleteCategoryAction(formData: FormData) {
   if (!categoryId) {
     redirectWithError("/budget", "Category not found.");
   }
+
+  const { data: category } = await supabase
+    .from("categories")
+    .select("*")
+    .eq("budget_id", budget.id)
+    .eq("id", categoryId)
+    .maybeSingle();
+  if (!category) {
+    redirectWithError("/budget", "Category not found.");
+  }
+
+  const [{ data: months }, { data: linkedTxns }] = await Promise.all([
+    supabase
+      .from("category_months")
+      .select("*")
+      .eq("budget_id", budget.id)
+      .eq("category_id", categoryId),
+    supabase
+      .from("transactions")
+      .select("id")
+      .eq("budget_id", budget.id)
+      .eq("category_id", categoryId),
+  ]);
+
+  await recordBudgetChange(supabase, {
+    budgetId: budget.id,
+    actorUserId: user.id,
+    entityType: "category",
+    entityId: categoryId,
+    action: "delete",
+    summary: `Deleted category “${category.name}”`,
+    beforeSnapshot: {
+      category,
+      category_months: months ?? [],
+      linked_transaction_ids: (linkedTxns ?? []).map((row) => row.id),
+    },
+  });
 
   const { error } = await supabase
     .from("categories")
@@ -736,6 +856,7 @@ export async function deleteCategoryAction(formData: FormData) {
 
   revalidatePath("/budget");
   revalidatePath("/accounts");
+  revalidatePath("/transactions");
 }
 
 export async function renameCategoryGroupAction(formData: FormData) {
@@ -745,6 +866,13 @@ export async function renameCategoryGroupAction(formData: FormData) {
   if (!groupId || !name) {
     redirectWithError("/budget", "Group name is required.");
   }
+
+  const { data: before } = await supabase
+    .from("category_groups")
+    .select("*")
+    .eq("budget_id", budget.id)
+    .eq("id", groupId)
+    .maybeSingle();
 
   const { error } = await supabase
     .from("category_groups")
@@ -760,16 +888,84 @@ export async function renameCategoryGroupAction(formData: FormData) {
     );
   }
 
+  if (before) {
+    await recordBudgetChange(supabase, {
+      budgetId: budget.id,
+      actorUserId: user.id,
+      entityType: "category_group",
+      entityId: groupId,
+      action: "update",
+      summary: `Renamed group “${before.name}” → “${name}”`,
+      beforeSnapshot: { group: before },
+      afterSnapshot: { group: { ...before, name } },
+    });
+  }
+
   revalidatePath("/budget");
   revalidatePath("/accounts");
 }
 
 export async function deleteCategoryGroupAction(formData: FormData) {
-  const { supabase, budget } = await requireBudget("editor");
+  const { supabase, user, budget } = await requireBudget("editor");
   const groupId = String(formData.get("group_id") ?? "");
   if (!groupId) {
     redirectWithError("/budget", "Group not found.");
   }
+
+  const { data: group } = await supabase
+    .from("category_groups")
+    .select("*")
+    .eq("budget_id", budget.id)
+    .eq("id", groupId)
+    .maybeSingle();
+  if (!group) {
+    redirectWithError("/budget", "Group not found.");
+  }
+
+  const { data: categories } = await supabase
+    .from("categories")
+    .select("*")
+    .eq("budget_id", budget.id)
+    .eq("group_id", groupId);
+  const categoryIds = (categories ?? []).map((row) => row.id as string);
+
+  let months: Record<string, unknown>[] = [];
+  const linkedByCategory: Record<string, string[]> = {};
+  if (categoryIds.length) {
+    const [monthsRes, linkedRes] = await Promise.all([
+      supabase
+        .from("category_months")
+        .select("*")
+        .eq("budget_id", budget.id)
+        .in("category_id", categoryIds),
+      supabase
+        .from("transactions")
+        .select("id,category_id")
+        .eq("budget_id", budget.id)
+        .in("category_id", categoryIds),
+    ]);
+    months = (monthsRes.data ?? []) as Record<string, unknown>[];
+    for (const txn of linkedRes.data ?? []) {
+      const catId = String(txn.category_id);
+      if (!linkedByCategory[catId]) linkedByCategory[catId] = [];
+      linkedByCategory[catId].push(String(txn.id));
+    }
+  }
+
+  await recordBudgetChange(supabase, {
+    budgetId: budget.id,
+    actorUserId: user.id,
+    entityType: "category_group",
+    entityId: groupId,
+    action: "delete",
+    summary: `Deleted group “${group.name}” (${categoryIds.length} categories)`,
+    beforeSnapshot: {
+      group,
+      categories: categories ?? [],
+      category_months: months,
+      linked_transaction_ids_by_category: linkedByCategory,
+    },
+  });
 
   // Cascades to categories; transactions.category_id becomes null via FK.
   const { error } = await supabase
@@ -783,6 +979,7 @@ export async function deleteCategoryGroupAction(formData: FormData) {
 
   revalidatePath("/budget");
   revalidatePath("/accounts");
+  revalidatePath("/transactions");
 }
 
 export async function reorderCategoryGroupAction(formData: FormData) {
@@ -1284,19 +1481,25 @@ export async function createTransactionAction(formData: FormData) {
   const categoryIdRaw = String(formData.get("category_id") ?? "");
   const amount = dollarsToCents(String(formData.get("amount") ?? ""));
   const direction = String(formData.get("direction") ?? "outflow");
+  const returnTo = safeInternalPath(
+    String(formData.get("return_to") ?? ""),
+    `/accounts/${accountId || ""}`,
+  );
+  const errorPath =
+    returnTo.startsWith("/transactions") ? "/transactions" : `/accounts/${accountId}`;
 
   if (!accountId) {
-    redirect("/accounts");
+    redirect(returnTo.startsWith("/transactions") ? "/transactions" : "/accounts");
   }
   if (amount === null || amount === 0) {
-    redirectWithError(`/accounts/${accountId}`, "Enter a valid non-zero amount.");
+    redirectWithError(errorPath, "Enter a valid non-zero amount.");
   }
   const amountValue = amount as number;
   if (!isValidIsoDate(occurredOn)) {
-    redirectWithError(`/accounts/${accountId}`, "Invalid date.");
+    redirectWithError(errorPath, "Invalid date.");
   }
   if (direction !== "inflow" && direction !== "outflow") {
-    redirectWithError(`/accounts/${accountId}`, "Invalid direction.");
+    redirectWithError(errorPath, "Invalid direction.");
   }
 
   const account = await supabase
@@ -1306,7 +1509,7 @@ export async function createTransactionAction(formData: FormData) {
     .eq("id", accountId)
     .maybeSingle();
   if (!account.data?.id) {
-    redirect("/accounts");
+    redirect(returnTo.startsWith("/transactions") ? "/transactions" : "/accounts");
   }
 
   const categoryId: string | null = categoryIdRaw || null;
@@ -1318,7 +1521,7 @@ export async function createTransactionAction(formData: FormData) {
       .eq("id", categoryId)
       .maybeSingle();
     if (!category.data?.id) {
-      redirectWithError(`/accounts/${accountId}`, "Category not found.");
+      redirectWithError(errorPath, "Category not found.");
     }
   }
 
@@ -1341,7 +1544,7 @@ export async function createTransactionAction(formData: FormData) {
     .select("id")
     .single();
   if (error || !created?.id) {
-    redirectWithError(`/accounts/${accountId}`, "Could not save transaction.");
+    redirectWithError(errorPath, "Could not save transaction.");
   }
 
   try {
@@ -1359,8 +1562,12 @@ export async function createTransactionAction(formData: FormData) {
   revalidatePath(`/accounts/${accountId}`);
   revalidatePath("/accounts");
   revalidatePath("/budget");
+  revalidatePath("/transactions");
+  const successPath = returnTo.startsWith("/transactions")
+    ? "/transactions"
+    : `/accounts/${accountId}`;
   redirect(
-    `/accounts/${accountId}?notice=${encodeURIComponent("Transaction Saved")}`,
+    `${successPath}?notice=${encodeURIComponent("Transaction Saved")}`,
   );
 }
 
@@ -1606,32 +1813,40 @@ export async function updateTransactionAction(formData: FormData) {
   const categoryIdRaw = String(formData.get("category_id") ?? "");
   const amount = dollarsToCents(String(formData.get("amount") ?? ""));
   const direction = String(formData.get("direction") ?? "outflow");
+  const returnTo = safeInternalPath(
+    String(formData.get("return_to") ?? ""),
+    "",
+  );
+  const fromTransactions = returnTo.startsWith("/transactions");
 
   const errorAccountId = fromAccountId || targetAccountId;
+  const errorPath = fromTransactions
+    ? "/transactions"
+    : `/accounts/${errorAccountId}`;
 
   if (!transactionId || !fromAccountId || !targetAccountId) {
-    redirect("/accounts");
+    redirect(fromTransactions ? "/transactions" : "/accounts");
   }
   if (amount === null || amount === 0) {
-    redirectWithError(`/accounts/${errorAccountId}`, "Enter a valid non-zero amount.");
+    redirectWithError(errorPath, "Enter a valid non-zero amount.");
   }
   const amountValue = amount as number;
   if (!isValidIsoDate(occurredOn)) {
-    redirectWithError(`/accounts/${errorAccountId}`, "Invalid date.");
+    redirectWithError(errorPath, "Invalid date.");
   }
   if (direction !== "inflow" && direction !== "outflow") {
-    redirectWithError(`/accounts/${errorAccountId}`, "Invalid direction.");
+    redirectWithError(errorPath, "Invalid direction.");
   }
 
   const existing = await supabase
     .from("transactions")
-    .select("id,account_id,external_id")
+    .select("*")
     .eq("budget_id", budget.id)
     .eq("id", transactionId)
     .eq("account_id", fromAccountId)
     .maybeSingle();
   if (!existing.data?.id) {
-    redirectWithError(`/accounts/${fromAccountId}`, "Transaction not found.");
+    redirectWithError(errorPath, "Transaction not found.");
   }
 
   if (
@@ -1639,7 +1854,7 @@ export async function updateTransactionAction(formData: FormData) {
     isBalanceAnchorExternalId(existing.data.external_id)
   ) {
     redirectWithError(
-      `/accounts/${fromAccountId}`,
+      errorPath,
       "Balance adjustments stay on their account. Set the balance on the other account instead.",
     );
   }
@@ -1652,7 +1867,7 @@ export async function updateTransactionAction(formData: FormData) {
       .eq("id", targetAccountId)
       .maybeSingle();
     if (!target.data?.id) {
-      redirectWithError(`/accounts/${fromAccountId}`, "Account not found.");
+      redirectWithError(errorPath, "Account not found.");
     }
   }
 
@@ -1665,7 +1880,7 @@ export async function updateTransactionAction(formData: FormData) {
       .eq("id", categoryId)
       .maybeSingle();
     if (!category.data?.id) {
-      redirectWithError(`/accounts/${fromAccountId}`, "Category not found.");
+      redirectWithError(errorPath, "Category not found.");
     }
   }
 
@@ -1685,8 +1900,29 @@ export async function updateTransactionAction(formData: FormData) {
     .eq("budget_id", budget.id)
     .eq("id", transactionId);
   if (error) {
-    redirectWithError(`/accounts/${fromAccountId}`, "Could not update transaction.");
+    redirectWithError(errorPath, "Could not update transaction.");
   }
+
+  await recordBudgetChange(supabase, {
+    budgetId: budget.id,
+    actorUserId: user.id,
+    entityType: "transaction",
+    entityId: transactionId,
+    action: "update",
+    summary: `Edited transaction “${payee || existing.data.payee || "Untitled"}”`,
+    beforeSnapshot: { row: existing.data },
+    afterSnapshot: {
+      row: {
+        ...existing.data,
+        account_id: targetAccountId,
+        category_id: categoryId,
+        occurred_on: occurredOn,
+        payee,
+        memo,
+        amount_cents: amountCents,
+      },
+    },
+  });
 
   if (targetAccountId !== fromAccountId) {
     // Match suggestions are account-scoped; drop pending ones for this txn.
@@ -1706,7 +1942,11 @@ export async function updateTransactionAction(formData: FormData) {
   }
   revalidatePath("/accounts");
   revalidatePath("/budget");
+  revalidatePath("/transactions");
 
+  if (fromTransactions) {
+    redirect("/transactions?notice=" + encodeURIComponent("Transaction updated"));
+  }
   if (targetAccountId !== fromAccountId) {
     redirect(`/accounts/${targetAccountId}`);
   }
@@ -1716,8 +1956,39 @@ export async function deleteTransactionAction(formData: FormData) {
   const { supabase, user, budget } = await requireBudget("editor");
   const transactionId = String(formData.get("transaction_id") ?? "");
   const accountId = String(formData.get("account_id") ?? "");
+  const returnTo = safeInternalPath(
+    String(formData.get("return_to") ?? ""),
+    "",
+  );
+  const fromTransactions = returnTo.startsWith("/transactions");
+  const errorPath = fromTransactions
+    ? "/transactions"
+    : accountId
+      ? `/accounts/${accountId}`
+      : "/accounts";
+
   if (!transactionId || !accountId) {
-    redirect("/accounts");
+    redirect(fromTransactions ? "/transactions" : "/accounts");
+  }
+
+  const { data: existing } = await supabase
+    .from("transactions")
+    .select("*")
+    .eq("budget_id", budget.id)
+    .eq("id", transactionId)
+    .eq("account_id", accountId)
+    .maybeSingle();
+
+  if (existing) {
+    await recordBudgetChange(supabase, {
+      budgetId: budget.id,
+      actorUserId: user.id,
+      entityType: "transaction",
+      entityId: transactionId,
+      action: "delete",
+      summary: `Deleted transaction “${existing.payee || "Untitled"}” (${existing.occurred_on})`,
+      beforeSnapshot: { row: existing },
+    });
   }
 
   const { error } = await supabase
@@ -1727,54 +1998,150 @@ export async function deleteTransactionAction(formData: FormData) {
     .eq("id", transactionId)
     .eq("account_id", accountId);
   if (error) {
-    redirectWithError(`/accounts/${accountId}`, "Could not delete transaction.");
+    redirectWithError(errorPath, "Could not delete transaction.");
   }
 
   revalidatePath(`/accounts/${accountId}`);
   revalidatePath("/accounts");
   revalidatePath("/budget");
+  revalidatePath("/transactions");
+  if (fromTransactions) {
+    redirect("/transactions?notice=" + encodeURIComponent("Transaction deleted"));
+  }
 }
 
 const BATCH_DELETE_LIMIT = 500;
 
 export async function batchDeleteTransactionsAction(formData: FormData) {
   const { supabase, user, budget } = await requireBudget("editor");
-  const accountId = String(formData.get("account_id") ?? "");
+  const accountId = String(formData.get("account_id") ?? "").trim();
+  const returnTo = safeInternalPath(
+    String(formData.get("return_to") ?? ""),
+    "",
+  );
+  const fromTransactions = returnTo.startsWith("/transactions");
   const ids = formData
     .getAll("transaction_ids")
     .map((value) => String(value).trim())
     .filter(Boolean);
 
-  if (!accountId) {
+  const errorPath = fromTransactions
+    ? "/transactions"
+    : accountId
+      ? `/accounts/${accountId}`
+      : "/accounts";
+
+  if (!fromTransactions && !accountId) {
     redirect("/accounts");
   }
   if (ids.length === 0) {
-    redirectWithError(`/accounts/${accountId}`, "Select at least one transaction.");
+    redirectWithError(errorPath, "Select at least one transaction.");
   }
   if (ids.length > BATCH_DELETE_LIMIT) {
     redirectWithError(
-      `/accounts/${accountId}`,
+      errorPath,
       `You can delete at most ${BATCH_DELETE_LIMIT} transactions at once.`,
     );
   }
 
-  const { error, count } = await supabase
+  let existingQuery = supabase
+    .from("transactions")
+    .select("*")
+    .eq("budget_id", budget.id)
+    .in("id", ids);
+  if (accountId) {
+    existingQuery = existingQuery.eq("account_id", accountId);
+  }
+  const { data: existingRows } = await existingQuery;
+
+  if (existingRows?.length) {
+    await recordBudgetChange(supabase, {
+      budgetId: budget.id,
+      actorUserId: user.id,
+      entityType: "transaction",
+      entityId: null,
+      action: "delete",
+      summary: `Deleted ${existingRows.length} transaction${existingRows.length === 1 ? "" : "s"}`,
+      beforeSnapshot: { transactions: existingRows },
+    });
+  }
+
+  let deleteQuery = supabase
     .from("transactions")
     .delete({ count: "exact" })
     .eq("budget_id", budget.id)
-    .eq("account_id", accountId)
     .in("id", ids);
+  if (accountId) {
+    deleteQuery = deleteQuery.eq("account_id", accountId);
+  }
+  const { error, count } = await deleteQuery;
 
   if (error) {
-    redirectWithError(`/accounts/${accountId}`, "Could not delete selected transactions.");
+    redirectWithError(errorPath, "Could not delete selected transactions.");
   }
   if (!count) {
-    redirectWithError(`/accounts/${accountId}`, "No matching transactions to delete.");
+    redirectWithError(errorPath, "No matching transactions to delete.");
   }
 
-  revalidatePath(`/accounts/${accountId}`);
+  if (accountId) revalidatePath(`/accounts/${accountId}`);
   revalidatePath("/accounts");
   revalidatePath("/budget");
+  revalidatePath("/transactions");
+  if (fromTransactions) {
+    redirect(
+      "/transactions?notice=" +
+        encodeURIComponent(`Deleted ${count} transaction${count === 1 ? "" : "s"}`),
+    );
+  }
+}
+
+export async function undoBudgetChangeAction(formData: FormData) {
+  const { supabase, budget } = await requireBudget("editor");
+  const changeId = String(formData.get("change_id") ?? "").trim();
+  if (!changeId) {
+    redirectWithError("/settings", "Change not found.");
+  }
+
+  const { data, error } = await supabase
+    .from("budget_change_log")
+    .select(
+      "id,budget_id,actor_user_id,entity_type,entity_id,action,summary,before_snapshot,after_snapshot,created_at,expires_at,restored_at",
+    )
+    .eq("budget_id", budget.id)
+    .eq("id", changeId)
+    .maybeSingle();
+
+  if (error || !data) {
+    redirectWithError(
+      "/settings",
+      /does not exist|schema cache|relation/i.test(error?.message ?? "")
+        ? "Run the recent-changes migration in Supabase, then try again."
+        : "Change not found or already expired.",
+    );
+  }
+
+  try {
+    await restoreBudgetChange(supabase, budget.id, data as BudgetChangeLogRow);
+  } catch (err) {
+    redirectWithError(
+      "/settings",
+      err instanceof Error ? err.message : "Could not undo that change.",
+    );
+  }
+
+  revalidatePath("/budget");
+  revalidatePath("/accounts");
+  revalidatePath("/transactions");
+  revalidatePath("/insights");
+  revalidatePath("/settings");
+  redirect(
+    `/settings?notice=${encodeURIComponent("Change undone")}&changes=1`,
+  );
+}
+
+export async function getRecentBudgetChangesAction(): Promise<BudgetChangeLogRow[]> {
+  const { supabase, budget } = await requireBudget("viewer");
+  return listRecentBudgetChanges(supabase, budget.id);
 }
 
 const importSchema = z.object({
@@ -2119,6 +2486,8 @@ export async function importYnabCsvAction(
 
   revalidatePath("/budget");
   revalidatePath("/accounts");
+  revalidatePath("/transactions");
+  revalidatePath("/settings");
   revalidatePath("/import");
 
   const ok = inserted > 0 || (duplicateSkipped > 0 && finalStatus === "completed");

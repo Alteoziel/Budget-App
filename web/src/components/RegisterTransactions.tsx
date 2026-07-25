@@ -16,11 +16,15 @@ export function RegisterTransactions({
   transactions,
   categories,
   accounts,
+  showAccountName = false,
+  returnTo,
 }: {
-  accountId: string;
+  accountId?: string;
   transactions: Transaction[];
   categories: CategoryOption[];
   accounts: Array<{ id: string; name: string }>;
+  showAccountName?: boolean;
+  returnTo?: string;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -28,9 +32,15 @@ export function RegisterTransactions({
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
+  const [accountFilter, setAccountFilter] = useState("all");
   const [flowFilter, setFlowFilter] = useState<"all" | "income" | "spending">("all");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+
+  const accountName = useMemo(() => {
+    const map = new Map(accounts.map((a) => [a.id, a.name]));
+    return (id: string) => map.get(id) ?? "Account";
+  }, [accounts]);
 
   const categoryLabel = useMemo(() => {
     const map = new Map(categories.map((c) => [c.id, `${c.groupName}: ${c.name}`]));
@@ -42,12 +52,16 @@ export function RegisterTransactions({
     const needle = search.trim().toLowerCase();
     return transactions.filter((txn) => {
       if (needle) {
-        const haystack = `${txn.payee} ${txn.memo} ${categoryLabel(txn.category_id)}`.toLowerCase();
+        const haystack =
+          `${txn.payee} ${txn.memo} ${categoryLabel(txn.category_id)} ${accountName(txn.account_id)}`.toLowerCase();
         if (!haystack.includes(needle)) return false;
       }
       if (categoryFilter === "uncategorized") {
         if (txn.category_id) return false;
       } else if (categoryFilter !== "all" && txn.category_id !== categoryFilter) {
+        return false;
+      }
+      if (accountFilter !== "all" && txn.account_id !== accountFilter) {
         return false;
       }
       if (flowFilter === "income" && txn.amount_cents <= 0) return false;
@@ -56,11 +70,22 @@ export function RegisterTransactions({
       if (toDate && txn.occurred_on > toDate) return false;
       return true;
     });
-  }, [transactions, search, categoryFilter, flowFilter, fromDate, toDate, categoryLabel]);
+  }, [
+    transactions,
+    search,
+    categoryFilter,
+    accountFilter,
+    flowFilter,
+    fromDate,
+    toDate,
+    categoryLabel,
+    accountName,
+  ]);
 
   const filtersActive =
     Boolean(search.trim()) ||
     categoryFilter !== "all" ||
+    accountFilter !== "all" ||
     flowFilter !== "all" ||
     Boolean(fromDate) ||
     Boolean(toDate);
@@ -75,6 +100,7 @@ export function RegisterTransactions({
   function clearFilters() {
     setSearch("");
     setCategoryFilter("all");
+    setAccountFilter("all");
     setFlowFilter("all");
     setFromDate("");
     setToDate("");
@@ -127,7 +153,7 @@ export function RegisterTransactions({
         {filtersOpen ? (
           <div className="mt-3 space-y-3">
             <label className="block text-xs font-semibold text-ink-600">
-              Search payee, memo, or category
+              Search payee, memo, category{showAccountName ? ", or account" : ""}
               <input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
@@ -137,6 +163,24 @@ export function RegisterTransactions({
             </label>
 
             <div className="grid gap-3 sm:grid-cols-2">
+              {showAccountName ? (
+                <label className="block text-xs font-semibold text-ink-600">
+                  Account
+                  <select
+                    value={accountFilter}
+                    onChange={(event) => setAccountFilter(event.target.value)}
+                    className="mt-1 min-h-11 w-full rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm outline-none ring-moss-400 focus:ring-2"
+                  >
+                    <option value="all">All accounts</option>
+                    {accounts.map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {account.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+
               <label className="block text-xs font-semibold text-ink-600">
                 Category
                 <select
@@ -227,14 +271,19 @@ export function RegisterTransactions({
           onSubmit={(event) => {
             if (
               !confirm(
-                `Delete ${selectedCount} selected transaction${selectedCount === 1 ? "" : "s"}? This cannot be undone.`,
+                `Delete ${selectedCount} selected transaction${selectedCount === 1 ? "" : "s"}? You can undo this from Settings → People & access for 7 days.`,
               )
             ) {
               event.preventDefault();
             }
           }}
         >
-          <input type="hidden" name="account_id" value={accountId} />
+          {accountId ? (
+            <input type="hidden" name="account_id" value={accountId} />
+          ) : null}
+          {returnTo ? (
+            <input type="hidden" name="return_to" value={returnTo} />
+          ) : null}
           {[...selected].map((id) => (
             <input key={id} type="hidden" name="transaction_ids" value={id} />
           ))}
@@ -259,6 +308,7 @@ export function RegisterTransactions({
           const isEditing = editingId === txn.id;
           const direction = txn.amount_cents >= 0 ? "inflow" : "outflow";
           const amountAbs = (Math.abs(txn.amount_cents) / 100).toFixed(2);
+          const rowAccountId = txn.account_id;
 
           return (
             <li key={txn.id} className="px-4 py-3">
@@ -278,12 +328,15 @@ export function RegisterTransactions({
                       onSubmit={() => setEditingId(null)}
                     >
                       <input type="hidden" name="transaction_id" value={txn.id} />
-                      <input type="hidden" name="from_account_id" value={accountId} />
+                      <input type="hidden" name="from_account_id" value={rowAccountId} />
+                      {returnTo ? (
+                        <input type="hidden" name="return_to" value={returnTo} />
+                      ) : null}
                       <label className="block text-xs font-semibold text-ink-600">
                         Account
                         <select
                           name="account_id"
-                          defaultValue={accountId}
+                          defaultValue={rowAccountId}
                           className="mt-1 w-full rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm outline-none ring-moss-400 focus:ring-2"
                         >
                           {accounts.map((account) => (
@@ -382,6 +435,9 @@ export function RegisterTransactions({
                           </p>
                           <p className="text-xs text-ink-600">
                             {txn.occurred_on}
+                            {showAccountName
+                              ? ` · ${accountName(txn.account_id)}`
+                              : ""}
                             {" · "}
                             {categoryLabel(txn.category_id)}
                             {txn.memo ? ` · ${txn.memo}` : ""}
@@ -401,12 +457,19 @@ export function RegisterTransactions({
                         </button>
                         <form action={deleteTransactionAction}>
                           <input type="hidden" name="transaction_id" value={txn.id} />
-                          <input type="hidden" name="account_id" value={accountId} />
+                          <input type="hidden" name="account_id" value={rowAccountId} />
+                          {returnTo ? (
+                            <input type="hidden" name="return_to" value={returnTo} />
+                          ) : null}
                           <button
                             type="submit"
                             className="text-xs font-bold text-coral-500"
                             onClick={(event) => {
-                              if (!confirm("Delete this transaction?")) {
+                              if (
+                                !confirm(
+                                  "Delete this transaction? You can undo this from Settings → People & access for 7 days.",
+                                )
+                              ) {
                                 event.preventDefault();
                               }
                             }}

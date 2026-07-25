@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
 import { FlashError } from "@/components/FlashError";
+import { ImportForm } from "@/components/ImportForm";
 import { InstallGuide } from "@/components/InstallGuide";
 import { InviteRoleLink } from "@/components/InviteRoleLink";
 import { PendingSubmitButton } from "@/components/PendingSubmitButton";
 import { PlaidLinkButton } from "@/components/PlaidLinkButton";
 import { ProfileSettings } from "@/components/ProfileSettings";
+import { RecentChangesOverlay } from "@/components/RecentChangesOverlay";
 import { SettingsCategory } from "@/components/SettingsCategory";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import {
@@ -22,6 +24,7 @@ import {
   updateMemberRoleAction,
 } from "@/lib/actions";
 import { listUserBudgets, requireBudget, roleAtLeast } from "@/lib/budget-context";
+import { listRecentBudgetChanges } from "@/lib/change-log";
 import { createClient } from "@/lib/supabase/server";
 import { plaidConfigured, plaidEnvName } from "@/lib/plaid/client";
 
@@ -61,6 +64,8 @@ export default async function SettingsPage({
     invite?: string;
     kind?: string;
     notice?: string;
+    import?: string;
+    changes?: string;
   }>;
 }) {
   const params = await searchParams;
@@ -69,6 +74,10 @@ export default async function SettingsPage({
   const supabase = await createClient();
   const canAdmin = roleAtLeast(role, "admin");
   const isOwner = role === "owner";
+  const canEdit = roleAtLeast(role, "editor");
+  const recentChanges = canEdit
+    ? await listRecentBudgetChanges(supabase, budget.id)
+    : [];
 
   const { data: profile } = await supabase
     .from("profiles")
@@ -230,10 +239,23 @@ export default async function SettingsPage({
         description="Who can view or edit this budget, and how they join."
         defaultOpen={Boolean(
           params.invite ||
+            params.changes ||
             params.notice ||
-            (params.error && /invite/i.test(params.error)),
+            (params.error && /invite|undo|change/i.test(params.error)),
         )}
       >
+        {canEdit ? (
+          <SettingsCard
+            title="Recent changes"
+            description="Review deletes and edits from the last 7 days and undo mistakes. Older history is permanently removed."
+          >
+            <RecentChangesOverlay
+              changes={recentChanges}
+              defaultOpen={Boolean(params.changes)}
+            />
+          </SettingsCard>
+        ) : null}
+
         <SettingsCard title="Members">
           <ul className="divide-y divide-ink-900/5">
             {(memberRows ?? []).map((m) => (
@@ -336,6 +358,40 @@ export default async function SettingsPage({
             </ul>
           </SettingsCard>
         ) : null}
+      </SettingsCategory>
+
+      <SettingsCategory
+        title="Import"
+        description="Bring YNAB Reflect or register CSV exports into this budget."
+        defaultOpen={Boolean(params.import)}
+      >
+        <SettingsCard
+          title="YNAB import"
+          description="Accounts and categories are created automatically. Assigned budget amounts stay at zero so you can set them in Budget."
+        >
+          <ImportForm />
+        </SettingsCard>
+        <SettingsCard title="Supported exports">
+          <div className="space-y-2 text-sm text-ink-700">
+            <p>
+              <span className="font-semibold text-ink-900">Preferred:</span>{" "}
+              YNAB Reflect → Income vs Expense CSV (
+              <code className="rounded bg-sand-100 px-1.5 py-0.5 text-xs">
+                Category, Jan 2025, …, Total
+              </code>
+              ).
+            </p>
+            <p>
+              <span className="font-semibold text-ink-900">Also:</span> register
+              CSV (
+              <code className="rounded bg-sand-100 px-1.5 py-0.5 text-xs">
+                Account, Date, Payee, Category Group/Category, Memo, Outflow,
+                Inflow
+              </code>
+              ).
+            </p>
+          </div>
+        </SettingsCard>
       </SettingsCategory>
 
       {canAdmin ? (
