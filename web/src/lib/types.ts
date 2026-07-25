@@ -44,6 +44,8 @@ export type Category = {
   assign_percent?: number;
   assign_mode?: AssignMode;
   assign_fixed_cents?: number;
+  /** Auto Priority (AP): 0 = off; lower positive numbers fund first. */
+  assign_priority?: number;
 };
 
 export type CategoryMonth = {
@@ -89,6 +91,8 @@ export type BudgetRow = {
   assignPercent: number;
   assignMode: AssignMode;
   assignFixedCents: number;
+  /** Auto Priority (AP): 0 = off; lower positive numbers fund first. */
+  assignPriority: number;
 } & CategoryGoal;
 
 export type BudgetSnapshotTxn = {

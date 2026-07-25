@@ -7,6 +7,7 @@ import {
   currentIsoDate,
   formatBudgetDate,
   formatBudgetMonth,
+  maxAssignableBudgetMonth,
   nextBudgetMonth,
   previousBudgetMonth,
 } from "@/lib/money";
@@ -64,6 +65,7 @@ export function BudgetCalendarPicker({
     () => selectedAs?.slice(0, 7) ?? currentMonth,
   );
   const today = currentIsoDate();
+  const maxFutureMonth = maxAssignableBudgetMonth(currentMonth);
 
   function close() {
     setOpen(false);
@@ -140,11 +142,17 @@ export function BudgetCalendarPicker({
   const totalDays = daysInMonth(viewMonth);
   const prev = previousBudgetMonth(viewMonth);
   const next = nextBudgetMonth(viewMonth);
+  const canGoNext =
+    Boolean(next) &&
+    Boolean(maxFutureMonth) &&
+    (next as string) <= (maxFutureMonth as string);
   const selectedDay =
     selectedAs && selectedAs.length === 10 ? selectedAs : null;
   const selectedMonthOnly =
     selectedAs && selectedAs.length === 7 ? selectedAs : null;
   const isLive = selectedAs == null;
+  const viewIsFuture = viewMonth > currentMonth;
+  const viewIsPast = viewMonth < currentMonth;
 
   const panel =
     open && panelPos && typeof document !== "undefined"
@@ -170,7 +178,13 @@ export function BudgetCalendarPicker({
               <button
                 type="button"
                 onClick={() => selectMonth(viewMonth)}
-                title="View this month’s snapshot"
+                title={
+                  viewIsFuture
+                    ? "Assign into this future month"
+                    : viewIsPast
+                      ? "View this month’s snapshot"
+                      : "Back to this month’s budget"
+                }
                 className={`min-h-9 flex-1 touch-manipulation rounded-xl px-2 text-sm font-bold transition ${
                   selectedMonthOnly === viewMonth ||
                   (isLive && viewMonth === currentMonth)
@@ -183,7 +197,7 @@ export function BudgetCalendarPicker({
               <button
                 type="button"
                 aria-label="Next month"
-                disabled={!next || viewMonth >= currentMonth}
+                disabled={!canGoNext}
                 onClick={() => next && setViewMonth(next)}
                 className="flex h-9 w-9 touch-manipulation items-center justify-center rounded-xl text-ink-700 hover:bg-ink-900/5 disabled:opacity-30"
               >
@@ -192,7 +206,9 @@ export function BudgetCalendarPicker({
             </div>
 
             <p className="mb-2 text-center text-[11px] font-semibold text-ink-500">
-              Tap the month for a month snapshot, or a day for that day’s snapshot.
+              {viewIsFuture
+                ? "Tap the month to assign Ready to assign into future categories."
+                : "Tap the month for a month snapshot, or a day for that day’s snapshot."}
             </p>
 
             <div className="grid grid-cols-7 gap-0.5 text-center text-[11px] font-bold uppercase tracking-wide text-ink-500">
@@ -210,7 +226,8 @@ export function BudgetCalendarPicker({
               {Array.from({ length: totalDays }, (_, i) => {
                 const day = i + 1;
                 const date = isoDay(viewMonth, day);
-                const disabled = date > today;
+                // Future months are month-level only (assign ahead); no day snapshots.
+                const disabled = viewIsFuture || date > today;
                 const isSelected = selectedDay === date;
                 const isToday = date === today;
                 return (

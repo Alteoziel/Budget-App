@@ -187,12 +187,14 @@ export function BudgetLiveView({
     });
   }
 
+  const isFutureMonth = month > liveMonth;
+
   return (
     <AppShell
       title="Budget"
       subtitle={
         <BudgetCalendarPicker
-          selectedAs={null}
+          selectedAs={isFutureMonth ? month : null}
           currentMonth={liveMonth}
           buttonLabel={formatBudgetMonth(month)}
         />
@@ -305,8 +307,16 @@ export function BudgetLiveView({
           message={`Auto-assigned ${formatCents(assignedCents)} across categories.`}
         />
       ) : null}
+      {isFutureMonth ? (
+        <p className="mb-3 rounded-2xl border border-moss-500/25 bg-moss-500/10 px-4 py-3 text-sm font-medium text-ink-800 dark:text-ink-100">
+          Assigning here takes money from{" "}
+          <span className="font-bold">{formatBudgetMonth(liveMonth)}</span>
+          ’s Ready to assign and puts it into this month’s categories.
+        </p>
+      ) : null}
       <BudgetOverview
         month={month}
+        liveMonth={liveMonth}
         rows={rows}
         readyToAssignCents={readyToAssignCents}
       />

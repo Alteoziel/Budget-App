@@ -6,10 +6,12 @@ import { FlashError } from "@/components/FlashError";
 import { getBudgetRows, getBudgetSnapshot } from "@/lib/budget-data";
 import {
   currentBudgetMonth,
+  currentIsoDate,
   formatBudgetDate,
   formatBudgetMonth,
   isBudgetMonth,
   isValidIsoDate,
+  maxAssignableBudgetMonth,
 } from "@/lib/money";
 
 function resolveAsParam(raw: string | undefined): string | null {
@@ -28,10 +30,55 @@ export default async function BudgetPage({
   const params = await searchParams;
   const as = resolveAsParam(params.as);
   const liveMonth = currentBudgetMonth();
+  const today = currentIsoDate();
+  const maxFutureMonth = maxAssignableBudgetMonth(liveMonth);
 
-  // Current month (no day) stays editable; past months and any day are snapshots.
+  // Future calendar days are not valid views.
+  if (as && isValidIsoDate(as) && as > today) {
+    return (
+      <AppShell
+        title="Budget"
+        subtitle={
+          <BudgetCalendarPicker
+            selectedAs={null}
+            currentMonth={liveMonth}
+            buttonLabel={formatBudgetMonth(liveMonth)}
+          />
+        }
+      >
+        <FlashError message="Future days can’t be opened yet — pick a month to assign ahead." />
+      </AppShell>
+    );
+  }
+
+  // Future months beyond the assignable window.
+  if (
+    as &&
+    isBudgetMonth(as) &&
+    maxFutureMonth &&
+    as > maxFutureMonth
+  ) {
+    return (
+      <AppShell
+        title="Budget"
+        subtitle={
+          <BudgetCalendarPicker
+            selectedAs={null}
+            currentMonth={liveMonth}
+            buttonLabel={formatBudgetMonth(liveMonth)}
+          />
+        }
+      >
+        <FlashError message="That month is too far ahead to assign into." />
+      </AppShell>
+    );
+  }
+
+  // Past months and any day are read-only snapshots. Current + future months
+  // are editable so you can put Ready to assign toward upcoming categories.
   const showSnapshot =
-    as != null && !(isBudgetMonth(as) && as === liveMonth);
+    as != null &&
+    ((isBudgetMonth(as) && as < liveMonth) || isValidIsoDate(as));
 
   if (showSnapshot && as) {
     const snapshot = await getBudgetSnapshot(as);
@@ -73,8 +120,11 @@ export default async function BudgetPage({
     );
   }
 
+  const editableMonth =
+    as && isBudgetMonth(as) && as >= liveMonth ? as : liveMonth;
+
   const { month, rows, readyToAssignCents, groups: allGroups } =
-    await getBudgetRows();
+    await getBudgetRows(editableMonth);
 
   const groupMap = new Map<
     string,

@@ -151,6 +151,32 @@ export default async function SettingsPage({
         </SettingsCard>
 
         <SettingsCard
+          title="Auto-assign & AP"
+          description="How Ready to assign can be spread across categories."
+        >
+          <ul className="space-y-2 text-sm text-ink-700">
+            <li>
+              <span className="font-bold text-ink-900">Regular</span> uses each
+              category’s <span className="font-semibold">auto:%</span> and{" "}
+              <span className="font-semibold">auto:#</span> rules.
+            </li>
+            <li>
+              <span className="font-bold text-ink-900">Priority</span> funds
+              categories in <span className="font-semibold">AP</span> order
+              (Auto Priority). Lower numbers fill first; ties split evenly until
+              each category’s goal is met — or its{" "}
+              <span className="font-semibold">auto:#</span> amount if it has no
+              goal.
+            </li>
+            <li>
+              On Budget, expand a category, enter a whole number, and tap{" "}
+              <span className="font-semibold">AP</span> (0 clears). Switch
+              Regular / Priority next to Auto-assign.
+            </li>
+          </ul>
+        </SettingsCard>
+
+        <SettingsCard
           title="Install on iPhone"
           description="Use Alte' from your Home Screen, including offline."
         >

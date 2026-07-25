@@ -43,7 +43,7 @@ export function CategoryAssignControl({
         className="min-h-11 w-full touch-manipulation rounded-xl border border-ink-900/15 bg-white px-3 py-2 text-base outline-none ring-moss-400 focus:ring-2"
       />
 
-      <div className="grid grid-cols-5 gap-2">
+      <div className="grid grid-cols-3 gap-2">
         <PendingSubmitButton name="intent" value="add" pendingLabel="+" className={btnClass}>
           +
         </PendingSubmitButton>
@@ -73,6 +73,15 @@ export function CategoryAssignControl({
           className={btnClass}
         >
           auto:#
+        </PendingSubmitButton>
+        <PendingSubmitButton
+          name="intent"
+          value="auto_priority"
+          pendingLabel="AP"
+          className={btnClass}
+          aria-label="Set Auto Priority (AP). Lower numbers fund first; 0 clears."
+        >
+          AP
         </PendingSubmitButton>
       </div>
     </form>

@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
-import { distributeByPercent } from "@/lib/auto-assign";
+import {
+  distributeByPercent,
+  distributeByPriority,
+  priorityNeedCents,
+} from "@/lib/auto-assign";
 
 {
   const result = distributeByPercent(10000, [
@@ -168,6 +172,140 @@ import { distributeByPercent } from "@/lib/auto-assign";
   ]);
   assert.equal(fixedOnly.totalAdded, 1200);
   assert.equal(fixedOnly.assignments[0]?.assignedCents, 1250);
+}
+
+assert.equal(
+  priorityNeedCents({
+    goalCents: 10_000,
+    availableCents: 2_500,
+    assignFixedCents: 999,
+  }),
+  7_500,
+);
+assert.equal(
+  priorityNeedCents({
+    goalCents: null,
+    availableCents: 0,
+    assignFixedCents: 1_200,
+  }),
+  1_200,
+);
+assert.equal(
+  priorityNeedCents({
+    goalCents: 5_000,
+    availableCents: 5_000,
+    assignFixedCents: 1_200,
+  }),
+  0,
+);
+
+{
+  // Fill priority 1 fully before priority 2.
+  const result = distributeByPriority(10_000, [
+    {
+      categoryId: "rent",
+      assignPriority: 1,
+      needCents: 7_000,
+      currentAssignedCents: 100,
+    },
+    {
+      categoryId: "fun",
+      assignPriority: 2,
+      needCents: 5_000,
+      currentAssignedCents: 0,
+    },
+  ]);
+  assert.equal(result.error, undefined);
+  assert.equal(result.totalAdded, 10_000);
+  const byId = Object.fromEntries(result.assignments.map((a) => [a.categoryId, a]));
+  assert.equal(byId.rent.addedCents, 7_000);
+  assert.equal(byId.rent.assignedCents, 7_100);
+  assert.equal(byId.fun.addedCents, 3_000);
+}
+
+{
+  // Same priority splits evenly until filled.
+  const result = distributeByPriority(10_000, [
+    {
+      categoryId: "a",
+      assignPriority: 1,
+      needCents: 8_000,
+      currentAssignedCents: 0,
+    },
+    {
+      categoryId: "b",
+      assignPriority: 1,
+      needCents: 8_000,
+      currentAssignedCents: 0,
+    },
+  ]);
+  assert.equal(result.totalAdded, 10_000);
+  const byId = Object.fromEntries(result.assignments.map((a) => [a.categoryId, a]));
+  assert.equal(byId.a.addedCents, 5_000);
+  assert.equal(byId.b.addedCents, 5_000);
+}
+
+{
+  // Uneven needs at the same priority: fill the smaller one, keep splitting.
+  const result = distributeByPriority(10_000, [
+    {
+      categoryId: "a",
+      assignPriority: 1,
+      needCents: 3_000,
+      currentAssignedCents: 0,
+    },
+    {
+      categoryId: "b",
+      assignPriority: 1,
+      needCents: 8_000,
+      currentAssignedCents: 0,
+    },
+  ]);
+  assert.equal(result.totalAdded, 10_000);
+  const byId = Object.fromEntries(result.assignments.map((a) => [a.categoryId, a]));
+  assert.equal(byId.a.addedCents, 3_000);
+  assert.equal(byId.b.addedCents, 7_000);
+}
+
+{
+  // Leftover cents that can’t cover everyone go out as evenly as possible.
+  const result = distributeByPriority(5, [
+    {
+      categoryId: "a",
+      assignPriority: 1,
+      needCents: 100,
+      currentAssignedCents: 0,
+    },
+    {
+      categoryId: "b",
+      assignPriority: 1,
+      needCents: 100,
+      currentAssignedCents: 0,
+    },
+    {
+      categoryId: "c",
+      assignPriority: 1,
+      needCents: 100,
+      currentAssignedCents: 0,
+    },
+  ]);
+  assert.equal(result.totalAdded, 5);
+  const byId = Object.fromEntries(result.assignments.map((a) => [a.categoryId, a]));
+  assert.equal(byId.a.addedCents, 2);
+  assert.equal(byId.b.addedCents, 2);
+  assert.equal(byId.c.addedCents, 1);
+}
+
+{
+  const empty = distributeByPriority(5_000, [
+    {
+      categoryId: "a",
+      assignPriority: 0,
+      needCents: 1_000,
+      currentAssignedCents: 0,
+    },
+  ]);
+  assert.match(empty.error ?? "", /Set AP/);
 }
 
 console.log("auto-assign.test.ts: ok");
