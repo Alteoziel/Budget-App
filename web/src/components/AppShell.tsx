@@ -12,7 +12,7 @@ export function AppShell({
 }) {
   return (
     <>
-      <header className="animate-rise relative z-30 mb-4 flex min-w-0 items-start justify-between gap-3">
+      <header className="animate-rise relative z-50 mb-4 flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0">
           <h1 className="font-display text-2xl font-bold text-ink-900 sm:text-3xl">
             {title}

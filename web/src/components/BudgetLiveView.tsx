@@ -148,7 +148,7 @@ export function BudgetLiveView({
       actions={
         groups.length > 0 ? (
           <div className="flex max-w-[min(100%,20rem)] flex-row flex-wrap items-center justify-end gap-1.5">
-            <div ref={filtersRef} className="relative">
+            <div ref={filtersRef} className="relative z-50">
               <button
                 type="button"
                 aria-expanded={filtersOpen}
@@ -167,7 +167,7 @@ export function BudgetLiveView({
                   id={filtersPanelId}
                   role="dialog"
                   aria-label="Budget filters"
-                  className="absolute right-0 z-40 mt-2 w-64 rounded-2xl border border-ink-900/15 bg-sand-50 p-3 shadow-soft dark:bg-ink-50"
+                  className="absolute right-0 z-50 mt-2 w-64 rounded-2xl border border-ink-900/20 bg-sand-50 p-3 shadow-soft ring-1 ring-ink-900/5 dark:bg-ink-50"
                 >
                   <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-ink-500">
                     Show categories that
