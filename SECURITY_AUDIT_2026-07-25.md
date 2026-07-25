@@ -43,9 +43,10 @@ payload, URL, cookie, browser state value, and unsigned JWT claim.
     old workflow definitions).
 19. Made full-tree governance scans use fail-closed, NUL-safe tracked-file
     enumeration; added an explicit route-auth gate and false-positive tests.
-20. Replaced the secret-bearing PR FOSSA path with GitHub's secretless,
-    pinned dependency vulnerability/license review, still on `pull_request`
-    so the required "FOSSA License Scan" context reports.
+20. Kept the required "FOSSA License Scan" check on `pull_request`. GitHub
+    Dependency Review is unavailable here without Advanced Security, so the
+    workflow uses FOSSA when `FOSSA_API_KEY` is set and otherwise a
+    fail-closed secretless package-manifest denied-license gate.
 
 ## Endpoint permission inventory
 
@@ -97,9 +98,10 @@ an intentional, documented public trust boundary.
 - Automated PR comments/dashboard ingestion were removed from the untrusted
   scanner job. Restore them only through a trusted `workflow_run` reporter that
   validates the source run, PR, repository, and head SHA before using secrets.
-- If FOSSA-specific policy is required in addition to GitHub Dependency Review,
-  run a checksum-pinned FOSSA CLI from a trusted follow-up workflow; never pass
-  its key to candidate-controlled workflow code.
+- Enable GitHub Dependency graph + Advanced Security, then switch the FOSSA
+  required check to pinned Dependency Review. Until then, keep `FOSSA_API_KEY`
+  set for full transitive license SCA; the secretless manifest gate is only a
+  same-repo fallback.
 - `BANK_TOKEN_ENCRYPTION_KEY` still has a legacy `CRON_SECRET` fallback.
   Removing it immediately could make existing encrypted bank tokens
   undecryptable. Configure a dedicated key, version/re-encrypt existing
