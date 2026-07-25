@@ -261,27 +261,50 @@ export async function ensureLocalAccountsForItem(
           account.mask ? ` ·${account.mask}` : ""
         }`;
 
-      const { data: created, error } = await supabase
+      const { data: maxSort } = await supabase
+        .from("accounts")
+        .select("sort_order")
+        .eq("budget_id", args.budgetId)
+        .order("sort_order", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const nextSortOrder = Number(maxSort?.sort_order ?? -1) + 1;
+      const baseRow = {
+        user_id: args.userId,
+        budget_id: args.budgetId,
+        name: name.slice(0, 80),
+        account_type: mapPlaidAccountType(account.type, account.subtype),
+        currency: (account.balances.iso_currency_code || "USD").toUpperCase(),
+      };
+
+      let created: { id: string } | null = null;
+      let error: { message: string } | null = null;
+      ({ data: created, error } = await supabase
         .from("accounts")
         .insert({
-          user_id: args.userId,
-          budget_id: args.budgetId,
-          name: name.slice(0, 80),
-          account_type: mapPlaidAccountType(account.type, account.subtype),
-          currency: (account.balances.iso_currency_code || "USD").toUpperCase(),
+          ...baseRow,
+          include_in_total: true,
+          sort_order: nextSortOrder,
         })
         .select("id")
-        .single();
+        .single());
+
+      if (error && /include_in_total|sort_order|schema cache|column/i.test(error.message)) {
+        ({ data: created, error } = await supabase
+          .from("accounts")
+          .insert(baseRow)
+          .select("id")
+          .single());
+      }
 
       if (error || !created) {
         const { data: retry } = await supabase
           .from("accounts")
           .insert({
-            user_id: args.userId,
-            budget_id: args.budgetId,
+            ...baseRow,
             name: `${name.slice(0, 60)} (${account.account_id.slice(-6)})`,
-            account_type: mapPlaidAccountType(account.type, account.subtype),
-            currency: (account.balances.iso_currency_code || "USD").toUpperCase(),
+            include_in_total: true,
+            sort_order: nextSortOrder,
           })
           .select("id")
           .single();
@@ -308,13 +331,52 @@ export async function ensureLocalAccountsForItem(
   return linked;
 }
 
+export type SyncRunSource = "teller" | "plaid" | "cron" | "manual" | "catchup";
+
+export type SyncAllOptions = {
+  source?: SyncRunSource;
+  /** Extra attempts after the first failure (default 1 → two tries total). */
+  retries?: number;
+  /** Limit to one budget (catch-up). */
+  budgetId?: string;
+  /** Limit to specific item ids. */
+  itemIds?: string[];
+};
+
+async function sleep(ms: number) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function syncPlaidItemWithRetry(
+  supabase: SupabaseClient,
+  item: ItemRow,
+  retries: number,
+): Promise<SyncResult> {
+  let attempt = 0;
+  let result = await syncPlaidItem(supabase, item);
+  while (result.errors.length > 0 && attempt < retries) {
+    attempt += 1;
+    await sleep(500 * attempt);
+    result = await syncPlaidItem(supabase, item);
+  }
+  return result;
+}
+
 export async function syncAllActivePlaidItems(
   supabase: SupabaseClient,
+  options: SyncAllOptions = {},
 ): Promise<{ runs: number; inserted: number; updated: number; removed: number; errors: string[] }> {
-  const { data: items, error } = await supabase
+  const source = options.source ?? "cron";
+  const retries = options.retries ?? 1;
+
+  let query = supabase
     .from("plaid_items")
     .select("id,budget_id,access_token_encrypted,sync_cursor,created_by,status")
     .neq("status", "disconnected");
+  if (options.budgetId) query = query.eq("budget_id", options.budgetId);
+  if (options.itemIds?.length) query = query.in("id", options.itemIds);
+
+  const { data: items, error } = await query;
   if (error) throw new Error(error.message);
 
   let inserted = 0;
@@ -326,22 +388,49 @@ export async function syncAllActivePlaidItems(
   for (const item of items ?? []) {
     runs += 1;
     const started = new Date().toISOString();
-    const result = await syncPlaidItem(supabase, item);
+
+    // Record the attempt immediately so a crash still leaves a trail.
+    const { data: runRow } = await supabase
+      .from("sync_runs")
+      .insert({
+        budget_id: item.budget_id,
+        plaid_item_id: item.id,
+        source,
+        started_at: started,
+        finished_at: null,
+        inserted: 0,
+        updated: 0,
+        errors: null,
+      })
+      .select("id")
+      .maybeSingle();
+
+    const result = await syncPlaidItemWithRetry(supabase, item, retries);
     inserted += result.inserted;
     updated += result.updated;
     removed += result.removed;
-    if (result.errors.length) errors.push(...result.errors);
+    if (result.errors.length) {
+      errors.push(`[${item.id}] ${result.errors.join("; ")}`);
+    }
 
-    await supabase.from("sync_runs").insert({
-      budget_id: item.budget_id,
-      plaid_item_id: item.id,
-      source: "cron",
-      started_at: started,
+    const finished = {
       finished_at: new Date().toISOString(),
       inserted: result.inserted,
       updated: result.updated,
       errors: result.errors.length ? result.errors.join("\n").slice(0, 4000) : null,
-    });
+    };
+
+    if (runRow?.id) {
+      await supabase.from("sync_runs").update(finished).eq("id", runRow.id);
+    } else {
+      await supabase.from("sync_runs").insert({
+        budget_id: item.budget_id,
+        plaid_item_id: item.id,
+        source,
+        started_at: started,
+        ...finished,
+      });
+    }
   }
 
   return { runs, inserted, updated, removed, errors };

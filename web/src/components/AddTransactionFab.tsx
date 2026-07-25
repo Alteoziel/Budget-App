@@ -11,6 +11,10 @@ type CategoryOption = { id: string; name: string; groupName: string };
 const fieldClass =
   "mt-1 box-border min-h-12 min-w-0 max-w-full w-full touch-manipulation rounded-xl border border-ink-900/10 bg-white px-3 py-3 text-base leading-normal outline-none ring-moss-400 focus:ring-2";
 
+/** Date fields need tighter horizontal padding — the native picker icon eats width. */
+const dateFieldClass =
+  "mt-1 box-border min-h-12 min-w-0 max-w-full w-full touch-manipulation rounded-xl border border-ink-900/10 bg-white px-2.5 py-3 text-base leading-normal outline-none ring-moss-400 focus:ring-2";
+
 export function AddTransactionFab({
   accounts,
   categories,
@@ -51,7 +55,7 @@ export function AddTransactionFab({
               role="dialog"
               aria-modal="true"
               aria-labelledby={titleId}
-              className="relative z-10 max-h-[min(90vh,44rem)] w-full max-w-lg overflow-y-auto rounded-2xl bg-sand-50 p-4 shadow-xl ring-1 ring-ink-900/10"
+              className="relative z-10 max-h-[min(90vh,44rem)] w-full max-w-lg overflow-x-hidden overflow-y-auto rounded-2xl bg-sand-50 p-4 shadow-xl ring-1 ring-ink-900/10"
             >
               <div className="mb-3 flex items-start justify-between gap-3">
                 <h2 id={titleId} className="font-display text-xl font-bold text-ink-900">
@@ -92,14 +96,14 @@ export function AddTransactionFab({
                       ))}
                     </select>
                   </label>
-                  <label className="block min-w-0 text-sm font-semibold text-ink-700">
+                  <label className="block min-w-0 overflow-hidden text-sm font-semibold text-ink-700">
                     Date
                     <input
                       required
                       type="date"
                       name="occurred_on"
                       defaultValue={today}
-                      className={fieldClass}
+                      className={dateFieldClass}
                     />
                   </label>
                   <label className="block min-w-0 text-sm font-semibold text-ink-700">

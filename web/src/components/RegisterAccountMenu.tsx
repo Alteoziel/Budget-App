@@ -14,21 +14,22 @@ type CategoryOption = { id: string; name: string; groupName: string };
 const fieldClass =
   "mt-1 box-border min-h-12 min-w-0 max-w-full w-full touch-manipulation rounded-xl border border-ink-900/10 bg-white px-3 py-3 text-base leading-normal outline-none ring-moss-400 focus:ring-2";
 
+/** Date fields need tighter horizontal padding — the native picker icon eats width. */
+const dateFieldClass =
+  "mt-1 box-border min-h-12 min-w-0 max-w-full w-full touch-manipulation rounded-xl border border-ink-900/10 bg-white px-2.5 py-3 text-base leading-normal outline-none ring-moss-400 focus:ring-2";
+
 export function RegisterAccountMenu({
   accountId,
   balanceCents,
   categories,
   today,
-  /** When set (e.g. after save redirect), keep the menu collapsed. */
-  forceClosed = false,
 }: {
   accountId: string;
   balanceCents: number;
   categories: CategoryOption[];
   today: string;
-  forceClosed?: boolean;
 }) {
-  const [open, setOpen] = useState(!forceClosed);
+  const [open, setOpen] = useState(false);
   const [panel, setPanel] = useState<"add" | "balance">("add");
 
   return (
@@ -106,14 +107,14 @@ export function RegisterAccountMenu({
               className="mt-3 min-w-0 space-y-3"
             >
               <input type="hidden" name="account_id" value={accountId} />
-              <label className="block min-w-0 text-sm font-semibold text-ink-700">
+              <label className="block min-w-0 overflow-hidden text-sm font-semibold text-ink-700">
                 Date
                 <input
                   required
                   type="date"
                   name="occurred_on"
                   defaultValue={today}
-                  className={fieldClass}
+                  className={dateFieldClass}
                 />
               </label>
               <label className="block min-w-0 text-sm font-semibold text-ink-700">

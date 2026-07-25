@@ -5,6 +5,8 @@ import { FlashError } from "@/components/FlashError";
 import { Money } from "@/components/Money";
 import { getAccountsWithBalances } from "@/lib/budget-data";
 
+export const dynamic = "force-dynamic";
+
 export default async function AccountsPage({
   searchParams,
 }: {

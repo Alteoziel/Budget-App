@@ -265,7 +265,8 @@ export async function createAccountAction(formData: FormData) {
 
 /**
  * Persist a full account order for the active budget.
- * Prefer the reorder_budget_accounts RPC; fall back to direct updates.
+ * Uses the security-definer RPC when available, then always verifies by re-reading
+ * sort_order. Falls back to a two-phase direct update so ties/zeros can't stick.
  */
 export async function reorderAccountsAction(
   orderedIds: string[],
@@ -280,105 +281,171 @@ export async function reorderAccountsAction(
   }
 
   const migrationHint =
-    "Run supabase/migrations/20260725030000_reorder_budget_accounts_rpc.sql in Supabase, then reload the API schema.";
+    "Run supabase/migrations/20260725150000_fix_account_reorder_persist.sql in Supabase, then reload the API schema.";
 
-  async function verifyOrder(): Promise<true | string> {
+  async function loadOrderedIds(): Promise<
+    { ok: true; ids: string[] } | { ok: false; error: string }
+  > {
     const { data, error } = await supabase
       .from("accounts")
-      .select("id,sort_order")
-      .eq("budget_id", budget.id)
-      .order("sort_order")
-      .order("name");
+      .select("id,sort_order,name")
+      .eq("budget_id", budget.id);
     if (error) {
-      return /sort_order|schema cache|column/i.test(error.message)
-        ? migrationHint
-        : "Could not verify account order.";
+      return {
+        ok: false,
+        error: /sort_order|schema cache|column/i.test(error.message)
+          ? migrationHint
+          : "Could not verify account order.",
+      };
     }
-    const saved = (data ?? [])
+    const sorted = (data ?? [])
       .slice()
       .sort((a, b) => {
         const bySort = Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0);
         if (bySort !== 0) return bySort;
+        const byName = String(a.name ?? "").localeCompare(String(b.name ?? ""));
+        if (byName !== 0) return byName;
         return String(a.id).localeCompare(String(b.id));
       })
       .map((row) => String(row.id));
-    if (saved.length !== ids.length || ids.some((id, index) => saved[index] !== id)) {
-      return migrationHint;
+    return { ok: true, ids: sorted };
+  }
+
+  async function verifyOrder(): Promise<true | string> {
+    const loaded = await loadOrderedIds();
+    if (!loaded.ok) return loaded.error;
+    if (
+      loaded.ids.length !== ids.length ||
+      ids.some((id, index) => loaded.ids[index] !== id)
+    ) {
+      return "Account order did not save. Try again, or run the account reorder migration in Supabase.";
     }
     return true;
   }
 
-  const rpc = await supabase.rpc("reorder_budget_accounts", {
-    p_budget_id: budget.id,
-    p_account_ids: ids,
-  });
+  async function writeOrderDirect(): Promise<true | string> {
+    const { data, error } = await supabase
+      .from("accounts")
+      .select("id")
+      .eq("budget_id", budget.id);
+    if (error) {
+      return /sort_order|schema cache|column/i.test(error.message)
+        ? migrationHint
+        : "Could not load accounts.";
+    }
 
-  if (!rpc.error) {
-    const verified = await verifyOrder();
-    if (verified === true) {
+    const owned = new Set((data ?? []).map((row) => String(row.id)));
+    if (owned.size !== ids.length || ids.some((id) => !owned.has(id))) {
+      return "Account list mismatch.";
+    }
+
+    // Phase 1: negative ranks so we never collide if a unique index exists.
+    for (let i = 0; i < ids.length; i += 1) {
+      const { data: updated, error: updateError } = await supabase
+        .from("accounts")
+        .update({ sort_order: -1 - i })
+        .eq("budget_id", budget.id)
+        .eq("id", ids[i])
+        .select("id,sort_order")
+        .maybeSingle();
+      if (updateError) {
+        return /sort_order|schema cache|column/i.test(updateError.message)
+          ? migrationHint
+          : "Could not update account order.";
+      }
+      if (!updated || Number(updated.sort_order) !== -1 - i) {
+        return migrationHint;
+      }
+    }
+
+    // Phase 2: final 0..n-1 order.
+    for (let i = 0; i < ids.length; i += 1) {
+      const { data: updated, error: updateError } = await supabase
+        .from("accounts")
+        .update({ sort_order: i })
+        .eq("budget_id", budget.id)
+        .eq("id", ids[i])
+        .select("id,sort_order")
+        .maybeSingle();
+      if (updateError) {
+        return /sort_order|schema cache|column/i.test(updateError.message)
+          ? migrationHint
+          : "Could not update account order.";
+      }
+      if (!updated || Number(updated.sort_order) !== i) {
+        return migrationHint;
+      }
+    }
+    return true;
+  }
+
+  try {
+    const rpc = await supabase.rpc("reorder_budget_accounts", {
+      p_budget_id: budget.id,
+      p_account_ids: ids,
+    });
+
+    if (!rpc.error) {
+      const verified = await verifyOrder();
+      if (verified === true) {
+        revalidatePath("/accounts");
+        revalidatePath("/accounts", "layout");
+        return { ok: true };
+      }
+      // RPC claimed success but read-back failed — force a direct rewrite.
+      const direct = await writeOrderDirect();
+      if (direct !== true) return { ok: false, error: direct };
+      const verifiedDirect = await verifyOrder();
+      if (verifiedDirect !== true) return { ok: false, error: verifiedDirect };
       revalidatePath("/accounts");
+      revalidatePath("/accounts", "layout");
       return { ok: true };
     }
-    return { ok: false, error: verified };
-  }
 
-  const missingRpc = /could not find the function|schema cache|does not exist/i.test(
-    rpc.error.message,
-  );
-  if (!missingRpc) {
-    return {
-      ok: false,
-      error: rpc.error.message.slice(0, 160) || "Could not update account order.",
-    };
-  }
-
-  // Fallback without RPC: write sort_order directly (needs column + UPDATE RLS).
-  const { data, error } = await supabase
-    .from("accounts")
-    .select("id")
-    .eq("budget_id", budget.id);
-  if (error) {
-    return {
-      ok: false,
-      error: /sort_order|schema cache|column/i.test(error.message)
-        ? migrationHint
-        : "Could not load accounts.",
-    };
-  }
-
-  const owned = new Set((data ?? []).map((row) => String(row.id)));
-  if (owned.size !== ids.length || ids.some((id) => !owned.has(id))) {
-    return { ok: false, error: "Account list mismatch." };
-  }
-
-  for (let i = 0; i < ids.length; i += 1) {
-    const { data: updated, error: updateError } = await supabase
-      .from("accounts")
-      .update({ sort_order: i })
-      .eq("budget_id", budget.id)
-      .eq("id", ids[i])
-      .select("id,sort_order")
-      .maybeSingle();
-    if (updateError) {
+    const missingRpc = /could not find the function|schema cache|does not exist/i.test(
+      rpc.error.message,
+    );
+    if (!missingRpc) {
+      // Still try direct write before surfacing the RPC error.
+      const direct = await writeOrderDirect();
+      if (direct === true) {
+        const verifiedDirect = await verifyOrder();
+        if (verifiedDirect === true) {
+          revalidatePath("/accounts");
+          revalidatePath("/accounts", "layout");
+          return { ok: true };
+        }
+      }
       return {
         ok: false,
-        error: /sort_order|schema cache|column/i.test(updateError.message)
-          ? migrationHint
-          : "Could not update account order.",
+        error: rpc.error.message.slice(0, 160) || "Could not update account order.",
       };
     }
-    if (!updated || Number(updated.sort_order) !== i) {
-      return { ok: false, error: migrationHint };
+
+    const direct = await writeOrderDirect();
+    if (direct !== true) return { ok: false, error: direct };
+    const verified = await verifyOrder();
+    if (verified !== true) return { ok: false, error: verified };
+
+    revalidatePath("/accounts");
+    revalidatePath("/accounts", "layout");
+    return { ok: true };
+  } catch (error) {
+    const digest =
+      error && typeof error === "object" && "digest" in error
+        ? String((error as { digest?: unknown }).digest ?? "")
+        : "";
+    if (digest.startsWith("NEXT_REDIRECT") || digest.startsWith("NEXT_NOT_FOUND")) {
+      throw error;
     }
+    return {
+      ok: false,
+      error:
+        error instanceof Error
+          ? error.message.slice(0, 160)
+          : "Could not update account order.",
+    };
   }
-
-  const verified = await verifyOrder();
-  if (verified !== true) {
-    return { ok: false, error: verified };
-  }
-
-  revalidatePath("/accounts");
-  return { ok: true };
 }
 
 export async function setAccountIncludeInTotalAction(formData: FormData) {
