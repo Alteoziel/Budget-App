@@ -20,6 +20,9 @@ export function BudgetOverview({
   const shortfall = readyToAssignCents < 0;
   const canAutoAssign = readyToAssignCents > 0;
   const canFix = shortfall || rows.some((row) => row.availableCents < 0);
+  // Sticky only when there’s money left to assign (skip transform animation —
+  // it breaks position: sticky).
+  const stickyReady = canAutoAssign;
 
   return (
     <>
@@ -32,8 +35,12 @@ export function BudgetOverview({
       />
 
       <section
-        className={`animate-rise flex items-center gap-4 rounded-2xl px-4 py-3 ${
+        className={`flex items-center gap-4 rounded-2xl px-4 py-3 ${
           shortfall ? "hero-panel-alert" : "hero-panel"
+        } ${
+          stickyReady
+            ? "sticky top-[max(0.5rem,env(safe-area-inset-top))] z-40 shadow-soft"
+            : "animate-rise"
         }`}
       >
         <div className="min-w-0 flex-1">
