@@ -1,6 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import {
+  useAnnounceEditing,
+  useBudgetRealtime,
+} from "@/components/BudgetRealtimeProvider";
 import { CategoryAssignControl } from "@/components/CategoryAssignControl";
 import { CategoryGoalButton } from "@/components/CategoryGoalButton";
 import { Money } from "@/components/Money";
@@ -82,6 +86,55 @@ export function BudgetManager({
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null);
+  const { peers } = useBudgetRealtime();
+
+  const editingGroup = editingGroupId
+    ? groups.find((group) => group.groupId === editingGroupId)
+    : null;
+  const editingCategory = editingCategoryId
+    ? groups
+        .flatMap((group) => group.categories)
+        .find((row) => row.categoryId === editingCategoryId)
+    : null;
+
+  useAnnounceEditing(
+    editingGroup
+      ? {
+          kind: "group",
+          id: editingGroup.groupId,
+          label: `group · ${editingGroup.groupName}`,
+        }
+      : editingCategory
+        ? {
+            kind: "category",
+            id: editingCategory.categoryId,
+            label: `category · ${editingCategory.categoryName}`,
+          }
+        : null,
+  );
+
+  const peerEditingByCategoryId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const peer of peers) {
+      if (
+        peer.editing &&
+        (peer.editing.kind === "category" || peer.editing.kind === "goal")
+      ) {
+        map.set(peer.editing.id, peer.displayName);
+      }
+    }
+    return map;
+  }, [peers]);
+
+  const peerEditingByGroupId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const peer of peers) {
+      if (peer.editing?.kind === "group") {
+        map.set(peer.editing.id, peer.displayName);
+      }
+    }
+    return map;
+  }, [peers]);
 
   const allRows = useMemo(() => groups.flatMap((g) => g.categories), [groups]);
   const percentTotal = allRows
@@ -133,12 +186,18 @@ export function BudgetManager({
           (sum, row) => sum + row.availableCents,
           0,
         );
+        const peerOnGroup = peerEditingByGroupId.get(group.groupId);
         return (
           <section
             key={group.groupId}
             className="card-surface overflow-hidden rounded-2xl"
           >
             <div className="card-header px-3 py-2.5">
+              {peerOnGroup ? (
+                <p className="mb-1 text-[11px] font-bold text-moss-600">
+                  {peerOnGroup} is editing this group
+                </p>
+              ) : null}
               {editingGroupId === group.groupId ? (
                 <form
                   action={renameCategoryGroupAction}
@@ -235,6 +294,7 @@ export function BudgetManager({
               <ul className="row-divide">
                 {group.categories.map((row, categoryIndex) => {
                   const expanded = expandedCategoryId === row.categoryId;
+                  const peerOnCategory = peerEditingByCategoryId.get(row.categoryId);
                   return (
                     <li
                       key={row.categoryId}
@@ -244,6 +304,11 @@ export function BudgetManager({
                           : ""
                       }`}
                     >
+                      {peerOnCategory ? (
+                        <p className="mb-1 text-[11px] font-bold text-moss-600">
+                          {peerOnCategory} is editing this category
+                        </p>
+                      ) : null}
                       {editingCategoryId === row.categoryId ? (
                         <form
                           action={renameCategoryAction}

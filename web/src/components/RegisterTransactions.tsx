@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useAnnounceEditing } from "@/components/BudgetRealtimeProvider";
 import { Money } from "@/components/Money";
 import {
   batchDeleteTransactionsAction,
@@ -36,6 +37,19 @@ export function RegisterTransactions({
   const [flowFilter, setFlowFilter] = useState<"all" | "income" | "spending">("all");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+
+  const editingTxn = editingId
+    ? transactions.find((txn) => txn.id === editingId)
+    : null;
+  useAnnounceEditing(
+    editingTxn
+      ? {
+          kind: "transaction",
+          id: editingTxn.id,
+          label: `txn · ${editingTxn.payee || "Untitled"}`,
+        }
+      : null,
+  );
 
   const accountName = useMemo(() => {
     const map = new Map(accounts.map((a) => [a.id, a.name]));

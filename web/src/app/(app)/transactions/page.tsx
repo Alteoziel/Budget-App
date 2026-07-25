@@ -22,6 +22,7 @@ export default async function TransactionsPage({
       <FlashError message={query.notice} tone="success" />
 
       <AddTransactionFab
+        key={query.notice || query.error || "fab"}
         accounts={accounts}
         categories={categories}
         today={today}

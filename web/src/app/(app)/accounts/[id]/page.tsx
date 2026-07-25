@@ -36,10 +36,12 @@ export default async function AccountRegisterPage({
 
       <div className="space-y-5">
         <RegisterAccountMenu
+          key={query.notice || query.error || "menu"}
           accountId={account.id}
           balanceCents={balanceCents}
           categories={categories}
           today={today}
+          forceClosed={Boolean(query.notice)}
         />
 
         <section className="hero-panel animate-rise rounded-2xl px-4 py-4">

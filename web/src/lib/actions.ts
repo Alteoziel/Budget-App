@@ -1691,6 +1691,10 @@ export async function setAccountBalanceAction(formData: FormData) {
   revalidatePath(`/accounts/${accountId}`);
   revalidatePath("/accounts");
   revalidatePath("/budget");
+  revalidatePath("/transactions");
+  redirect(
+    `/accounts/${accountId}?notice=${encodeURIComponent("Balance updated")}`,
+  );
 }
 
 export async function approveTransactionMatchAction(formData: FormData) {
