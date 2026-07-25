@@ -2,8 +2,8 @@
 
 import { useState, useTransition } from "react";
 import {
+  requestPasswordResetAction,
   updateDisplayNameAction,
-  updatePasswordAction,
 } from "@/lib/actions";
 
 export function ProfileSettings({
@@ -62,55 +62,33 @@ export function ProfileSettings({
         {nameErr ? <p className="text-xs font-semibold text-coral-500">{nameErr}</p> : null}
       </form>
 
-      <form
-        className="space-y-3 border-t border-ink-900/5 pt-4"
-        onSubmit={(e) => {
-          e.preventDefault();
-          const fd = new FormData(e.currentTarget);
-          setPassMsg(null);
-          setPassErr(null);
-          startPass(async () => {
-            const result = await updatePasswordAction(fd);
-            if (result.ok) {
-              setPassMsg(result.message);
-              e.currentTarget.reset();
-            } else setPassErr(result.error);
-          });
-        }}
-      >
+      <div className="space-y-3 border-t border-ink-900/5 pt-4">
         <h3 className="text-sm font-bold text-ink-900">Change password</h3>
-        <label className="block text-sm font-semibold text-ink-700">
-          New password
-          <input
-            name="password"
-            type="password"
-            required
-            minLength={8}
-            autoComplete="new-password"
-            className="mt-1 min-h-11 w-full touch-manipulation rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm outline-none ring-moss-400 focus:ring-2"
-          />
-        </label>
-        <label className="block text-sm font-semibold text-ink-700">
-          Confirm password
-          <input
-            name="password_confirm"
-            type="password"
-            required
-            minLength={8}
-            autoComplete="new-password"
-            className="mt-1 min-h-11 w-full touch-manipulation rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm outline-none ring-moss-400 focus:ring-2"
-          />
-        </label>
+        <p className="text-sm text-ink-600">
+          For security, we email a confirmation link to{" "}
+          <span className="font-semibold text-ink-800">{email || "your address"}</span>
+          . Open that link to choose a new password — you can’t change it
+          directly in the app.
+        </p>
         <button
-          type="submit"
-          disabled={passPending}
+          type="button"
+          disabled={passPending || !email}
+          onClick={() => {
+            setPassMsg(null);
+            setPassErr(null);
+            startPass(async () => {
+              const result = await requestPasswordResetAction();
+              if (result.ok) setPassMsg(result.message);
+              else setPassErr(result.error);
+            });
+          }}
           className="min-h-11 touch-manipulation rounded-xl bg-ink-900 px-4 py-2 text-sm font-bold text-sand-50 disabled:opacity-60"
         >
-          {passPending ? "Updating…" : "Update password"}
+          {passPending ? "Sending…" : "Email me a confirmation link"}
         </button>
         {passMsg ? <p className="text-xs font-semibold text-moss-500">{passMsg}</p> : null}
         {passErr ? <p className="text-xs font-semibold text-coral-500">{passErr}</p> : null}
-      </form>
+      </div>
     </div>
   );
 }

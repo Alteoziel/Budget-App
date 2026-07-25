@@ -18,7 +18,7 @@ export default function HomePage() {
             Alte&apos; Budgeting
           </p>
           <h1 className="mt-4 font-display text-5xl font-bold leading-tight text-ink-900 sm:text-6xl">
-            Give every dollar a job.
+            Fund your kind of life.
           </h1>
           <p className="mt-4 max-w-md text-lg text-ink-700">
             A private, phone-first budget inspired by YNAB — simple today, powerful when you need it.

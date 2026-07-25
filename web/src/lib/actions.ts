@@ -13,8 +13,12 @@ import {
 import { distributeByPercent } from "@/lib/auto-assign";
 import { getBudgetRows } from "@/lib/budget-data";
 import { requireBudget, setActiveBudgetId } from "@/lib/budget-context";
+import {
+  clearPasswordResetGrant,
+  hasPasswordResetGrant,
+} from "@/lib/password-reset";
 import { safeInternalPath } from "@/lib/paths";
-import { absoluteUrl } from "@/lib/site-url";
+import { absoluteUrl, siteOrigin } from "@/lib/site-url";
 import { createClient } from "@/lib/supabase/server";
 import type { BudgetRole } from "@/lib/types";
 import {
@@ -121,10 +125,47 @@ export async function updateDisplayNameAction(
   return { ok: true, message: "Display name saved." };
 }
 
+/** Email a password-reset confirmation link to the signed-in user. */
+export async function requestPasswordResetAction(): Promise<
+  { ok: true; message: string } | { ok: false; error: string }
+> {
+  const { supabase, user } = await requireUser();
+  if (!user.email) {
+    return { ok: false, error: "Your account has no email address on file." };
+  }
+  if (!siteOrigin()) {
+    return {
+      ok: false,
+      error: "Site URL is not configured, so we can’t email a confirmation link.",
+    };
+  }
+
+  const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
+    redirectTo: absoluteUrl("/auth/callback?next=/settings/password"),
+  });
+  if (error) return { ok: false, error: error.message };
+  return {
+    ok: true,
+    message: "Check your email for a confirmation link. It expires soon.",
+  };
+}
+
+/**
+ * Set a new password — only after the user confirmed a recovery email link
+ * (short-lived grant cookie from /auth/callback).
+ */
 export async function updatePasswordAction(
   formData: FormData,
 ): Promise<{ ok: true; message: string } | { ok: false; error: string }> {
   await requireUser();
+  if (!(await hasPasswordResetGrant())) {
+    return {
+      ok: false,
+      error:
+        "Confirm the link we emailed you before changing your password.",
+    };
+  }
+
   const password = String(formData.get("password") ?? "");
   const confirm = String(formData.get("password_confirm") ?? "");
   if (password.length < 8) {
@@ -137,6 +178,10 @@ export async function updatePasswordAction(
   const supabase = await createClient();
   const { error } = await supabase.auth.updateUser({ password });
   if (error) return { ok: false, error: error.message };
+
+  await clearPasswordResetGrant();
+  revalidatePath("/settings");
+  revalidatePath("/settings/password");
   return { ok: true, message: "Password updated." };
 }
 
@@ -2119,13 +2164,18 @@ export async function revokeInviteAction(formData: FormData) {
   const { supabase, budget } = await requireBudget("admin");
   const inviteId = String(formData.get("invite_id") ?? "");
   if (!inviteId) redirectWithError("/settings", "Invite required.");
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from("budget_invites")
     .update({ revoked_at: new Date().toISOString() })
     .eq("id", inviteId)
-    .eq("budget_id", budget.id);
+    .eq("budget_id", budget.id)
+    .select("id");
   if (error) redirectWithError("/settings", "Could not revoke invite.");
+  if (!updated?.length) {
+    redirectWithError("/settings", "Invite not found or already revoked.");
+  }
   revalidatePath("/settings");
+  redirect("/settings?notice=" + encodeURIComponent("Invite link revoked."));
 }
 
 export async function deleteInviteAction(formData: FormData) {
@@ -2150,22 +2200,51 @@ export async function deleteInviteAction(formData: FormData) {
     );
   }
 
-  const { error } = await supabase
+  // Prefer RPC (bypasses missing DELETE RLS while still checking admin + revoked).
+  const rpc = await supabase.rpc("delete_revoked_budget_invite", {
+    p_invite_id: inviteId,
+  });
+
+  if (!rpc.error) {
+    revalidatePath("/settings");
+    redirect("/settings?notice=" + encodeURIComponent("Invite link deleted."));
+  }
+
+  // Fallback: direct delete (needs budget_invites DELETE policy).
+  const missingRpc = /could not find the function|schema cache|does not exist/i.test(
+    rpc.error.message,
+  );
+  if (!missingRpc) {
+    redirectWithError(
+      "/settings",
+      rpc.error.message.slice(0, 160) || "Could not delete invite.",
+    );
+  }
+
+  const { data: deleted, error } = await supabase
     .from("budget_invites")
     .delete()
     .eq("id", inviteId)
-    .eq("budget_id", budget.id);
+    .eq("budget_id", budget.id)
+    .select("id");
 
   if (error) {
     redirectWithError(
       "/settings",
       /policy|permission|rls|denied/i.test(error.message)
-        ? "Could not delete invite. Run the invite-delete migration in Supabase."
+        ? "Could not delete invite. Run the latest Supabase invite migrations."
         : `Could not delete invite: ${error.message.slice(0, 160)}`,
+    );
+  }
+  if (!deleted?.length) {
+    redirectWithError(
+      "/settings",
+      "Could not delete invite. Run supabase/migrations/20260725010000_delete_revoked_invite_rpc.sql in Supabase.",
     );
   }
 
   revalidatePath("/settings");
+  redirect("/settings?notice=" + encodeURIComponent("Invite link deleted."));
 }
 
 export async function acceptInviteAction(formData: FormData) {

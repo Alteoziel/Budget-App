@@ -56,7 +56,12 @@ function SettingsCard({
 export default async function SettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; invite?: string; kind?: string }>;
+  searchParams: Promise<{
+    error?: string;
+    invite?: string;
+    kind?: string;
+    notice?: string;
+  }>;
 }) {
   const params = await searchParams;
   const { budget, role, user } = await requireBudget("viewer");
@@ -118,6 +123,7 @@ export default async function SettingsPage({
   return (
     <AppShell title="Settings" subtitle={budget.name}>
       <FlashError message={params.error} />
+      <FlashError message={params.notice} tone="success" />
 
       <SettingsCategory
         title="You"
@@ -222,6 +228,11 @@ export default async function SettingsPage({
       <SettingsCategory
         title="People & access"
         description="Who can view or edit this budget, and how they join."
+        defaultOpen={Boolean(
+          params.invite ||
+            params.notice ||
+            (params.error && /invite/i.test(params.error)),
+        )}
       >
         <SettingsCard title="Members">
           <ul className="divide-y divide-ink-900/5">
