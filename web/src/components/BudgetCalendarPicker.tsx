@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import {
@@ -25,6 +25,17 @@ function firstWeekday(month: string): number {
 
 function isoDay(month: string, day: number): string {
   return `${month}-${String(day).padStart(2, "0")}`;
+}
+
+function panelPositionFromButton(button: HTMLButtonElement | null) {
+  if (!button) return null;
+  const rect = button.getBoundingClientRect();
+  const panelWidth = Math.min(window.innerWidth - 32, 19 * 16);
+  const left = Math.max(
+    16,
+    Math.min(rect.left, window.innerWidth - panelWidth - 16),
+  );
+  return { top: rect.bottom + 8, left };
 }
 
 /**
@@ -54,33 +65,26 @@ export function BudgetCalendarPicker({
   );
   const today = currentIsoDate();
 
-  function toggleOpen() {
-    if (!open) {
-      setViewMonth(selectedAs?.slice(0, 7) ?? currentMonth);
-    }
-    setOpen(!open);
+  function close() {
+    setOpen(false);
+    setPanelPos(null);
   }
 
-  useLayoutEffect(() => {
-    if (!open) {
-      setPanelPos(null);
+  function toggleOpen() {
+    if (open) {
+      close();
       return;
     }
+    setViewMonth(selectedAs?.slice(0, 7) ?? currentMonth);
+    setPanelPos(panelPositionFromButton(buttonRef.current));
+    setOpen(true);
+  }
+
+  useEffect(() => {
+    if (!open) return;
     function place() {
-      const button = buttonRef.current;
-      if (!button) return;
-      const rect = button.getBoundingClientRect();
-      const panelWidth = Math.min(window.innerWidth - 32, 19 * 16);
-      const left = Math.max(
-        16,
-        Math.min(rect.left, window.innerWidth - panelWidth - 16),
-      );
-      setPanelPos({
-        top: rect.bottom + 8,
-        left,
-      });
+      setPanelPos(panelPositionFromButton(buttonRef.current));
     }
-    place();
     window.addEventListener("resize", place);
     window.addEventListener("scroll", place, true);
     return () => {
@@ -96,10 +100,10 @@ export function BudgetCalendarPicker({
       if (!target) return;
       if (buttonRef.current?.contains(target)) return;
       if (panelRef.current?.contains(target)) return;
-      setOpen(false);
+      close();
     }
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setOpen(false);
+      if (event.key === "Escape") close();
     }
     document.addEventListener("mousedown", onPointerDown);
     document.addEventListener("touchstart", onPointerDown);
@@ -112,7 +116,7 @@ export function BudgetCalendarPicker({
   }, [open]);
 
   function go(as: string | null) {
-    setOpen(false);
+    close();
     if (!as) {
       router.push("/budget");
       return;

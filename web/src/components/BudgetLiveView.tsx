@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  useEffect,
-  useId,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AddCategoryForm } from "@/components/AddCategoryForm";
 import { AppShell } from "@/components/AppShell";
@@ -118,21 +111,34 @@ export function BudgetLiveView({
       .filter((group) => group.categories.length > 0);
   }, [groups, filters]);
 
-  useLayoutEffect(() => {
-    if (!filtersOpen) {
-      setFiltersPos(null);
+  function filtersPositionFromButton(button: HTMLButtonElement | null) {
+    if (!button) return null;
+    const rect = button.getBoundingClientRect();
+    return {
+      top: rect.bottom + 8,
+      right: Math.max(8, window.innerWidth - rect.right),
+    };
+  }
+
+  function closeFilters() {
+    setFiltersOpen(false);
+    setFiltersPos(null);
+  }
+
+  function toggleFilters() {
+    if (filtersOpen) {
+      closeFilters();
       return;
     }
+    setFiltersPos(filtersPositionFromButton(filtersButtonRef.current));
+    setFiltersOpen(true);
+  }
+
+  useEffect(() => {
+    if (!filtersOpen) return;
     function place() {
-      const button = filtersButtonRef.current;
-      if (!button) return;
-      const rect = button.getBoundingClientRect();
-      setFiltersPos({
-        top: rect.bottom + 8,
-        right: Math.max(8, window.innerWidth - rect.right),
-      });
+      setFiltersPos(filtersPositionFromButton(filtersButtonRef.current));
     }
-    place();
     window.addEventListener("resize", place);
     window.addEventListener("scroll", place, true);
     return () => {
@@ -148,10 +154,10 @@ export function BudgetLiveView({
       if (!target) return;
       if (filtersButtonRef.current?.contains(target)) return;
       if (filtersPanelRef.current?.contains(target)) return;
-      setFiltersOpen(false);
+      closeFilters();
     }
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setFiltersOpen(false);
+      if (event.key === "Escape") closeFilters();
     }
     document.addEventListener("mousedown", onPointerDown);
     document.addEventListener("touchstart", onPointerDown);
@@ -191,7 +197,7 @@ export function BudgetLiveView({
                 type="button"
                 aria-expanded={filtersOpen}
                 aria-controls={filtersPanelId}
-                onClick={() => setFiltersOpen((value) => !value)}
+                onClick={toggleFilters}
                 className={`${miniBtnClass} ${
                   filters.size > 0
                     ? "border-moss-500/40 bg-moss-500/10 text-moss-800 dark:text-moss-200"
