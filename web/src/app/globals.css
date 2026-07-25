@@ -190,20 +190,39 @@ label {
 }
 
 /*
- * Native date inputs shrink on iOS/WebKit even with the same padding as text
- * fields. Force a shared control height and left-align the value.
+ * Native date inputs are awkward on mobile WebKit:
+ * - height collapses vs text/select fields
+ * - intrinsic min-width can overflow the card and clip on the right
+ * Force them to share the same box as other controls.
  */
 input[type="date"] {
   display: block;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 3rem;
   font-size: 1rem;
   line-height: 1.25;
   color-scheme: inherit;
+  /* Prevent the native control from growing past its container. */
+  overflow: hidden;
 }
 
 input[type="date"]::-webkit-date-and-time-value {
   min-height: 1.5rem;
   text-align: left;
+}
+
+input[type="date"]::-webkit-datetime-edit {
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+  margin-left: 0.25rem;
+  flex-shrink: 0;
 }
 
 @layer components {
