@@ -248,78 +248,88 @@ export async function createAccountAction(formData: FormData) {
   revalidatePath("/budget");
 }
 
-export async function reorderAccountAction(formData: FormData) {
+/**
+ * Persist a full account order for the active budget.
+ * Prefer the reorder_budget_accounts RPC; fall back to direct updates.
+ */
+export async function reorderAccountsAction(
+  orderedIds: string[],
+): Promise<{ ok: true } | { ok: false; error: string }> {
   const { supabase, budget } = await requireBudget("editor");
-  const accountId = String(formData.get("account_id") ?? "").trim();
-  const neighborId = String(formData.get("neighbor_id") ?? "").trim();
-  const direction = String(formData.get("direction") ?? "");
-  if (
-    !accountId ||
-    !neighborId ||
-    accountId === neighborId ||
-    (direction !== "up" && direction !== "down")
-  ) {
-    redirectWithError("/accounts", "Invalid reorder.");
+  const ids = orderedIds.map((id) => String(id ?? "").trim()).filter(Boolean);
+  if (ids.length < 2) {
+    return { ok: false, error: "Need at least two accounts to reorder." };
+  }
+  if (new Set(ids).size !== ids.length) {
+    return { ok: false, error: "Invalid account order." };
   }
 
+  const rpc = await supabase.rpc("reorder_budget_accounts", {
+    p_budget_id: budget.id,
+    p_account_ids: ids,
+  });
+
+  if (!rpc.error) {
+    revalidatePath("/accounts");
+    return { ok: true };
+  }
+
+  const missingRpc = /could not find the function|schema cache|does not exist/i.test(
+    rpc.error.message,
+  );
+  if (!missingRpc) {
+    return {
+      ok: false,
+      error: rpc.error.message.slice(0, 160) || "Could not update account order.",
+    };
+  }
+
+  // Fallback without RPC: write sort_order directly (needs column + UPDATE RLS).
   const { data, error } = await supabase
     .from("accounts")
-    .select("id,name,sort_order")
+    .select("id")
     .eq("budget_id", budget.id);
   if (error) {
-    redirectWithError(
-      "/accounts",
-      /sort_order|schema cache|column/i.test(error.message)
-        ? "Run the accounts sort_order migration in Supabase to reorder accounts."
+    return {
+      ok: false,
+      error: /sort_order|schema cache|column/i.test(error.message)
+        ? "Run supabase/migrations/20260725030000_reorder_budget_accounts_rpc.sql in Supabase."
         : "Could not load accounts.",
-    );
+    };
   }
 
-  const ordered = ((data ?? []) as Array<{
-    id: string;
-    name: string;
-    sort_order: number | null;
-  }>)
-    .map((row) => ({
-      id: row.id,
-      name: row.name,
-      sort_order: Number(row.sort_order ?? 0),
-    }))
-    .sort(compareSortable);
-
-  const from = ordered.findIndex((row) => row.id === accountId);
-  const to = ordered.findIndex((row) => row.id === neighborId);
-  if (from < 0 || to < 0) {
-    redirectWithError("/accounts", "Account not found.");
+  const owned = new Set((data ?? []).map((row) => String(row.id)));
+  if (owned.size !== ids.length || ids.some((id) => !owned.has(id))) {
+    return { ok: false, error: "Account list mismatch." };
   }
 
-  // Move the account to its on-screen neighbor’s slot, then renumber 0..n-1.
-  const [moved] = ordered.splice(from, 1);
-  ordered.splice(to, 0, moved);
-
-  for (let i = 0; i < ordered.length; i += 1) {
+  for (let i = 0; i < ids.length; i += 1) {
     const { data: updated, error: updateError } = await supabase
       .from("accounts")
       .update({ sort_order: i })
       .eq("budget_id", budget.id)
-      .eq("id", ordered[i].id)
-      .select("id")
+      .eq("id", ids[i])
+      .select("id,sort_order")
       .maybeSingle();
     if (updateError) {
-      redirectWithError(
-        "/accounts",
-        /sort_order|schema cache|column/i.test(updateError.message)
-          ? "Run the accounts sort_order migration in Supabase to reorder accounts."
+      return {
+        ok: false,
+        error: /sort_order|schema cache|column/i.test(updateError.message)
+          ? "Run supabase/migrations/20260725030000_reorder_budget_accounts_rpc.sql in Supabase."
           : "Could not update account order.",
-      );
+      };
     }
-    if (!updated) {
-      redirectWithError("/accounts", "Could not update account order.");
+    if (!updated || Number(updated.sort_order) !== i) {
+      return {
+        ok: false,
+        error:
+          "Could not save account order. Run supabase/migrations/20260725030000_reorder_budget_accounts_rpc.sql in Supabase.",
+      };
     }
   }
 
   revalidatePath("/accounts");
-  redirect("/accounts");
+  return { ok: true };
 }
 
 export async function setAccountIncludeInTotalAction(formData: FormData) {
