@@ -37,7 +37,18 @@ export function AccountsList({
 
   if (accounts !== accountsSnapshot) {
     setAccountsSnapshot(accounts);
-    setOptimistic(null);
+    // Don't snap back to the old server order while our optimistic order is
+    // still ahead — only clear once the server matches, or the account set changes.
+    if (optimistic) {
+      const serverIds = accounts.map((row) => row.id).join("\0");
+      const optimisticIds = optimistic.map((row) => row.id).join("\0");
+      const sameSet =
+        accounts.length === optimistic.length &&
+        accounts.every((row) => optimistic.some((item) => item.id === row.id));
+      if (serverIds === optimisticIds || !sameSet) {
+        setOptimistic(null);
+      }
+    }
   }
 
   const rows = optimistic ?? accounts;

@@ -270,14 +270,47 @@ export async function reorderAccountsAction(
     return { ok: false, error: "Invalid account order." };
   }
 
+  const migrationHint =
+    "Run supabase/migrations/20260725030000_reorder_budget_accounts_rpc.sql in Supabase, then reload the API schema.";
+
+  async function verifyOrder(): Promise<true | string> {
+    const { data, error } = await supabase
+      .from("accounts")
+      .select("id,sort_order")
+      .eq("budget_id", budget.id)
+      .order("sort_order")
+      .order("name");
+    if (error) {
+      return /sort_order|schema cache|column/i.test(error.message)
+        ? migrationHint
+        : "Could not verify account order.";
+    }
+    const saved = (data ?? [])
+      .slice()
+      .sort((a, b) => {
+        const bySort = Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0);
+        if (bySort !== 0) return bySort;
+        return String(a.id).localeCompare(String(b.id));
+      })
+      .map((row) => String(row.id));
+    if (saved.length !== ids.length || ids.some((id, index) => saved[index] !== id)) {
+      return migrationHint;
+    }
+    return true;
+  }
+
   const rpc = await supabase.rpc("reorder_budget_accounts", {
     p_budget_id: budget.id,
     p_account_ids: ids,
   });
 
   if (!rpc.error) {
-    revalidatePath("/accounts");
-    return { ok: true };
+    const verified = await verifyOrder();
+    if (verified === true) {
+      revalidatePath("/accounts");
+      return { ok: true };
+    }
+    return { ok: false, error: verified };
   }
 
   const missingRpc = /could not find the function|schema cache|does not exist/i.test(
@@ -299,7 +332,7 @@ export async function reorderAccountsAction(
     return {
       ok: false,
       error: /sort_order|schema cache|column/i.test(error.message)
-        ? "Run supabase/migrations/20260725030000_reorder_budget_accounts_rpc.sql in Supabase."
+        ? migrationHint
         : "Could not load accounts.",
     };
   }
@@ -321,17 +354,18 @@ export async function reorderAccountsAction(
       return {
         ok: false,
         error: /sort_order|schema cache|column/i.test(updateError.message)
-          ? "Run supabase/migrations/20260725030000_reorder_budget_accounts_rpc.sql in Supabase."
+          ? migrationHint
           : "Could not update account order.",
       };
     }
     if (!updated || Number(updated.sort_order) !== i) {
-      return {
-        ok: false,
-        error:
-          "Could not save account order. Run supabase/migrations/20260725030000_reorder_budget_accounts_rpc.sql in Supabase.",
-      };
+      return { ok: false, error: migrationHint };
     }
+  }
+
+  const verified = await verifyOrder();
+  if (verified !== true) {
+    return { ok: false, error: verified };
   }
 
   revalidatePath("/accounts");
