@@ -215,3 +215,144 @@ using (
     and coalesce(role, 'editor') <> 'owner'
   )
 );
+
+-- CHECKPOINT 3: bank-account mappings must stay inside one budget.
+delete from public.plaid_accounts pa
+where not exists (
+    select 1
+    from public.plaid_items pi
+    where pi.id = pa.plaid_item_id
+      and pi.budget_id = pa.budget_id
+  )
+  or not exists (
+    select 1
+    from public.accounts a
+    where a.id = pa.account_id
+      and a.budget_id = pa.budget_id
+  );
+
+delete from public.teller_accounts ta
+where not exists (
+    select 1
+    from public.teller_enrollments te
+    where te.id = ta.enrollment_id
+      and te.budget_id = ta.budget_id
+  )
+  or not exists (
+    select 1
+    from public.accounts a
+    where a.id = ta.account_id
+      and a.budget_id = ta.budget_id
+  );
+
+create unique index if not exists accounts_budget_id_id_uidx
+  on public.accounts (budget_id, id);
+create unique index if not exists plaid_items_budget_id_id_uidx
+  on public.plaid_items (budget_id, id);
+create unique index if not exists teller_enrollments_budget_id_id_uidx
+  on public.teller_enrollments (budget_id, id);
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'plaid_accounts_item_same_budget_fk'
+      and conrelid = 'public.plaid_accounts'::regclass
+  ) then
+    alter table public.plaid_accounts
+      add constraint plaid_accounts_item_same_budget_fk
+      foreign key (budget_id, plaid_item_id)
+      references public.plaid_items (budget_id, id)
+      on delete cascade;
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'plaid_accounts_account_same_budget_fk'
+      and conrelid = 'public.plaid_accounts'::regclass
+  ) then
+    alter table public.plaid_accounts
+      add constraint plaid_accounts_account_same_budget_fk
+      foreign key (budget_id, account_id)
+      references public.accounts (budget_id, id)
+      on delete cascade;
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'teller_accounts_enrollment_same_budget_fk'
+      and conrelid = 'public.teller_accounts'::regclass
+  ) then
+    alter table public.teller_accounts
+      add constraint teller_accounts_enrollment_same_budget_fk
+      foreign key (budget_id, enrollment_id)
+      references public.teller_enrollments (budget_id, id)
+      on delete cascade;
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'teller_accounts_account_same_budget_fk'
+      and conrelid = 'public.teller_accounts'::regclass
+  ) then
+    alter table public.teller_accounts
+      add constraint teller_accounts_account_same_budget_fk
+      foreign key (budget_id, account_id)
+      references public.accounts (budget_id, id)
+      on delete cascade;
+  end if;
+end
+$$;
+
+drop policy if exists "plaid_items_select" on public.plaid_items;
+create policy "plaid_items_select_admin"
+on public.plaid_items for select
+using (public.has_budget_role(budget_id, 'admin'));
+
+drop policy if exists "plaid_accounts_select" on public.plaid_accounts;
+create policy "plaid_accounts_select_admin"
+on public.plaid_accounts for select
+using (public.has_budget_role(budget_id, 'admin'));
+
+drop policy if exists "plaid_accounts_write" on public.plaid_accounts;
+create policy "plaid_accounts_write"
+on public.plaid_accounts for all
+using (public.has_budget_role(budget_id, 'admin'))
+with check (
+  public.has_budget_role(budget_id, 'admin')
+  and exists (
+    select 1 from public.plaid_items pi
+    where pi.id = plaid_accounts.plaid_item_id
+      and pi.budget_id = plaid_accounts.budget_id
+  )
+  and exists (
+    select 1 from public.accounts a
+    where a.id = plaid_accounts.account_id
+      and a.budget_id = plaid_accounts.budget_id
+  )
+);
+
+drop policy if exists "teller_enrollments_select" on public.teller_enrollments;
+create policy "teller_enrollments_select_admin"
+on public.teller_enrollments for select
+using (public.has_budget_role(budget_id, 'admin'));
+
+drop policy if exists "teller_accounts_select" on public.teller_accounts;
+create policy "teller_accounts_select_admin"
+on public.teller_accounts for select
+using (public.has_budget_role(budget_id, 'admin'));
+
+drop policy if exists "teller_accounts_write" on public.teller_accounts;
+create policy "teller_accounts_write"
+on public.teller_accounts for all
+using (public.has_budget_role(budget_id, 'admin'))
+with check (
+  public.has_budget_role(budget_id, 'admin')
+  and exists (
+    select 1 from public.teller_enrollments te
+    where te.id = teller_accounts.enrollment_id
+      and te.budget_id = teller_accounts.budget_id
+  )
+  and exists (
+    select 1 from public.accounts a
+    where a.id = teller_accounts.account_id
+      and a.budget_id = teller_accounts.budget_id
+  )
+);
