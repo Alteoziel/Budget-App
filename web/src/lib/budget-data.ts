@@ -611,9 +611,15 @@ export const getAccountsWithBalances = cache(async (): Promise<
     balanceCents: balances.get(account.id) ?? 0,
   }));
 
-  if (!usedSortColumn) {
-    mapped.sort((a, b) => a.name.localeCompare(b.name));
-  }
+  // Keep the same stable order the reorder action uses (sort_order → name → id).
+  mapped.sort((a, b) => {
+    if (usedSortColumn && a.sort_order !== b.sort_order) {
+      return a.sort_order - b.sort_order;
+    }
+    const byName = a.name.localeCompare(b.name);
+    if (byName !== 0) return byName;
+    return a.id.localeCompare(b.id);
+  });
   return mapped;
 });
 
