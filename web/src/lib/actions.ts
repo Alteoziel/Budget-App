@@ -130,6 +130,7 @@ export async function signUpAction(formData: FormData) {
 export async function signOutAction() {
   const supabase = await createClient();
   await supabase.auth.signOut();
+  await clearPasswordResetGrant();
   redirect("/login");
 }
 

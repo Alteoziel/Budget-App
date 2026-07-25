@@ -11,7 +11,9 @@ import { createClient } from "@/lib/supabase/server";
 export const dynamic = "force-dynamic";
 
 const itemSchema = z.object({
-  id: z.string().min(1),
+  id: z.string().uuid(),
+  ownerUserId: z.string().uuid(),
+  budgetId: z.string().uuid(),
   kind: z.literal("create_transaction"),
   payload: z.object({
     account_id: z.string().uuid(),
@@ -60,6 +62,13 @@ export async function POST(request: Request) {
 
   for (const item of parsed.data.items) {
     try {
+      if (
+        item.ownerUserId !== user.id ||
+        item.budgetId !== active.budget.id
+      ) {
+        failed.push({ id: item.id, error: "Queued item belongs to another session." });
+        continue;
+      }
       const amount = dollarsToCents(item.payload.amount);
       if (amount === null || amount === 0) {
         failed.push({ id: item.id, error: "Invalid amount." });
@@ -114,9 +123,14 @@ export async function POST(request: Request) {
         memo: item.payload.memo.trim(),
         amount_cents: amountCents,
         cleared: true,
+        external_id: `offline:${user.id}:${item.id}`,
       });
 
       if (error) {
+        if (error.code === "23505" || /duplicate|unique/i.test(error.message)) {
+          applied.push(item.id);
+          continue;
+        }
         failed.push({ id: item.id, error: error.message });
         continue;
       }

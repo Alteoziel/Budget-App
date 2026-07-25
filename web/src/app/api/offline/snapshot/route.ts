@@ -52,7 +52,8 @@ export async function GET() {
     const categoryName = new Map(rows.map((r) => [r.categoryId, r.categoryName]));
 
     const snapshot: OfflineSnapshot = {
-      version: 1,
+      version: 2,
+      ownerUserId: user.id,
       savedAt: new Date().toISOString(),
       budget: { id: active.budget.id, name: active.budget.name },
       readyToAssignCents,

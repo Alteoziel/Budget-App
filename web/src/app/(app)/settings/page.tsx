@@ -8,6 +8,7 @@ import { PendingSubmitButton } from "@/components/PendingSubmitButton";
 import { PlaidLinkButton } from "@/components/PlaidLinkButton";
 import { ProfileSettings } from "@/components/ProfileSettings";
 import { RecentChangesOverlay } from "@/components/RecentChangesOverlay";
+import { SecureSignOutButton } from "@/components/SecureSignOutButton";
 import { SettingsCategory } from "@/components/SettingsCategory";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import {
@@ -19,7 +20,6 @@ import {
   removeMemberAction,
   renameBudgetAction,
   revokeInviteAction,
-  signOutAction,
   switchBudgetAction,
   syncPlaidNowAction,
   updateMemberRoleAction,
@@ -193,14 +193,7 @@ export default async function SettingsPage({
           title="Sign out"
           description="End your session on this device."
         >
-          <form action={signOutAction}>
-            <PendingSubmitButton
-              pendingLabel="Signing out…"
-              className="rounded-xl bg-ink-900 px-4 py-2 text-sm font-bold text-sand-50 hover:bg-ink-800"
-            >
-              Sign out
-            </PendingSubmitButton>
-          </form>
+          <SecureSignOutButton />
         </SettingsCard>
       </SettingsCategory>
 

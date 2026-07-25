@@ -1,5 +1,6 @@
 export type OfflineSnapshot = {
-  version: 1;
+  version: 2;
+  ownerUserId: string;
   savedAt: string;
   budget: { id: string; name: string };
   readyToAssignCents: number;
@@ -33,6 +34,8 @@ export type OfflineSnapshot = {
 
 export type OfflineOutboxItem = {
   id: string;
+  ownerUserId: string;
+  budgetId: string;
   createdAt: string;
   kind: "create_transaction";
   payload: {
