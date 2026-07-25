@@ -5,7 +5,7 @@ export function AppShell({
   children,
 }: {
   title: string;
-  subtitle?: string;
+  subtitle?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -14,7 +14,7 @@ export function AppShell({
         <h1 className="font-display text-2xl font-bold text-ink-900 sm:text-3xl">
           {title}
         </h1>
-        {subtitle ? <p className="mt-1 text-sm text-ink-600">{subtitle}</p> : null}
+        {subtitle ? <div className="mt-1">{subtitle}</div> : null}
       </header>
       {children}
     </>
