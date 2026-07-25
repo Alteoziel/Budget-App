@@ -36,27 +36,48 @@ def collect_paths(
         return resolved
 
     if changed_only:
-        try:
-            proc = subprocess.run(
-                ["git", "diff", "--name-only", "--diff-filter=ACMR", f"{base_ref}...HEAD"],
-                cwd=root,
-                capture_output=True,
-                text=True,
-                check=False,
+        proc = subprocess.run(
+            [
+                "git",
+                "diff",
+                "--name-only",
+                "-z",
+                "--diff-filter=ACMR",
+                f"{base_ref}...HEAD",
+            ],
+            cwd=root,
+            capture_output=True,
+            check=False,
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"git diff failed for {base_ref}: "
+                f"{proc.stderr.decode('utf-8', errors='replace')}"
             )
-            names = [n for n in proc.stdout.splitlines() if n.strip()]
-            if names:
-                return [root / n for n in names]
-        except OSError:
-            pass
+        names = [n for n in proc.stdout.split(b"\0") if n]
+    else:
+        proc = subprocess.run(
+            ["git", "ls-files", "-z"],
+            cwd=root,
+            capture_output=True,
+            check=False,
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(
+                "git ls-files failed: "
+                f"{proc.stderr.decode('utf-8', errors='replace')}"
+            )
+        names = [n for n in proc.stdout.split(b"\0") if n]
 
-    paths: list[Path] = []
-    for folder in ("app", "governance/governance", "governance/tests", "tests"):
-        base = root / folder
-        if not base.exists():
-            continue
-        paths.extend(base.rglob("*"))
-    return [p for p in paths if p.is_file() and _is_scannable(p)]
+    resolved: list[Path] = []
+    for raw_name in names:
+        name = raw_name.decode("utf-8", errors="surrogateescape")
+        path = (root / name).resolve()
+        if not path.is_relative_to(root_resolved):
+            raise ValueError(f"Git path escapes repository root: {name}")
+        if path.is_file() and _is_scannable(path):
+            resolved.append(path)
+    return resolved
 
 
 _SKIP_PARTS = {
@@ -92,6 +113,10 @@ def get_diff_text(root: Path, base_ref: str = "origin/main") -> str | None:
             text=True,
             check=False,
         )
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"git diff failed for {base_ref}: {proc.stderr.strip()}"
+            )
         return proc.stdout or None
     except OSError:
         return None

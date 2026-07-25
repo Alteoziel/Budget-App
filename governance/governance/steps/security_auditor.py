@@ -70,6 +70,21 @@ _CODE_SUFFIXES = {".py", ".ts", ".tsx", ".js", ".jsx"}
 # Config may still hide secrets.
 _CONFIG_SUFFIXES = {".yml", ".yaml", ".toml"}
 _SECRET_ONLY_RULES = {"SEC001_HARDCODED_SECRET"}
+_ENDPOINT_AUTH_MARKERS = (
+    ".auth.getUser(",
+    "requireBudget(",
+    "authorizeCronRequest(",
+    "verifyPlaidWebhook(",
+    "exchangeCodeForSession(",
+    "verifyOtp(",
+    "authorizeIngest(",
+    "authorizeReviewer(",
+    "authorizeReviewRead(",
+    "siteGateEnabled(",
+    "passwordsMatch(",
+    'headers.get("origin")',
+    "SECURITY: PUBLIC",
+)
 
 SYSTEM_PROMPT = """You are an OWASP-focused secure-code reviewer for an enterprise AI proxy gateway.
 Review ONLY the provided git diff / code snippets.
@@ -86,6 +101,8 @@ def _scan_patterns(path: Path, source: str) -> list[Finding]:
     for rule_id, severity, message, pattern in OWASP_PATTERNS:
         if path.suffix in _CONFIG_SUFFIXES and rule_id not in _SECRET_ONLY_RULES:
             continue
+        if rule_id == "SEC006_PATH_TRAVERSAL" and path.suffix != ".py":
+            continue
         for match in pattern.finditer(source):
             line = source[: match.start()].count("\n") + 1
             # Allow .env.example style placeholders
@@ -96,19 +113,58 @@ def _scan_patterns(path: Path, source: str) -> list[Finding]:
             evidence = snippet
             if rule_id == "SEC001_HARDCODED_SECRET":
                 evidence = f"{snippet[:24]}…[redacted len={len(snippet)}]"
+            effective_severity = severity
+            if rule_id == "SEC001_HARDCODED_SECRET" and ".test." in path.name:
+                effective_severity = Severity.WARNING
+            suggestion = {
+                "SEC001_HARDCODED_SECRET": "Remove the secret or load it from server-side environment variables.",
+                "SEC006_PATH_TRAVERSAL": "Resolve against an allowlisted base directory and reject escapes.",
+            }.get(rule_id, "Validate untrusted input at the trust boundary.")
             findings.append(
                 Finding(
                     step=STEP_ID,
-                    severity=severity,
+                    severity=effective_severity,
                     message=message,
                     file=str(path),
                     line=line,
                     rule_id=rule_id,
                     evidence=evidence[:120],
-                    suggestion="Remove secret, use env vars, or sanitize untrusted input.",
+                    suggestion=suggestion,
                 )
             )
     return findings
+
+
+def _route_auth_findings(path: Path, source: str) -> list[Finding]:
+    if path.name != "route.ts" or not re.search(
+        r"export\s+(?:async\s+)?function\s+(GET|POST|PUT|PATCH|DELETE)\b",
+        source,
+    ):
+        return []
+    if any(marker in source for marker in _ENDPOINT_AUTH_MARKERS):
+        return []
+    match = re.search(
+        r"export\s+(?:async\s+)?function\s+(GET|POST|PUT|PATCH|DELETE)\b",
+        source,
+    )
+    line = source[: match.start()].count("\n") + 1 if match else 1
+    return [
+        Finding(
+            step=STEP_ID,
+            severity=Severity.CRITICAL,
+            message=(
+                "Route handler has no explicit authentication/authorization "
+                "check or SECURITY: PUBLIC declaration"
+            ),
+            file=str(path),
+            line=line,
+            rule_id="SEC007_ROUTE_AUTH_REQUIRED",
+            suggestion=(
+                "Add a route-level user/role/signature check. If intentionally "
+                "public, document the trust boundary with SECURITY: PUBLIC."
+            ),
+        )
+    ]
 
 
 def _llm_review(diff_text: str) -> list[Finding]:
@@ -208,6 +264,7 @@ def run(paths: list[Path], diff_text: str | None = None) -> StepResult:
         scanned += 1
         source = path.read_text(encoding="utf-8", errors="replace")
         findings.extend(_scan_patterns(path, source))
+        findings.extend(_route_auth_findings(path, source))
 
     llm_used = False
     if diff_text:

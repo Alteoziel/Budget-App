@@ -174,6 +174,26 @@ def test_security_ignores_semgrep_rule_yaml(tmp_path: Path) -> None:
     assert result.findings == []
 
 
+def test_security_does_not_treat_typescript_open_as_file_access(
+    tmp_path: Path,
+) -> None:
+    src = tmp_path / "Menu.tsx"
+    src.write_text("const open = useState(false);\\nsetOpen(!open);\\n", encoding="utf-8")
+    result = security_auditor.run([src], diff_text=None)
+    assert not any(f.rule_id == "SEC006_PATH_TRAVERSAL" for f in result.findings)
+
+
+def test_security_requires_explicit_route_authorization(tmp_path: Path) -> None:
+    src = tmp_path / "route.ts"
+    src.write_text(
+        'export async function POST(req: Request) { return new Response("ok"); }\\n',
+        encoding="utf-8",
+    )
+    result = security_auditor.run([src], diff_text=None)
+    assert not result.passed
+    assert any(f.rule_id == "SEC007_ROUTE_AUTH_REQUIRED" for f in result.findings)
+
+
 def test_security_ssrf_requires_call_not_type_hint(tmp_path: Path) -> None:
     src = tmp_path / "types.py"
     src.write_text(
