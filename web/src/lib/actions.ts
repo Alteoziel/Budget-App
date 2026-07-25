@@ -13,8 +13,12 @@ import {
 import { distributeByPercent } from "@/lib/auto-assign";
 import { getBudgetRows } from "@/lib/budget-data";
 import { requireBudget, setActiveBudgetId } from "@/lib/budget-context";
+import {
+  clearPasswordResetGrant,
+  hasPasswordResetGrant,
+} from "@/lib/password-reset";
 import { safeInternalPath } from "@/lib/paths";
-import { absoluteUrl } from "@/lib/site-url";
+import { absoluteUrl, siteOrigin } from "@/lib/site-url";
 import { createClient } from "@/lib/supabase/server";
 import type { BudgetRole } from "@/lib/types";
 import {
@@ -121,10 +125,47 @@ export async function updateDisplayNameAction(
   return { ok: true, message: "Display name saved." };
 }
 
+/** Email a password-reset confirmation link to the signed-in user. */
+export async function requestPasswordResetAction(): Promise<
+  { ok: true; message: string } | { ok: false; error: string }
+> {
+  const { supabase, user } = await requireUser();
+  if (!user.email) {
+    return { ok: false, error: "Your account has no email address on file." };
+  }
+  if (!siteOrigin()) {
+    return {
+      ok: false,
+      error: "Site URL is not configured, so we can’t email a confirmation link.",
+    };
+  }
+
+  const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
+    redirectTo: absoluteUrl("/auth/callback?next=/settings/password"),
+  });
+  if (error) return { ok: false, error: error.message };
+  return {
+    ok: true,
+    message: "Check your email for a confirmation link. It expires soon.",
+  };
+}
+
+/**
+ * Set a new password — only after the user confirmed a recovery email link
+ * (short-lived grant cookie from /auth/callback).
+ */
 export async function updatePasswordAction(
   formData: FormData,
 ): Promise<{ ok: true; message: string } | { ok: false; error: string }> {
   await requireUser();
+  if (!(await hasPasswordResetGrant())) {
+    return {
+      ok: false,
+      error:
+        "Confirm the link we emailed you before changing your password.",
+    };
+  }
+
   const password = String(formData.get("password") ?? "");
   const confirm = String(formData.get("password_confirm") ?? "");
   if (password.length < 8) {
@@ -137,6 +178,10 @@ export async function updatePasswordAction(
   const supabase = await createClient();
   const { error } = await supabase.auth.updateUser({ password });
   if (error) return { ok: false, error: error.message };
+
+  await clearPasswordResetGrant();
+  revalidatePath("/settings");
+  revalidatePath("/settings/password");
   return { ok: true, message: "Password updated." };
 }
 
