@@ -1,6 +1,14 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
 import { AddCategoryForm } from "@/components/AddCategoryForm";
 import { AppShell } from "@/components/AppShell";
 import { BudgetCalendarPicker } from "@/components/BudgetCalendarPicker";
@@ -85,7 +93,12 @@ export function BudgetLiveView({
   const [addCategoryOpen, setAddCategoryOpen] = useState(false);
   const [filters, setFilters] = useState<Set<BudgetFilter>>(() => new Set());
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const filtersRef = useRef<HTMLDivElement>(null);
+  const [filtersPos, setFiltersPos] = useState<{
+    top: number;
+    right: number;
+  } | null>(null);
+  const filtersButtonRef = useRef<HTMLButtonElement>(null);
+  const filtersPanelRef = useRef<HTMLDivElement>(null);
   const filtersPanelId = useId();
 
   const groupIds = useMemo(
@@ -105,13 +118,37 @@ export function BudgetLiveView({
       .filter((group) => group.categories.length > 0);
   }, [groups, filters]);
 
+  useLayoutEffect(() => {
+    if (!filtersOpen) {
+      setFiltersPos(null);
+      return;
+    }
+    function place() {
+      const button = filtersButtonRef.current;
+      if (!button) return;
+      const rect = button.getBoundingClientRect();
+      setFiltersPos({
+        top: rect.bottom + 8,
+        right: Math.max(8, window.innerWidth - rect.right),
+      });
+    }
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [filtersOpen]);
+
   useEffect(() => {
     if (!filtersOpen) return;
     function onPointerDown(event: MouseEvent | TouchEvent) {
       const target = event.target as Node | null;
-      if (target && filtersRef.current && !filtersRef.current.contains(target)) {
-        setFiltersOpen(false);
-      }
+      if (!target) return;
+      if (filtersButtonRef.current?.contains(target)) return;
+      if (filtersPanelRef.current?.contains(target)) return;
+      setFiltersOpen(false);
     }
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") setFiltersOpen(false);
@@ -148,8 +185,9 @@ export function BudgetLiveView({
       actions={
         groups.length > 0 ? (
           <div className="flex max-w-[min(100%,20rem)] flex-row flex-wrap items-center justify-end gap-1.5">
-            <div ref={filtersRef} className="relative z-50">
+            <div className="relative">
               <button
+                ref={filtersButtonRef}
                 type="button"
                 aria-expanded={filtersOpen}
                 aria-controls={filtersPanelId}
@@ -162,55 +200,67 @@ export function BudgetLiveView({
               >
                 Filters{filters.size > 0 ? ` · ${filters.size}` : ""}
               </button>
-              {filtersOpen ? (
-                <div
-                  id={filtersPanelId}
-                  role="dialog"
-                  aria-label="Budget filters"
-                  className="absolute right-0 z-50 mt-2 w-64 rounded-2xl border border-ink-900/20 bg-sand-50 p-3 shadow-soft ring-1 ring-ink-900/5 dark:bg-ink-50"
-                >
-                  <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-ink-500">
-                    Show categories that
-                  </p>
-                  <ul className="mt-2 space-y-1">
-                    {FILTER_OPTIONS.map((option) => {
-                      const on = filters.has(option.id);
-                      return (
-                        <li key={option.id}>
-                          <button
-                            type="button"
-                            aria-pressed={on}
-                            onClick={() => toggleFilter(option.id)}
-                            className={`flex w-full touch-manipulation flex-col rounded-xl px-3 py-2 text-left transition ${
-                              on
-                                ? "bg-moss-500 text-sand-50"
-                                : "hover:bg-ink-900/5"
-                            }`}
-                          >
-                            <span className="text-xs font-bold">{option.label}</span>
-                            <span
-                              className={`text-[11px] ${
-                                on ? "opacity-80" : "text-ink-500"
-                              }`}
-                            >
-                              {option.hint}
-                            </span>
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                  {filters.size > 0 ? (
-                    <button
-                      type="button"
-                      onClick={() => setFilters(new Set())}
-                      className="mt-2 w-full touch-manipulation rounded-xl bg-ink-900/5 px-3 py-2 text-xs font-bold text-ink-700 hover:bg-ink-900/10"
+              {filtersOpen &&
+              filtersPos &&
+              typeof document !== "undefined"
+                ? createPortal(
+                    <div
+                      ref={filtersPanelRef}
+                      id={filtersPanelId}
+                      role="dialog"
+                      aria-label="Budget filters"
+                      style={{
+                        top: filtersPos.top,
+                        right: filtersPos.right,
+                      }}
+                      className="fixed z-[70] w-64 rounded-2xl border border-ink-900/20 bg-sand-50 p-3 shadow-soft ring-1 ring-ink-900/5 dark:bg-ink-50"
                     >
-                      Clear filters
-                    </button>
-                  ) : null}
-                </div>
-              ) : null}
+                      <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-ink-500">
+                        Show categories that
+                      </p>
+                      <ul className="mt-2 space-y-1">
+                        {FILTER_OPTIONS.map((option) => {
+                          const on = filters.has(option.id);
+                          return (
+                            <li key={option.id}>
+                              <button
+                                type="button"
+                                aria-pressed={on}
+                                onClick={() => toggleFilter(option.id)}
+                                className={`flex w-full touch-manipulation flex-col rounded-xl px-3 py-2 text-left transition ${
+                                  on
+                                    ? "bg-moss-500 text-sand-50"
+                                    : "hover:bg-ink-900/5"
+                                }`}
+                              >
+                                <span className="text-xs font-bold">
+                                  {option.label}
+                                </span>
+                                <span
+                                  className={`text-[11px] ${
+                                    on ? "opacity-80" : "text-ink-500"
+                                  }`}
+                                >
+                                  {option.hint}
+                                </span>
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                      {filters.size > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => setFilters(new Set())}
+                          className="mt-2 w-full touch-manipulation rounded-xl bg-ink-900/5 px-3 py-2 text-xs font-bold text-ink-700 hover:bg-ink-900/10"
+                        >
+                          Clear filters
+                        </button>
+                      ) : null}
+                    </div>,
+                    document.body,
+                  )
+                : null}
             </div>
             <button
               type="button"
