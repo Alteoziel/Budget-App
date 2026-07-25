@@ -189,6 +189,23 @@ label {
   touch-action: manipulation;
 }
 
+/*
+ * Native date inputs shrink on iOS/WebKit even with the same padding as text
+ * fields. Force a shared control height and left-align the value.
+ */
+input[type="date"] {
+  display: block;
+  min-height: 3rem;
+  font-size: 1rem;
+  line-height: 1.25;
+  color-scheme: inherit;
+}
+
+input[type="date"]::-webkit-date-and-time-value {
+  min-height: 1.5rem;
+  text-align: left;
+}
+
 @layer components {
   /* Card surface with a visible edge so stacked cards stay distinguishable. */
   .card-surface {

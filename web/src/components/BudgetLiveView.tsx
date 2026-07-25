@@ -88,7 +88,8 @@ export function BudgetLiveView({
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filtersPos, setFiltersPos] = useState<{
     top: number;
-    right: number;
+    left: number;
+    width: number;
   } | null>(null);
   const filtersButtonRef = useRef<HTMLButtonElement>(null);
   const filtersPanelRef = useRef<HTMLDivElement>(null);
@@ -114,9 +115,17 @@ export function BudgetLiveView({
   function filtersPositionFromButton(button: HTMLButtonElement | null) {
     if (!button) return null;
     const rect = button.getBoundingClientRect();
+    const gutter = 8;
+    const width = Math.min(256, window.innerWidth - gutter * 2);
+    // Align to the button’s right edge, then clamp fully on-screen (mobile).
+    const left = Math.min(
+      Math.max(gutter, rect.right - width),
+      window.innerWidth - width - gutter,
+    );
     return {
       top: rect.bottom + 8,
-      right: Math.max(8, window.innerWidth - rect.right),
+      left,
+      width,
     };
   }
 
@@ -217,9 +226,10 @@ export function BudgetLiveView({
                       aria-label="Budget filters"
                       style={{
                         top: filtersPos.top,
-                        right: filtersPos.right,
+                        left: filtersPos.left,
+                        width: filtersPos.width,
                       }}
-                      className="fixed z-[70] w-64 rounded-2xl border border-ink-900/20 bg-sand-50 p-3 shadow-soft ring-1 ring-ink-900/5 dark:bg-ink-50"
+                      className="fixed z-[70] max-w-[calc(100vw-1rem)] rounded-2xl border border-ink-900/20 bg-sand-50 p-3 shadow-soft ring-1 ring-ink-900/5 dark:bg-ink-50"
                     >
                       <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-ink-500">
                         Show categories that
