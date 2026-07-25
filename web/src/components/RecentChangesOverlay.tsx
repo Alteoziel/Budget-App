@@ -36,16 +36,7 @@ export function RecentChangesOverlay({
   defaultOpen?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
-  const [mounted, setMounted] = useState(false);
   const titleId = useId();
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    if (defaultOpen) setOpen(true);
-  }, [defaultOpen]);
 
   useEffect(() => {
     if (!open) return;
@@ -62,7 +53,7 @@ export function RecentChangesOverlay({
   }, [open]);
 
   const panel =
-    open && mounted
+    open && typeof document !== "undefined"
       ? createPortal(
           <div className="fixed inset-0 z-[80] flex justify-end bg-ink-900/45 backdrop-blur-[2px]">
             <button

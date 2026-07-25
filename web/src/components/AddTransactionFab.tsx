@@ -17,12 +17,7 @@ export function AddTransactionFab({
   today: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
   const titleId = useId();
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -39,7 +34,7 @@ export function AddTransactionFab({
   }, [open]);
 
   const panel =
-    open && mounted
+    open && typeof document !== "undefined"
       ? createPortal(
           <div className="fixed inset-0 z-[80] flex items-start justify-center p-3 pt-[max(1rem,env(safe-area-inset-top))] sm:items-center sm:p-6">
             <button
