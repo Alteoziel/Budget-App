@@ -196,13 +196,38 @@ export async function createAccountAction(formData: FormData) {
     redirectWithError("/accounts", "Invalid account type.");
   }
 
+  let sortOrder = 0;
+  const maxSort = await supabase
+    .from("accounts")
+    .select("sort_order")
+    .eq("budget_id", budget.id)
+    .order("sort_order", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!maxSort.error) {
+    sortOrder = Number(maxSort.data?.sort_order ?? -1) + 1;
+  }
+
   let { error } = await supabase.from("accounts").insert({
     user_id: user.id,
     budget_id: budget.id,
     name,
     account_type: accountType,
     include_in_total: true,
+    sort_order: sortOrder,
   });
+  if (
+    error &&
+    /include_in_total|sort_order|schema cache|column/i.test(error.message)
+  ) {
+    ({ error } = await supabase.from("accounts").insert({
+      user_id: user.id,
+      budget_id: budget.id,
+      name,
+      account_type: accountType,
+      include_in_total: true,
+    }));
+  }
   if (error && /include_in_total|schema cache|column/i.test(error.message)) {
     ({ error } = await supabase.from("accounts").insert({
       user_id: user.id,
@@ -221,6 +246,52 @@ export async function createAccountAction(formData: FormData) {
   }
   revalidatePath("/accounts");
   revalidatePath("/budget");
+}
+
+export async function reorderAccountAction(formData: FormData) {
+  const { supabase, budget } = await requireBudget("editor");
+  const accountId = String(formData.get("account_id") ?? "");
+  const direction = String(formData.get("direction") ?? "");
+  if (!accountId || (direction !== "up" && direction !== "down")) {
+    redirectWithError("/accounts", "Invalid reorder.");
+  }
+
+  const { data, error } = await supabase
+    .from("accounts")
+    .select("id,name,sort_order")
+    .eq("budget_id", budget.id);
+  if (error) {
+    redirectWithError(
+      "/accounts",
+      /sort_order|schema cache|column/i.test(error.message)
+        ? "Run the accounts sort_order migration in Supabase to reorder accounts."
+        : "Could not load accounts.",
+    );
+  }
+
+  const rows = ((data ?? []) as Array<{
+    id: string;
+    name: string;
+    sort_order: number;
+  }>).map((row) => ({
+    id: row.id,
+    name: row.name,
+    sort_order: Number(row.sort_order ?? 0),
+  }));
+
+  const result = await swapSortOrder({
+    supabase,
+    table: "accounts",
+    budgetId: budget.id,
+    rows,
+    targetId: accountId,
+    direction: direction as "up" | "down",
+  });
+  if (!result.ok) {
+    redirectWithError("/accounts", result.error);
+  }
+
+  revalidatePath("/accounts");
 }
 
 export async function setAccountIncludeInTotalAction(formData: FormData) {
@@ -400,7 +471,7 @@ function compareSortable(a: SortableRow, b: SortableRow) {
 
 async function swapSortOrder(options: {
   supabase: Awaited<ReturnType<typeof requireBudget>>["supabase"];
-  table: "category_groups" | "categories";
+  table: "category_groups" | "categories" | "accounts";
   budgetId: string;
   rows: SortableRow[];
   targetId: string;

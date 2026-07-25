@@ -545,17 +545,31 @@ export const getAccountsWithBalances = cache(async (): Promise<
     error: { message: string } | null;
   } = await supabase
     .from("accounts")
-    .select("id,budget_id,name,account_type,currency,include_in_total")
+    .select("id,budget_id,name,account_type,currency,include_in_total,sort_order")
     .eq("budget_id", budget.id)
+    .order("sort_order")
     .order("name");
 
-  let usedColumn = true;
-  // Column may be missing until migration is applied.
+  let usedIncludeColumn = true;
+  let usedSortColumn = true;
+  // Columns may be missing until migrations are applied.
+  if (
+    accountsRes.error &&
+    /sort_order|schema cache|column/i.test(accountsRes.error.message)
+  ) {
+    usedSortColumn = false;
+    accountsRes = await supabase
+      .from("accounts")
+      .select("id,budget_id,name,account_type,currency,include_in_total")
+      .eq("budget_id", budget.id)
+      .order("name");
+  }
   if (
     accountsRes.error &&
     /include_in_total|schema cache|column/i.test(accountsRes.error.message)
   ) {
-    usedColumn = false;
+    usedIncludeColumn = false;
+    usedSortColumn = false;
     accountsRes = await supabase
       .from("accounts")
       .select("id,budget_id,name,account_type,currency")
@@ -572,7 +586,7 @@ export const getAccountsWithBalances = cache(async (): Promise<
   assertNoError(txnsRes.error, "Failed to load account balances");
 
   const accounts = (accountsRes.data ?? []) as Array<
-    Account & { include_in_total?: boolean }
+    Account & { include_in_total?: boolean; sort_order?: number }
   >;
   const txns = txnsRes.data;
 
@@ -582,17 +596,25 @@ export const getAccountsWithBalances = cache(async (): Promise<
     balances.set(id, (balances.get(id) ?? 0) + (txn.amount_cents as number));
   }
 
-  const cookieExcluded = usedColumn
+  const cookieExcluded = usedIncludeColumn
     ? new Set<string>()
     : await readExcludedAccountIds(budget.id);
 
-  return accounts.map((account) => ({
+  const mapped = accounts.map((account, index) => ({
     ...account,
-    include_in_total: usedColumn
+    include_in_total: usedIncludeColumn
       ? account.include_in_total !== false
       : !cookieExcluded.has(account.id),
+    sort_order: usedSortColumn
+      ? Number(account.sort_order ?? index)
+      : index,
     balanceCents: balances.get(account.id) ?? 0,
   }));
+
+  if (!usedSortColumn) {
+    mapped.sort((a, b) => a.name.localeCompare(b.name));
+  }
+  return mapped;
 });
 
 export const getAccountRegister = cache(async (accountId: string): Promise<{

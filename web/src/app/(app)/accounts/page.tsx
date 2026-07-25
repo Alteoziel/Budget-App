@@ -1,8 +1,8 @@
 import { AppShell } from "@/components/AppShell";
 import { AccountsList } from "@/components/AccountsList";
+import { AddAccountSection } from "@/components/AddAccountSection";
 import { FlashError } from "@/components/FlashError";
 import { Money } from "@/components/Money";
-import { createAccountAction } from "@/lib/actions";
 import { getAccountsWithBalances } from "@/lib/budget-data";
 
 export default async function AccountsPage({
@@ -38,47 +38,14 @@ export default async function AccountsPage({
       <section className="animate-rise-delay mt-5 card-surface overflow-hidden rounded-2xl">
         {accounts.length > 0 ? (
           <p className="border-b border-ink-900/5 px-4 py-3 text-xs font-semibold text-ink-600">
-            Check accounts to include them in the All accounts total. Your choices
-            are saved for this budget.
+            Check accounts to include them in the All accounts total. Use ↑ ↓ to
+            reorder. Your choices are saved for this budget.
           </p>
         ) : null}
         <AccountsList accounts={accounts} />
       </section>
 
-      <section className="mt-6 card-surface rounded-2xl p-4">
-        <h2 className="font-display text-lg font-bold text-ink-900">Add account</h2>
-        <form action={createAccountAction} className="mt-3 space-y-3">
-          <label className="block text-sm font-semibold text-ink-700">
-            Name
-            <input
-              required
-              name="name"
-              placeholder="Checking"
-              className="mt-1 w-full rounded-xl border border-ink-900/10 bg-white px-3 py-3 outline-none ring-moss-400 focus:ring-2"
-            />
-          </label>
-          <label className="block text-sm font-semibold text-ink-700">
-            Type
-            <select
-              name="account_type"
-              className="mt-1 w-full rounded-xl border border-ink-900/10 bg-white px-3 py-3 outline-none ring-moss-400 focus:ring-2"
-              defaultValue="checking"
-            >
-              <option value="checking">Checking</option>
-              <option value="savings">Savings</option>
-              <option value="credit">Credit</option>
-              <option value="cash">Cash</option>
-              <option value="other">Other</option>
-            </select>
-          </label>
-          <button
-            type="submit"
-            className="w-full rounded-2xl bg-ink-900 px-4 py-3 text-sm font-bold text-sand-50 hover:bg-ink-800"
-          >
-            Add account
-          </button>
-        </form>
-      </section>
+      <AddAccountSection />
     </AppShell>
   );
 }
