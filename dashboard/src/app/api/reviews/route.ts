@@ -4,7 +4,7 @@ import {
   isProductionLike,
   unauthorizedResponse,
 } from "@/lib/auth";
-import { parseIngestBody } from "@/lib/ingest";
+import { MAX_INGEST_BYTES, parseIngestBody } from "@/lib/ingest";
 import {
   getStoreStatus,
   listReviews,
@@ -43,7 +43,29 @@ export async function POST(req: NextRequest) {
     return unauthorizedResponse("ingest");
   }
 
-  const body = await req.json().catch(() => null);
+  const declaredLength = Number(req.headers.get("content-length") || "0");
+  if (
+    Number.isFinite(declaredLength) &&
+    declaredLength > MAX_INGEST_BYTES
+  ) {
+    return NextResponse.json(
+      { error: "payload_too_large" },
+      { status: 413 }
+    );
+  }
+  const rawBody = await req.text();
+  if (Buffer.byteLength(rawBody, "utf8") > MAX_INGEST_BYTES) {
+    return NextResponse.json(
+      { error: "payload_too_large" },
+      { status: 413 }
+    );
+  }
+  let body: unknown = null;
+  try {
+    body = JSON.parse(rawBody);
+  } catch {
+    // parseIngestBody returns a consistent invalid-payload response below.
+  }
   const parsed = parseIngestBody(body);
   if (!parsed.ok) {
     return NextResponse.json(

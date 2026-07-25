@@ -37,7 +37,7 @@ function ensureReviewerSecret(): string | null {
   if (!secret) {
     secret =
       window.prompt(
-        "Enter reviewer secret (GOVERNANCE_DASHBOARD_SECRET or GOVERNANCE_REVIEWER_SECRET):"
+        "Enter reviewer secret (GOVERNANCE_REVIEWER_SECRET):"
       ) || "";
     if (!secret) return null;
     setReviewerSecret(secret);
@@ -65,11 +65,53 @@ function statusColor(status: Review["status"]) {
   }
 }
 
+type BenchmarkProfile = {
+  sizes: number[];
+  times_ms: number[];
+  estimated: string;
+};
+
+function safeBenchmarkProfiles(
+  metrics: Record<string, unknown> | undefined
+): Record<string, BenchmarkProfile> | null {
+  const raw = metrics?.profiles;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const output: Record<string, BenchmarkProfile> = {};
+  for (const [name, value] of Object.entries(raw)) {
+    if (
+      !value ||
+      typeof value !== "object" ||
+      Array.isArray(value)
+    ) {
+      continue;
+    }
+    const profile = value as Record<string, unknown>;
+    const sizes = profile.sizes;
+    const times = profile.times_ms;
+    if (
+      !Array.isArray(sizes) ||
+      !Array.isArray(times) ||
+      sizes.length > 64 ||
+      sizes.length !== times.length ||
+      !sizes.every((item) => typeof item === "number" && Number.isFinite(item)) ||
+      !times.every((item) => typeof item === "number" && Number.isFinite(item))
+    ) {
+      continue;
+    }
+    output[name.slice(0, 128)] = {
+      sizes,
+      times_ms: times,
+      estimated:
+        typeof profile.estimated === "string"
+          ? profile.estimated.slice(0, 128)
+          : "unknown",
+    };
+  }
+  return Object.keys(output).length ? output : null;
+}
+
 function StepCard({ step }: { step: StepResult }) {
-  const profiles = (step.metrics?.profiles ?? null) as Record<
-    string,
-    { sizes: number[]; times_ms: number[]; estimated: string }
-  > | null;
+  const profiles = safeBenchmarkProfiles(step.metrics);
 
   const chartData =
     profiles &&
