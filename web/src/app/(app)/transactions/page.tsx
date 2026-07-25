@@ -27,7 +27,7 @@ export default async function TransactionsPage({
         today={today}
       />
 
-      <section className="animate-rise card-surface overflow-hidden rounded-2xl">
+      <section className="animate-rise card-surface mt-2 overflow-hidden rounded-2xl pb-16">
         <RegisterTransactions
           transactions={transactions}
           categories={categories}
