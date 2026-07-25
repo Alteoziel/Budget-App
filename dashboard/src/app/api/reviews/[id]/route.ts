@@ -8,8 +8,7 @@ import {
 import { buildPullMergeUrl, parseCommitSha } from "@/lib/github";
 import {
   getReview,
-  updateReview,
-  updateReviewConditional,
+  transitionReview,
   sanitizeReviewForClient,
 } from "@/lib/store";
 import {
@@ -65,19 +64,28 @@ export async function POST(req: NextRequest, { params }: Params) {
   const note = (body.note as string) || null;
 
   if (action === "reject") {
-    const updated = await updateReview(id, {
-      status: "rejected",
-      reviewer_note: note,
-    });
+    const updated = await transitionReview(
+      id,
+      ["pending_review", "approved", "rejected"],
+      false,
+      {
+        status: "rejected",
+        reviewer_note: note,
+      }
+    );
+    if (!updated) {
+      return NextResponse.json({ error: "invalid_state" }, { status: 409 });
+    }
     return NextResponse.json({
       review: updated ? sanitizeReviewForClient(updated) : null,
     });
   }
 
   if (action === "approve") {
-    const updated = await updateReviewConditional(
+    const updated = await transitionReview(
       id,
-      (current) => current.status !== "merged",
+      ["pending_review", "approved", "rejected"],
+      false,
       {
         status: "approved",
         reviewer_note: note,
@@ -176,24 +184,50 @@ export async function POST(req: NextRequest, { params }: Params) {
       );
     }
 
-    const mergeResp = await fetch(mergeTarget.url, {
-      method: "PUT",
-      headers: {
-        ...githubHeaders,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        commit_title: `Merge PR #${mergeTarget.pr} via Governance Panel`,
-        merge_method: "squash",
-        sha: reviewedSha,
-      }),
-    });
+    const reserved = await transitionReview(
+      id,
+      ["pending_review", "approved"],
+      true,
+      { status: "merging", reviewer_note: note }
+    );
+    if (!reserved) {
+      return NextResponse.json(
+        {
+          error: "invalid_state",
+          message: "Merge blocked by a concurrent review or report change.",
+        },
+        { status: 409 }
+      );
+    }
+
+    let mergeResp: Response;
+    try {
+      mergeResp = await fetch(mergeTarget.url, {
+        method: "PUT",
+        headers: {
+          ...githubHeaders,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          commit_title: `Merge PR #${mergeTarget.pr} via Governance Panel`,
+          merge_method: "squash",
+          sha: reviewedSha,
+        }),
+      });
+    } catch {
+      await transitionReview(id, ["merging"], false, { status: "approved" });
+      return NextResponse.json(
+        { error: "github_merge_unavailable" },
+        { status: 502 }
+      );
+    }
 
     const mergeJson = (await mergeResp.json().catch(() => ({}))) as {
       sha?: string;
       message?: string;
     };
     if (!mergeResp.ok) {
+      await transitionReview(id, ["merging"], false, { status: "approved" });
       return NextResponse.json(
         {
           error: "github_merge_failed",
@@ -207,9 +241,10 @@ export async function POST(req: NextRequest, { params }: Params) {
       );
     }
 
-    const updated = await updateReviewConditional(
+    const updated = await transitionReview(
       id,
-      (current) => current.passed === true && current.status !== "merged",
+      ["merging"],
+      true,
       {
         status: "merged",
         merge_sha: mergeJson.sha ?? null,
