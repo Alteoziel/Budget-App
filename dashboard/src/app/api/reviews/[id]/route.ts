@@ -5,7 +5,7 @@ import {
   isProductionLike,
   unauthorizedResponse,
 } from "@/lib/auth";
-import { buildPullMergeUrl } from "@/lib/github";
+import { buildPullMergeUrl, parseCommitSha } from "@/lib/github";
 import {
   getReview,
   updateReview,
@@ -131,17 +131,61 @@ export async function POST(req: NextRequest, { params }: Params) {
         { status: 400 }
       );
     }
+    const reviewedSha = parseCommitSha(review.commit_sha);
+    if (!reviewedSha) {
+      return NextResponse.json(
+        {
+          error: "missing_reviewed_sha",
+          message: "A full reviewed commit SHA is required before merge.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const githubHeaders = {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/vnd.github+json",
+    };
+    const pullUrl = mergeTarget.url.replace(/\/merge$/, "");
+    const pullResp = await fetch(pullUrl, { headers: githubHeaders });
+    const pull = (await pullResp.json().catch(() => ({}))) as {
+      head?: { sha?: string };
+      base?: { ref?: string; repo?: { full_name?: string } };
+      state?: string;
+    };
+    if (!pullResp.ok) {
+      return NextResponse.json(
+        { error: "github_pr_lookup_failed", github_status: pullResp.status },
+        { status: 502 }
+      );
+    }
+    const expectedBase = process.env.GITHUB_BASE_BRANCH?.trim() || "main";
+    if (
+      pull.state !== "open" ||
+      pull.head?.sha !== reviewedSha ||
+      pull.base?.repo?.full_name !== mergeTarget.repo ||
+      pull.base?.ref !== expectedBase
+    ) {
+      return NextResponse.json(
+        {
+          error: "review_stale_or_wrong_target",
+          message:
+            "The pull request head or base no longer matches the reviewed revision.",
+        },
+        { status: 409 }
+      );
+    }
 
     const mergeResp = await fetch(mergeTarget.url, {
       method: "PUT",
       headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/vnd.github+json",
+        ...githubHeaders,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
         commit_title: `Merge PR #${mergeTarget.pr} via Governance Panel`,
         merge_method: "squash",
+        sha: reviewedSha,
       }),
     });
 

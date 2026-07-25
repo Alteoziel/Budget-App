@@ -36,7 +36,7 @@ const ingestSchema = z.object({
   pr_number: z.number().int().positive().nullish(),
   commit_sha: z
     .string()
-    .regex(/^[0-9a-f]{7,40}$/i, "commit_sha must be a git SHA")
+    .regex(/^[0-9a-f]{40}$/i, "commit_sha must be a full 40-character git SHA")
     .nullish(),
   repo: z
     .string()
