@@ -45,9 +45,12 @@ export function BudgetCalendarPicker({
   );
   const today = currentIsoDate();
 
-  useEffect(() => {
-    setViewMonth(selectedAs?.slice(0, 7) ?? currentMonth);
-  }, [selectedAs, currentMonth]);
+  function toggleOpen() {
+    if (!open) {
+      setViewMonth(selectedAs?.slice(0, 7) ?? currentMonth);
+    }
+    setOpen(!open);
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -107,7 +110,7 @@ export function BudgetCalendarPicker({
         type="button"
         aria-expanded={open}
         aria-controls={panelId}
-        onClick={() => setOpen((value) => !value)}
+        onClick={toggleOpen}
         className="inline-flex min-h-9 touch-manipulation items-center gap-1.5 rounded-xl border border-ink-900/10 bg-sand-50 px-3 py-1.5 text-sm font-semibold text-ink-700 shadow-sm transition hover:border-ink-900/20 hover:bg-white dark:bg-ink-50"
       >
         <span>{buttonLabel}</span>
