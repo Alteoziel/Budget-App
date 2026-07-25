@@ -5,7 +5,11 @@ import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { DeleteAccountButton } from "@/components/DeleteAccountButton";
 import { Money } from "@/components/Money";
-import { setAccountIncludeInTotalAction } from "@/lib/actions";
+import { PendingSubmitButton } from "@/components/PendingSubmitButton";
+import {
+  reorderAccountAction,
+  setAccountIncludeInTotalAction,
+} from "@/lib/actions";
 
 type AccountRow = {
   id: string;
@@ -13,9 +17,19 @@ type AccountRow = {
   account_type: string;
   balanceCents: number;
   include_in_total: boolean;
+  sort_order?: number;
 };
 
-export function AccountsList({ accounts }: { accounts: AccountRow[] }) {
+const moveBtnClass =
+  "min-h-9 min-w-9 rounded-lg border border-ink-900/15 bg-sand-50 px-1.5 text-xs font-bold text-ink-700 disabled:cursor-not-allowed disabled:opacity-30";
+
+export function AccountsList({
+  accounts,
+  canReorder = true,
+}: {
+  accounts: AccountRow[];
+  canReorder?: boolean;
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
@@ -29,7 +43,7 @@ export function AccountsList({ accounts }: { accounts: AccountRow[] }) {
 
   return (
     <ul className={`divide-y divide-ink-900/5 ${pending ? "opacity-80" : ""}`}>
-      {accounts.map((account) => (
+      {accounts.map((account, index) => (
         <li
           key={account.id}
           className={`flex items-center gap-2 px-4 py-4 transition hover:bg-sand-100 ${
@@ -79,6 +93,34 @@ export function AccountsList({ accounts }: { accounts: AccountRow[] }) {
               <Money cents={account.balanceCents} />
             </p>
           </Link>
+          {canReorder ? (
+            <div className="flex shrink-0 gap-1">
+              <form action={reorderAccountAction}>
+                <input type="hidden" name="account_id" value={account.id} />
+                <input type="hidden" name="direction" value="up" />
+                <PendingSubmitButton
+                  pendingLabel="…"
+                  disabled={index === 0}
+                  className={moveBtnClass}
+                  aria-label={`Move ${account.name} up`}
+                >
+                  ↑
+                </PendingSubmitButton>
+              </form>
+              <form action={reorderAccountAction}>
+                <input type="hidden" name="account_id" value={account.id} />
+                <input type="hidden" name="direction" value="down" />
+                <PendingSubmitButton
+                  pendingLabel="…"
+                  disabled={index === accounts.length - 1}
+                  className={moveBtnClass}
+                  aria-label={`Move ${account.name} down`}
+                >
+                  ↓
+                </PendingSubmitButton>
+              </form>
+            </div>
+          ) : null}
           <DeleteAccountButton
             accountId={account.id}
             accountName={account.name}
