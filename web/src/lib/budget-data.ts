@@ -796,3 +796,61 @@ export const getAccountRegister = cache(async (accountId: string): Promise<{
     matchSuggestions,
   };
 });
+
+/** Budget-wide register for the Transactions tab. */
+export const getAllTransactionsRegister = cache(async (): Promise<{
+  transactions: Transaction[];
+  categories: Array<{ id: string; name: string; groupName: string }>;
+  accounts: Array<{ id: string; name: string }>;
+}> => {
+  const { supabase, budget } = await requireBudget("viewer");
+
+  const [transactionsRes, categoriesRes, groupsRes, accountsRes] =
+    await Promise.all([
+      supabase
+        .from("transactions")
+        .select(
+          "id,budget_id,account_id,category_id,occurred_on,payee,memo,amount_cents,cleared,external_id",
+        )
+        .eq("budget_id", budget.id)
+        .order("occurred_on", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(1000),
+      supabase
+        .from("categories")
+        .select("id,name,group_id")
+        .eq("budget_id", budget.id)
+        .order("name"),
+      supabase
+        .from("category_groups")
+        .select("id,name")
+        .eq("budget_id", budget.id),
+      supabase
+        .from("accounts")
+        .select("id,name")
+        .eq("budget_id", budget.id)
+        .order("name"),
+    ]);
+
+  assertNoError(transactionsRes.error, "Failed to load transactions");
+  assertNoError(categoriesRes.error, "Failed to load categories");
+  assertNoError(groupsRes.error, "Failed to load category groups");
+  assertNoError(accountsRes.error, "Failed to load accounts");
+
+  const groupMap = new Map(
+    (groupsRes.data ?? []).map((g) => [g.id as string, g.name as string]),
+  );
+
+  return {
+    transactions: (transactionsRes.data as Transaction[] | null) ?? [],
+    categories: (categoriesRes.data ?? []).map((c) => ({
+      id: c.id as string,
+      name: c.name as string,
+      groupName: groupMap.get(c.group_id as string) ?? "Ungrouped",
+    })),
+    accounts: (accountsRes.data ?? []).map((row) => ({
+      id: row.id as string,
+      name: row.name as string,
+    })),
+  };
+});
