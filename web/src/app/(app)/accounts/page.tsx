@@ -41,8 +41,8 @@ export default async function AccountsPage({
       <section className="animate-rise-delay mt-5 card-surface overflow-hidden rounded-2xl">
         {accounts.length > 0 ? (
           <p className="border-b border-ink-900/5 px-4 py-3 text-xs font-semibold text-ink-600">
-            Check accounts to include them in the All accounts total. Use ↑ ↓ to
-            reorder. Your choices are saved for this budget.
+            Check accounts to include them in the All accounts total. Your
+            choices are saved for this budget.
           </p>
         ) : null}
         <AccountsList accounts={accounts} />
