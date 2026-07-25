@@ -10,6 +10,10 @@ import { formatCents } from "@/lib/money";
 
 type CategoryOption = { id: string; name: string; groupName: string };
 
+/** Shared control height so native date inputs match text/select fields on mobile. */
+const fieldClass =
+  "mt-1 box-border min-h-12 min-w-0 max-w-full w-full touch-manipulation rounded-xl border border-ink-900/10 bg-white px-3 py-3 text-base leading-normal outline-none ring-moss-400 focus:ring-2";
+
 export function RegisterAccountMenu({
   accountId,
   balanceCents,
@@ -109,7 +113,7 @@ export function RegisterAccountMenu({
                   type="date"
                   name="occurred_on"
                   defaultValue={today}
-                  className="mt-1 box-border min-w-0 max-w-full w-full rounded-xl border border-ink-900/10 bg-white px-3 py-3 outline-none ring-moss-400 focus:ring-2"
+                  className={fieldClass}
                 />
               </label>
               <label className="block min-w-0 text-sm font-semibold text-ink-700">
@@ -117,16 +121,12 @@ export function RegisterAccountMenu({
                 <input
                   name="payee"
                   placeholder="Grocery store"
-                  className="mt-1 box-border min-w-0 max-w-full w-full rounded-xl border border-ink-900/10 bg-white px-3 py-3 outline-none ring-moss-400 focus:ring-2"
+                  className={fieldClass}
                 />
               </label>
               <label className="block min-w-0 text-sm font-semibold text-ink-700">
                 Category
-                <select
-                  name="category_id"
-                  className="mt-1 box-border min-w-0 max-w-full w-full rounded-xl border border-ink-900/10 bg-white px-3 py-3 outline-none ring-moss-400 focus:ring-2"
-                  defaultValue=""
-                >
+                <select name="category_id" className={fieldClass} defaultValue="">
                   <option value="">Uncategorized</option>
                   {categories.map((category) => (
                     <option key={category.id} value={category.id}>
@@ -143,7 +143,7 @@ export function RegisterAccountMenu({
                     name="amount"
                     inputMode="decimal"
                     placeholder="12.34"
-                    className="mt-1 box-border min-w-0 max-w-full w-full rounded-xl border border-ink-900/10 bg-white px-3 py-3 outline-none ring-moss-400 focus:ring-2"
+                    className={fieldClass}
                   />
                 </label>
                 <label className="block min-w-0 text-sm font-semibold text-ink-700">
@@ -151,7 +151,7 @@ export function RegisterAccountMenu({
                   <select
                     name="direction"
                     defaultValue="outflow"
-                    className="mt-1 box-border min-w-0 max-w-full w-full rounded-xl border border-ink-900/10 bg-white px-3 py-3 outline-none ring-moss-400 focus:ring-2"
+                    className={fieldClass}
                   >
                     <option value="outflow">Outflow</option>
                     <option value="inflow">Inflow</option>
@@ -163,7 +163,7 @@ export function RegisterAccountMenu({
                 <input
                   name="memo"
                   placeholder="Optional note"
-                  className="mt-1 box-border min-w-0 max-w-full w-full rounded-xl border border-ink-900/10 bg-white px-3 py-3 outline-none ring-moss-400 focus:ring-2"
+                  className={fieldClass}
                 />
               </label>
               <PendingSubmitButton
