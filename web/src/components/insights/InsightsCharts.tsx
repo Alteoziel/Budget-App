@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -19,6 +20,46 @@ type Props = {
   points: MonthPoint[];
 };
 
+type ChartColors = {
+  grid: string;
+  axis: string;
+  spending: string;
+  income: string;
+  balance: string;
+};
+
+const LIGHT: ChartColors = {
+  grid: "rgba(21,36,31,0.14)",
+  axis: "#3a5c4f",
+  spending: "#c45c3a",
+  income: "#3f7a5c",
+  balance: "#15241f",
+};
+
+const DARK: ChartColors = {
+  grid: "rgba(196,214,205,0.22)",
+  axis: "#c6d6cd",
+  spending: "#e08a68",
+  income: "#8fbf9a",
+  // Near-black ink disappears on dark cards — use a bright moss line instead.
+  balance: "#b7d9bf",
+};
+
+function useChartColors(): ChartColors {
+  const [colors, setColors] = useState<ChartColors>(LIGHT);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const sync = () => setColors(root.classList.contains("dark") ? DARK : LIGHT);
+    sync();
+    const observer = new MutationObserver(sync);
+    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
+
+  return colors;
+}
+
 function MoneyTooltip({
   active,
   payload,
@@ -30,10 +71,10 @@ function MoneyTooltip({
 }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-xl border border-ink-900/10 bg-sand-50 px-3 py-2 text-xs shadow-soft">
+    <div className="rounded-xl border border-ink-900/15 bg-sand-50 px-3 py-2 text-xs shadow-soft">
       <p className="font-semibold text-ink-900">{label}</p>
       {payload.map((p) => (
-        <p key={String(p.name)} style={{ color: p.color }} className="text-ink-600">
+        <p key={String(p.name)} style={{ color: p.color }} className="text-ink-700">
           {p.name}: {formatCents(Math.round(Number(p.value ?? 0) * 100))}
         </p>
       ))}
@@ -42,6 +83,7 @@ function MoneyTooltip({
 }
 
 export function InsightsCharts({ points }: Props) {
+  const colors = useChartColors();
   const data = points.map((p) => ({
     month: p.month,
     spending: p.spendingCents / 100,
@@ -49,17 +91,23 @@ export function InsightsCharts({ points }: Props) {
     balance: p.endBalanceCents / 100,
   }));
   const empty = !data.length;
+  const tick = { fontSize: 11, fill: colors.axis };
 
   return (
     <div className="space-y-4">
       <ChartCard title="Spending over time" empty={empty}>
         <ResponsiveContainer width="100%" height={220}>
           <BarChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(21,36,31,0.12)" />
-            <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} />
+            <CartesianGrid strokeDasharray="3 3" stroke={colors.grid} />
+            <XAxis dataKey="month" tick={tick} stroke={colors.axis} />
+            <YAxis tick={tick} stroke={colors.axis} />
             <Tooltip content={<MoneyTooltip />} />
-            <Bar dataKey="spending" fill="#c45c3a" name="Spending" radius={[4, 4, 0, 0]} />
+            <Bar
+              dataKey="spending"
+              fill={colors.spending}
+              name="Spending"
+              radius={[4, 4, 0, 0]}
+            />
           </BarChart>
         </ResponsiveContainer>
       </ChartCard>
@@ -67,11 +115,11 @@ export function InsightsCharts({ points }: Props) {
       <ChartCard title="Income over time" empty={empty}>
         <ResponsiveContainer width="100%" height={220}>
           <BarChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(21,36,31,0.12)" />
-            <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} />
+            <CartesianGrid strokeDasharray="3 3" stroke={colors.grid} />
+            <XAxis dataKey="month" tick={tick} stroke={colors.axis} />
+            <YAxis tick={tick} stroke={colors.axis} />
             <Tooltip content={<MoneyTooltip />} />
-            <Bar dataKey="income" fill="#3f7a5c" name="Income" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="income" fill={colors.income} name="Income" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </ChartCard>
@@ -79,16 +127,16 @@ export function InsightsCharts({ points }: Props) {
       <ChartCard title="End-of-month account value" empty={empty}>
         <ResponsiveContainer width="100%" height={220}>
           <LineChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(21,36,31,0.12)" />
-            <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} />
+            <CartesianGrid strokeDasharray="3 3" stroke={colors.grid} />
+            <XAxis dataKey="month" tick={tick} stroke={colors.axis} />
+            <YAxis tick={tick} stroke={colors.axis} />
             <Tooltip content={<MoneyTooltip />} />
-            <Legend />
+            <Legend wrapperStyle={{ color: colors.axis }} />
             <Line
               type="monotone"
               dataKey="balance"
-              stroke="#15241f"
-              strokeWidth={2}
+              stroke={colors.balance}
+              strokeWidth={2.5}
               name="Balance"
               dot={false}
             />
