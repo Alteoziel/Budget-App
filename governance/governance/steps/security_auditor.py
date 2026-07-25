@@ -95,7 +95,7 @@ _ENDPOINT_AUTH_MARKERS = (
     "siteGateEnabled(",
     "passwordsMatch(",
     'headers.get("origin")',
-    "runCron(",
+    "runPlaidCron(",
 )
 _PUBLIC_ROUTE_SUFFIXES = {
     "dashboard/src/app/api/health/route.ts",

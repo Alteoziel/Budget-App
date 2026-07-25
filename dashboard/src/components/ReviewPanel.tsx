@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   Bar,
   BarChart,
@@ -191,11 +191,9 @@ function StepCard({ step }: { step: StepResult }) {
 }
 
 function ReviewerUnlock() {
-  const [hasSecret, setHasSecret] = useState(false);
-
-  useEffect(() => {
-    setHasSecret(Boolean(getReviewerSecret()));
-  }, []);
+  const [hasSecret, setHasSecret] = useState(() =>
+    Boolean(getReviewerSecret()),
+  );
 
   return (
     <div className="mb-4 rounded-md border border-white/10 bg-black/25 px-3 py-3 text-sm text-mist">

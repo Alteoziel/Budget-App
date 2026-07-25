@@ -186,7 +186,7 @@ def test_security_does_not_treat_typescript_open_as_file_access(
 def test_security_requires_explicit_route_authorization(tmp_path: Path) -> None:
     src = tmp_path / "route.ts"
     src.write_text(
-        'export async function POST(req: Request) { return new Response("ok"); }\\n',
+        'export async function POST(req: Request) { return new Response("ok"); }\n',
         encoding="utf-8",
     )
     result = security_auditor.run([src], diff_text=None)
@@ -194,8 +194,8 @@ def test_security_requires_explicit_route_authorization(tmp_path: Path) -> None:
     assert any(f.rule_id == "SEC007_ROUTE_AUTH_REQUIRED" for f in result.findings)
 
     src.write_text(
-        "// .auth.getUser()\\n"
-        'export const POST = async () => new Response("ok");\\n',
+        "// .auth.getUser()\n"
+        'export const POST = async () => new Response("ok");\n',
         encoding="utf-8",
     )
     result = security_auditor.run([src], diff_text=None)

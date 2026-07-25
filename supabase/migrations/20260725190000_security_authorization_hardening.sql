@@ -88,6 +88,21 @@ security definer
 set search_path = ''
 as $$
 begin
+  if tg_op = 'UPDATE'
+     and (
+       new.budget_id is distinct from old.budget_id
+       or new.user_id is distinct from old.user_id
+     ) then
+    raise exception 'Membership identity cannot be changed';
+  end if;
+
+  -- Cascading deletion of the parent budget is allowed to remove its members.
+  if tg_op = 'DELETE' and not exists (
+    select 1 from public.budgets b where b.id = old.budget_id
+  ) then
+    return old;
+  end if;
+
   -- Serialize owner-count changes for this budget so two concurrent requests
   -- cannot both observe another owner and remove the final two.
   perform pg_catalog.pg_advisory_xact_lock(
@@ -163,6 +178,82 @@ where coalesce(i.role, 'editor') = 'owner'
       and m.user_id = i.created_by
       and m.role = 'owner'
   );
+
+create or replace function public.accept_budget_invite(p_token_hash text)
+returns uuid
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  inv public.budget_invites%rowtype;
+  join_role text;
+begin
+  if auth.uid() is null then
+    raise exception 'Not authenticated';
+  end if;
+
+  select * into inv
+  from public.budget_invites
+  where token_hash = p_token_hash
+    and revoked_at is null
+  for update;
+
+  if not found then
+    raise exception 'Invite not found';
+  end if;
+  if inv.expires_at is not null and inv.expires_at < pg_catalog.now() then
+    raise exception 'Invite expired';
+  end if;
+  if inv.max_uses is not null and inv.uses >= inv.max_uses then
+    raise exception 'Invite has no uses left';
+  end if;
+
+  join_role := case
+    when inv.kind = 'shared' then 'editor'
+    else coalesce(inv.role, 'editor')
+  end;
+
+  if join_role = 'owner' then
+    perform 1
+    from public.budget_members creator
+    where creator.budget_id = inv.budget_id
+      and creator.user_id = inv.created_by
+      and creator.role = 'owner'
+    for share;
+    if not found then
+      raise exception 'The owner who created this invite no longer has owner access';
+    end if;
+  end if;
+
+  insert into public.budget_members (budget_id, user_id, role)
+  values (inv.budget_id, auth.uid(), join_role)
+  on conflict (budget_id, user_id) do update
+    set role = case
+      when public.budget_members.role = 'owner' then 'owner'
+      when excluded.role = 'owner' then 'owner'
+      when public.budget_members.role = 'admin'
+        or excluded.role = 'admin' then 'admin'
+      when public.budget_members.role = 'editor'
+        or excluded.role = 'editor' then 'editor'
+      else 'viewer'
+    end;
+
+  update public.budget_invites
+  set uses = uses + 1
+  where id = inv.id;
+
+  update public.profiles
+  set current_budget_id = inv.budget_id
+  where id = auth.uid();
+
+  return inv.budget_id;
+end;
+$$;
+
+revoke all on function public.accept_budget_invite(text) from public, anon;
+grant execute on function public.accept_budget_invite(text)
+  to authenticated, service_role;
 
 create or replace function public.delete_revoked_budget_invite(p_invite_id uuid)
 returns boolean
@@ -605,7 +696,7 @@ begin
     p_budget_id,
     p_month,
     p_lock_token,
-    pg_catalog.now() + interval '2 minutes'
+    pg_catalog.now() + interval '15 minutes'
   )
   on conflict (budget_id, month) do nothing;
 

@@ -1415,34 +1415,6 @@ export async function applyOverspendFixAction(payload: {
   const plan = validateOverspendTransferPlan(donations, allocations);
   if (!plan.ok) return plan;
 
-  const { rows } = await getBudgetRows(month);
-  const rowById = new Map(rows.map((row) => [row.categoryId, row]));
-
-  // A donor can never give away more than it actually has available.
-  for (const [categoryId, donatedCents] of plan.donatedByCategory) {
-    const row = rowById.get(categoryId);
-    if (!row) return { ok: false, error: "A category in this fix no longer exists." };
-    if (donatedCents > row.availableCents) {
-      return {
-        ok: false,
-        error: `${row.categoryName} only has ${(row.availableCents / 100).toFixed(2)} available.`,
-      };
-    }
-  }
-
-  const toReadyToAssign = allocations.filter(
-    (a) => a.toCategoryId === READY_TO_ASSIGN_TARGET_ID,
-  );
-  const betweenCategories = allocations.filter(
-    (a) => a.toCategoryId !== READY_TO_ASSIGN_TARGET_ID,
-  );
-
-  for (const allocation of betweenCategories) {
-    if (!rowById.has(allocation.toCategoryId)) {
-      return { ok: false, error: "An overspent category no longer exists." };
-    }
-  }
-
   const lockToken = crypto.randomUUID();
   const lock = await supabase.rpc("acquire_overspend_fix_lock", {
     p_budget_id: budget.id,
@@ -1463,6 +1435,34 @@ export async function applyOverspendFixAction(payload: {
   }
 
   try {
+    const { rows } = await getBudgetRows(month);
+    const rowById = new Map(rows.map((row) => [row.categoryId, row]));
+
+    // A donor can never give away more than it actually has available.
+    for (const [categoryId, donatedCents] of plan.donatedByCategory) {
+      const row = rowById.get(categoryId);
+      if (!row) return { ok: false, error: "A category in this fix no longer exists." };
+      if (donatedCents > row.availableCents) {
+        return {
+          ok: false,
+          error: `${row.categoryName} only has ${(row.availableCents / 100).toFixed(2)} available.`,
+        };
+      }
+    }
+
+    const toReadyToAssign = allocations.filter(
+      (a) => a.toCategoryId === READY_TO_ASSIGN_TARGET_ID,
+    );
+    const betweenCategories = allocations.filter(
+      (a) => a.toCategoryId !== READY_TO_ASSIGN_TARGET_ID,
+    );
+
+    for (const allocation of betweenCategories) {
+      if (!rowById.has(allocation.toCategoryId)) {
+        return { ok: false, error: "An overspent category no longer exists." };
+      }
+    }
+
     const monthUpsert = await supabase.from("budget_months").upsert(
       { user_id: user.id, budget_id: budget.id, month },
       { onConflict: "budget_id,month" },
@@ -1479,18 +1479,20 @@ export async function applyOverspendFixAction(payload: {
         (pulledBack.get(allocation.fromCategoryId) ?? 0) + allocation.cents,
       );
     }
-    for (const [categoryId, cents] of pulledBack) {
+    const pulledBackRows = [...pulledBack].map(([categoryId, cents]) => {
       const row = rowById.get(categoryId);
-      if (!row) continue;
+      return {
+        user_id: user.id,
+        budget_id: budget.id,
+        category_id: categoryId,
+        month,
+        assigned_cents: (row?.assignedCents ?? 0) - cents,
+        updated_at: new Date().toISOString(),
+      };
+    });
+    if (pulledBackRows.length) {
       const { error } = await supabase.from("category_months").upsert(
-        {
-          user_id: user.id,
-          budget_id: budget.id,
-          category_id: categoryId,
-          month,
-          assigned_cents: row.assignedCents - cents,
-          updated_at: new Date().toISOString(),
-        },
+        pulledBackRows,
         { onConflict: "budget_id,category_id,month" },
       );
       if (error) {

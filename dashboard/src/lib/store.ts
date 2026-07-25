@@ -213,7 +213,7 @@ export async function upsertReview(
       redis.call("SET", KEYS[1], cjson.encode(reviews))
       return cjson.encode(found)
     `;
-    const result = await redis.eval<string>(
+    const result = await redis.eval<string[], string | Review>(
       script,
       [REDIS_KEY],
       [JSON.stringify(candidate), String(MAX_STORED_REVIEWS)]
@@ -313,7 +313,7 @@ export async function transitionReview(
       end
       return nil
     `;
-    const result = await redis.eval<string | null>(
+    const result = await redis.eval<string[], string | Review | null>(
       script,
       [REDIS_KEY],
       [
