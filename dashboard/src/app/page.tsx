@@ -52,7 +52,7 @@ function SetupStatusPanel({
 }) {
   const ingestReady = auth.dashboardSecretConfigured || auth.insecureDevAllowed;
   const reviewerReady =
-    auth.reviewerSecretConfigured || auth.dashboardSecretConfigured || auth.insecureDevAllowed;
+    auth.reviewerSecretDistinct || auth.insecureDevAllowed;
 
   return (
     <section className="mb-8 rounded-xl border border-white/10 bg-slatepanel/70 p-5">
@@ -101,11 +101,9 @@ function SetupStatusPanel({
         <div className="rounded-md bg-black/25 p-3">
           <dt className="font-semibold text-white">Reviewer unlock</dt>
           <dd>
-            {auth.reviewerSecretConfigured
+            {auth.reviewerSecretDistinct
               ? "Uses GOVERNANCE_REVIEWER_SECRET via X-Governance-Reviewer-Secret."
-              : auth.reviewerUsesDashboardSecret && auth.dashboardSecretConfigured
-                ? "Falls back to GOVERNANCE_DASHBOARD_SECRET for approve/merge."
-                : "Locked until a reviewer or dashboard secret is configured."}
+              : "Locked until a distinct reviewer secret is configured."}
           </dd>
         </div>
         <div className="rounded-md bg-black/25 p-3">

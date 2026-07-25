@@ -9,7 +9,7 @@ and can merge via GitHub’s REST API.
 | Variable | Required | Purpose |
 |----------|----------|---------|
 | `GOVERNANCE_DASHBOARD_SECRET` | **Yes in prod** | CI ingest (`X-Governance-Secret`) |
-| `GOVERNANCE_REVIEWER_SECRET` | Optional | Human approve/reject/merge (falls back to dashboard secret) |
+| `GOVERNANCE_REVIEWER_SECRET` | **Yes for review actions** | Human approve/reject/merge; must differ from ingest secret |
 | `GOVERNANCE_SITE_PASSWORD` | Recommended | Browser login gate |
 | `UPSTASH_REDIS_REST_URL` | **Yes on Vercel** | Durable review store |
 | `UPSTASH_REDIS_REST_TOKEN` | **Yes on Vercel** | Durable review store |
