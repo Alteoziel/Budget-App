@@ -36,11 +36,16 @@ payload, URL, cookie, browser state value, and unsigned JWT claim.
 17. Made dashboard review transitions atomic and reserved merge state before
     GitHub I/O.
 18. Changed PR governance to run a trusted base-branch engine against the
-    candidate as data, with read-only permissions and no secrets.
+    candidate as data, with read-only permissions and no secrets. Kept the
+    trigger on `pull_request` so required check contexts continue to report
+    (switching to `pull_request_target` before merging left checks stuck as
+    "Expected — Waiting for status to be reported" because main still had the
+    old workflow definitions).
 19. Made full-tree governance scans use fail-closed, NUL-safe tracked-file
     enumeration; added an explicit route-auth gate and false-positive tests.
 20. Replaced the secret-bearing PR FOSSA path with GitHub's secretless,
-    pinned dependency vulnerability/license review.
+    pinned dependency vulnerability/license review, still on `pull_request`
+    so the required "FOSSA License Scan" context reports.
 
 ## Endpoint permission inventory
 
@@ -78,7 +83,11 @@ an intentional, documented public trust boundary.
 - Set `GOVERNANCE_REVIEWER_SECRET` to a value different from
   `GOVERNANCE_DASHBOARD_SECRET`.
 - In Supabase Realtime settings, disable **Allow public access** after deploying
-  the private-channel policies.
+  the private-channel policies. The save warning that all clients will
+  disconnect is expected and OK — browsers reconnect; the app already uses
+  `private: true` channels, and the hardening migration creates the
+  `realtime.messages` RLS policies (`can_access_budget_realtime_topic`). Do not
+  hand-create extra policies unless that migration has not been applied.
 
 ## Deferred because they can affect functionality or require platform changes
 
