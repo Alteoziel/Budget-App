@@ -25,6 +25,7 @@ import {
   clearPasswordResetGrant,
   hasPasswordResetGrant,
 } from "@/lib/password-reset";
+import { hasRecentPrimarySignIn } from "@/lib/auth/reauth";
 import { safeInternalPath } from "@/lib/paths";
 import { absoluteUrl, siteOrigin } from "@/lib/site-url";
 import { createClient } from "@/lib/supabase/server";
@@ -66,6 +67,13 @@ async function requireUser() {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
+  if (!hasRecentPrimarySignIn(user.last_sign_in_at)) {
+    await supabase.auth.signOut();
+    redirect(
+      "/login?error=" +
+        encodeURIComponent("Your 14-day session expired. Sign in again to continue."),
+    );
+  }
   return { supabase, user };
 }
 
