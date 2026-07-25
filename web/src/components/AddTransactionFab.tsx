@@ -67,7 +67,11 @@ export function AddTransactionFab({
                   Create an account first, then add transactions here.
                 </p>
               ) : (
-                <form action={createTransactionAction} className="min-w-0 space-y-3">
+                <form
+                  action={createTransactionAction}
+                  onSubmit={() => setOpen(false)}
+                  className="min-w-0 space-y-3"
+                >
                   <input type="hidden" name="return_to" value="/transactions" />
                   <label className="block min-w-0 text-sm font-semibold text-ink-700">
                     Account

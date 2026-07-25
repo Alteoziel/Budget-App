@@ -15,13 +15,16 @@ export function RegisterAccountMenu({
   balanceCents,
   categories,
   today,
+  /** When set (e.g. after save redirect), keep the menu collapsed. */
+  forceClosed = false,
 }: {
   accountId: string;
   balanceCents: number;
   categories: CategoryOption[];
   today: string;
+  forceClosed?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(!forceClosed);
   const [panel, setPanel] = useState<"add" | "balance">("add");
 
   return (
@@ -93,7 +96,11 @@ export function RegisterAccountMenu({
           </div>
 
           {panel === "add" ? (
-            <form action={createTransactionAction} className="mt-3 min-w-0 space-y-3">
+            <form
+              action={createTransactionAction}
+              onSubmit={() => setOpen(false)}
+              className="mt-3 min-w-0 space-y-3"
+            >
               <input type="hidden" name="account_id" value={accountId} />
               <label className="block min-w-0 text-sm font-semibold text-ink-700">
                 Date
@@ -167,7 +174,11 @@ export function RegisterAccountMenu({
               </PendingSubmitButton>
             </form>
           ) : (
-            <form action={setAccountBalanceAction} className="mt-3 space-y-3">
+            <form
+              action={setAccountBalanceAction}
+              onSubmit={() => setOpen(false)}
+              className="mt-3 space-y-3"
+            >
               <input type="hidden" name="account_id" value={accountId} />
               <p className="text-sm text-ink-600">
                 Current calculated balance is{" "}
