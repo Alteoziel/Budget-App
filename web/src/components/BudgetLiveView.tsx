@@ -41,6 +41,7 @@ export function BudgetLiveView({
   const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(
     () => new Set(),
   );
+  const [addCategoryOpen, setAddCategoryOpen] = useState(false);
   const groupIds = useMemo(
     () => groups.map((group) => group.groupId),
     [groups],
@@ -101,9 +102,30 @@ export function BudgetLiveView({
         />
       </section>
 
-      <section className="card-surface mt-4 rounded-2xl p-4">
-        <h2 className="font-display text-base font-bold text-ink-900">Add category</h2>
-        <AddCategoryForm groups={allGroups} />
+      <section className="card-surface mt-4 overflow-hidden rounded-2xl">
+        <button
+          type="button"
+          aria-expanded={addCategoryOpen}
+          onClick={() => setAddCategoryOpen((value) => !value)}
+          className="flex w-full touch-manipulation items-center justify-between gap-3 px-4 py-3 text-left outline-none ring-moss-400 focus-visible:ring-2 focus-visible:ring-inset"
+        >
+          <h2 className="font-display text-base font-bold text-ink-900">
+            Add category
+          </h2>
+          <span
+            aria-hidden
+            className={`shrink-0 text-xs text-ink-500 transition-transform ${
+              addCategoryOpen ? "rotate-180" : ""
+            }`}
+          >
+            ▾
+          </span>
+        </button>
+        {addCategoryOpen ? (
+          <div className="border-t border-ink-900/8 px-4 pb-4 pt-1">
+            <AddCategoryForm groups={allGroups} />
+          </div>
+        ) : null}
       </section>
     </AppShell>
   );
