@@ -28,8 +28,19 @@ function assertNoError(error: { message: string } | null, label: string) {
   }
 }
 
-const CATEGORY_COLUMNS =
-  "id,group_id,name,sort_order,hidden,budget_id,assign_percent,assign_mode,assign_fixed_cents,goal_cents,goal_name,goal_frequency,goal_note,goal_due_on";
+/**
+ * Prefer the richest column set. If a newer column is missing (e.g. goal_due_on),
+ * peel one layer at a time — never jump straight to bare columns, or goals and
+ * assign_mode look "deleted"/stuck even though they still exist in the DB.
+ */
+const CATEGORY_COLUMN_SETS = [
+  "id,group_id,name,sort_order,hidden,budget_id,assign_percent,assign_mode,assign_fixed_cents,goal_cents,goal_name,goal_frequency,goal_note,goal_due_on",
+  "id,group_id,name,sort_order,hidden,budget_id,assign_percent,assign_mode,assign_fixed_cents,goal_cents,goal_name,goal_frequency,goal_note",
+  "id,group_id,name,sort_order,hidden,budget_id,assign_percent,assign_mode,assign_fixed_cents,goal_cents,goal_name,goal_frequency",
+  "id,group_id,name,sort_order,hidden,budget_id,assign_percent,assign_mode,assign_fixed_cents",
+  "id,group_id,name,sort_order,hidden,budget_id,assign_percent",
+  "id,group_id,name,sort_order,hidden,budget_id",
+] as const;
 
 type CategoryRecord = Category & {
   assign_percent?: number;
@@ -41,6 +52,40 @@ type CategoryRecord = Category & {
   goal_note?: string | null;
   goal_due_on?: string | null;
 };
+
+async function selectCategoriesForBudget(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: { from: (table: string) => any },
+  budgetId: string,
+): Promise<{
+  data: CategoryRecord[] | null;
+  error: { message: string } | null;
+}> {
+  let lastError: { message: string } | null = null;
+  for (const columns of CATEGORY_COLUMN_SETS) {
+    const result = await supabase
+      .from("categories")
+      .select(columns)
+      .eq("budget_id", budgetId)
+      .order("sort_order")
+      .order("name");
+    if (!result.error) {
+      return {
+        data: (result.data as CategoryRecord[] | null) ?? [],
+        error: null,
+      };
+    }
+    lastError = result.error as { message: string };
+    if (
+      !/assign_percent|assign_mode|assign_fixed|goal_|column|schema cache/i.test(
+        lastError.message,
+      )
+    ) {
+      return { data: null, error: lastError };
+    }
+  }
+  return { data: null, error: lastError };
+}
 
 function toAssignMode(value: unknown): AssignMode {
   return value === "fixed" ? "fixed" : "percent";
@@ -74,7 +119,7 @@ export const getBudgetRows = cache(async (month = currentBudgetMonth()): Promise
 
   const [
     groupsRes,
-    categoriesWithPercentRes,
+    categoriesLoaded,
     assignmentsRes,
     priorAssignmentsRes,
     txnsRes,
@@ -86,12 +131,7 @@ export const getBudgetRows = cache(async (month = currentBudgetMonth()): Promise
       .eq("budget_id", budget.id)
       .order("sort_order")
       .order("name"),
-    supabase
-      .from("categories")
-      .select(CATEGORY_COLUMNS)
-      .eq("budget_id", budget.id)
-      .order("sort_order")
-      .order("name"),
+    selectCategoriesForBudget(supabase, budget.id),
     supabase
       .from("category_months")
       .select("category_id,month,assigned_cents")
@@ -115,35 +155,8 @@ export const getBudgetRows = cache(async (month = currentBudgetMonth()): Promise
       .lt("occurred_on", range.start),
   ]);
 
-  let categoriesData = categoriesWithPercentRes.data as CategoryRecord[] | null;
-  let categoriesError = categoriesWithPercentRes.error;
-  // Older databases may be missing assign / goal columns.
-  if (
-    categoriesError &&
-    /assign_percent|assign_mode|assign_fixed|goal_|column|schema cache/i.test(
-      categoriesError.message,
-    )
-  ) {
-    const withPercent = await supabase
-      .from("categories")
-      .select("id,group_id,name,sort_order,hidden,budget_id,assign_percent")
-      .eq("budget_id", budget.id)
-      .order("sort_order")
-      .order("name");
-    if (withPercent.error) {
-      const bare = await supabase
-        .from("categories")
-        .select("id,group_id,name,sort_order,hidden,budget_id")
-        .eq("budget_id", budget.id)
-        .order("sort_order")
-        .order("name");
-      categoriesData = bare.data as CategoryRecord[] | null;
-      categoriesError = bare.error;
-    } else {
-      categoriesData = withPercent.data as CategoryRecord[] | null;
-      categoriesError = withPercent.error;
-    }
-  }
+  const categoriesData = categoriesLoaded.data;
+  const categoriesError = categoriesLoaded.error;
 
   assertNoError(groupsRes.error, "Failed to load category groups");
   assertNoError(categoriesError, "Failed to load categories");
@@ -296,7 +309,7 @@ export const getBudgetSnapshot = cache(async (as: string): Promise<BudgetSnapsho
 
   const [
     groupsRes,
-    categoriesRes,
+    categoriesLoaded,
     assignmentsRes,
     priorAssignmentsRes,
     activityRes,
@@ -311,12 +324,7 @@ export const getBudgetSnapshot = cache(async (as: string): Promise<BudgetSnapsho
       .eq("budget_id", budget.id)
       .order("sort_order")
       .order("name"),
-    supabase
-      .from("categories")
-      .select(CATEGORY_COLUMNS)
-      .eq("budget_id", budget.id)
-      .order("sort_order")
-      .order("name"),
+    selectCategoriesForBudget(supabase, budget.id),
     supabase
       .from("category_months")
       .select("category_id,assigned_cents")
@@ -368,23 +376,8 @@ export const getBudgetSnapshot = cache(async (as: string): Promise<BudgetSnapsho
     supabase.from("accounts").select("id,name").eq("budget_id", budget.id),
   ]);
 
-  let categoriesData = categoriesRes.data as CategoryRecord[] | null;
-  let categoriesError = categoriesRes.error;
-  if (
-    categoriesError &&
-    /assign_percent|assign_mode|assign_fixed|goal_|column|schema cache/i.test(
-      categoriesError.message,
-    )
-  ) {
-    const bare = await supabase
-      .from("categories")
-      .select("id,group_id,name,sort_order,hidden,budget_id")
-      .eq("budget_id", budget.id)
-      .order("sort_order")
-      .order("name");
-    categoriesData = bare.data as CategoryRecord[] | null;
-    categoriesError = bare.error;
-  }
+  const categoriesData = categoriesLoaded.data;
+  const categoriesError = categoriesLoaded.error;
 
   assertNoError(groupsRes.error, "Failed to load category groups");
   assertNoError(categoriesError, "Failed to load categories");
