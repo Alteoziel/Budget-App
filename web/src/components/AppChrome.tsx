@@ -3,8 +3,6 @@ import { AppLiveShell } from "@/components/AppLiveShell";
 import { AppOfflineShell } from "@/components/AppOfflineShell";
 import { BudgetSwitcher } from "@/components/BudgetSwitcher";
 import { CollaboratorsBadge } from "@/components/CollaboratorsBadge";
-import { PendingSubmitButton } from "@/components/PendingSubmitButton";
-import { signOutAction } from "@/lib/actions";
 import { listUserBudgets, resolveActiveBudget } from "@/lib/budget-context";
 import { createClient } from "@/lib/supabase/server";
 
@@ -47,17 +45,11 @@ export async function AppChrome({ children }: { children: React.ReactNode }) {
                   </div>
                 ) : null}
               </div>
-              <div className="flex shrink-0 flex-col items-end gap-2">
-                {active ? <CollaboratorsBadge /> : null}
-                <form action={signOutAction}>
-                  <PendingSubmitButton
-                    pendingLabel="…"
-                    className="min-h-11 rounded-xl px-3 py-2 text-sm font-semibold text-ink-600 hover:bg-sand-100 active:bg-sand-200"
-                  >
-                    Sign out
-                  </PendingSubmitButton>
-                </form>
-              </div>
+              {active ? (
+                <div className="shrink-0 pt-1">
+                  <CollaboratorsBadge />
+                </div>
+              ) : null}
             </header>
             <main className="safe-pb mx-auto w-full max-w-lg flex-1 px-4 pb-8 pt-2 sm:px-6 lg:mx-0 lg:max-w-3xl lg:px-8 lg:pb-10">
               <AppOfflineShell>{children}</AppOfflineShell>

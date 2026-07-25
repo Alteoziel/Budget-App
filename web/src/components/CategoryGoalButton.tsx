@@ -3,7 +3,10 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
-import { useAnnounceEditing } from "@/components/BudgetRealtimeProvider";
+import {
+  useAnnounceEditing,
+  useNotifyBudgetChange,
+} from "@/components/BudgetRealtimeProvider";
 import { clearCategoryGoalAction, setCategoryGoalAction } from "@/lib/actions";
 import {
   frequencyPeriodLabel,
@@ -46,6 +49,7 @@ export function CategoryGoalButton({
   const [dueOn, setDueOn] = useState(row.goalDueOn ?? "");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const notifyChange = useNotifyBudgetChange();
 
   useAnnounceEditing(
     open
@@ -141,6 +145,7 @@ export function CategoryGoalButton({
         return;
       }
       setOpen(false);
+      notifyChange();
       router.refresh();
     });
   }
@@ -160,6 +165,7 @@ export function CategoryGoalButton({
       setDueOnEnabled(false);
       setDueOn("");
       setOpen(false);
+      notifyChange();
       router.refresh();
     });
   }

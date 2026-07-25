@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { DeleteAccountButton } from "@/components/DeleteAccountButton";
 import { Money } from "@/components/Money";
+import { useNotifyBudgetChange } from "@/components/BudgetRealtimeProvider";
 import {
   reorderAccountsAction,
   setAccountIncludeInTotalAction,
@@ -30,6 +31,7 @@ export function AccountsList({
   canReorder?: boolean;
 }) {
   const router = useRouter();
+  const notifyChange = useNotifyBudgetChange();
   const [optimistic, setOptimistic] = useState<AccountRow[] | null>(null);
   const [accountsSnapshot, setAccountsSnapshot] = useState(accounts);
   const [pending, startTransition] = useTransition();
@@ -71,6 +73,7 @@ export function AccountsList({
         setError(result.error);
         return;
       }
+      notifyChange();
       router.replace(
         `/accounts?notice=${encodeURIComponent("Account order updated")}`,
       );
