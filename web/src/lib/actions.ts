@@ -39,7 +39,10 @@ import {
   readExcludedAccountIds,
   writeExcludedAccountIds,
 } from "@/lib/account-total-filter";
-import { READY_TO_ASSIGN_TARGET_ID } from "@/lib/overspend-fix";
+import {
+  READY_TO_ASSIGN_TARGET_ID,
+  validateOverspendTransferPlan,
+} from "@/lib/overspend-fix";
 import { suggestCategoryForPayee } from "@/lib/payee-categorization";
 import {
   balanceAnchorExternalId,
@@ -1389,33 +1392,35 @@ export async function applyOverspendFixAction(payload: {
   allocations: Array<{ fromCategoryId: string; toCategoryId: string; cents: number }>;
 }): Promise<{ ok: true; movedCents: number } | { ok: false; error: string }> {
   const { supabase, user, budget } = await requireBudget("editor");
+  if (
+    !payload ||
+    !Array.isArray(payload.donations) ||
+    !Array.isArray(payload.allocations) ||
+    payload.donations.length > 500 ||
+    payload.allocations.length > 1000
+  ) {
+    return { ok: false, error: "Invalid or oversized budget fix." };
+  }
   const month = isBudgetMonth(payload.month) ? payload.month : currentBudgetMonth();
 
-  const donations = (payload.donations ?? []).filter((d) => d.cents > 0);
-  const allocations = (payload.allocations ?? []).filter((a) => a.cents > 0);
-  if (!donations.length || !allocations.length) {
-    return { ok: false, error: "Nothing to move yet." };
-  }
+  const donations = payload.donations;
+  const allocations = payload.allocations;
+  const plan = validateOverspendTransferPlan(donations, allocations);
+  if (!plan.ok) return plan;
 
   const { rows } = await getBudgetRows(month);
   const rowById = new Map(rows.map((row) => [row.categoryId, row]));
 
   // A donor can never give away more than it actually has available.
-  for (const donation of donations) {
-    const row = rowById.get(donation.categoryId);
+  for (const [categoryId, donatedCents] of plan.donatedByCategory) {
+    const row = rowById.get(categoryId);
     if (!row) return { ok: false, error: "A category in this fix no longer exists." };
-    if (donation.cents > row.availableCents) {
+    if (donatedCents > row.availableCents) {
       return {
         ok: false,
         error: `${row.categoryName} only has ${(row.availableCents / 100).toFixed(2)} available.`,
       };
     }
-  }
-
-  const donatedTotal = donations.reduce((sum, d) => sum + d.cents, 0);
-  const allocatedTotal = allocations.reduce((sum, a) => sum + a.cents, 0);
-  if (allocatedTotal > donatedTotal) {
-    return { ok: false, error: "Allocations exceed the money pulled from categories." };
   }
 
   const toReadyToAssign = allocations.filter(

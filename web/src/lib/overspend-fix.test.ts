@@ -4,6 +4,7 @@ import {
   groupAllocationsByTarget,
   totalDonatedCents,
   totalShortfallCents,
+  validateOverspendTransferPlan,
 } from "@/lib/overspend-fix";
 
 const targets = [
@@ -57,5 +58,33 @@ const selfFund = allocateDonations(
 );
 assert.equal(selfFund.allocations.length, 0);
 assert.equal(selfFund.remainingCents, 1000);
+
+const duplicateDonorPlan = validateOverspendTransferPlan(
+  [
+    { categoryId: "fun", cents: 600 },
+    { categoryId: "fun", cents: 400 },
+  ],
+  [{ fromCategoryId: "fun", toCategoryId: "gas", cents: 1001 }],
+);
+assert.equal(duplicateDonorPlan.ok, false);
+
+const unrelatedSourcePlan = validateOverspendTransferPlan(
+  [{ categoryId: "fun", cents: 1000 }],
+  [{ fromCategoryId: "groceries", toCategoryId: "gas", cents: 1000 }],
+);
+assert.equal(unrelatedSourcePlan.ok, false);
+
+const balancedPlan = validateOverspendTransferPlan(
+  [{ categoryId: "fun", cents: 1000 }],
+  [
+    { fromCategoryId: "fun", toCategoryId: "gas", cents: 600 },
+    { fromCategoryId: "fun", toCategoryId: "dining", cents: 400 },
+  ],
+);
+assert.equal(balancedPlan.ok, true);
+if (balancedPlan.ok) {
+  assert.equal(balancedPlan.donatedByCategory.get("fun"), 1000);
+  assert.equal(balancedPlan.allocatedBySource.get("fun"), 1000);
+}
 
 console.log("overspend-fix.test.ts: ok");
