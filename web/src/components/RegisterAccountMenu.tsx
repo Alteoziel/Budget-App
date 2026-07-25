@@ -25,7 +25,7 @@ export function RegisterAccountMenu({
   const [panel, setPanel] = useState<"add" | "balance">("add");
 
   return (
-    <div className="card-surface rounded-2xl">
+    <div className="card-surface min-w-0 overflow-hidden rounded-2xl">
       <div className="flex items-center justify-between gap-3 px-4 py-3">
         <button
           type="button"
@@ -63,8 +63,11 @@ export function RegisterAccountMenu({
       </div>
 
       {open ? (
-        <div id="register-account-menu" className="border-t border-ink-900/5 px-4 pb-4 pt-3">
-          <div className="flex gap-2">
+        <div
+          id="register-account-menu"
+          className="min-w-0 border-t border-ink-900/5 px-4 pb-4 pt-3"
+        >
+          <div className="flex min-w-0 flex-wrap gap-2">
             <button
               type="button"
               onClick={() => setPanel("add")}
@@ -90,31 +93,31 @@ export function RegisterAccountMenu({
           </div>
 
           {panel === "add" ? (
-            <form action={createTransactionAction} className="mt-3 space-y-3">
+            <form action={createTransactionAction} className="mt-3 min-w-0 space-y-3">
               <input type="hidden" name="account_id" value={accountId} />
-              <label className="block text-sm font-semibold text-ink-700">
+              <label className="block min-w-0 text-sm font-semibold text-ink-700">
                 Date
                 <input
                   required
                   type="date"
                   name="occurred_on"
                   defaultValue={today}
-                  className="mt-1 w-full rounded-xl border border-ink-900/10 bg-white px-3 py-3 outline-none ring-moss-400 focus:ring-2"
+                  className="mt-1 box-border min-w-0 max-w-full w-full rounded-xl border border-ink-900/10 bg-white px-3 py-3 outline-none ring-moss-400 focus:ring-2"
                 />
               </label>
-              <label className="block text-sm font-semibold text-ink-700">
+              <label className="block min-w-0 text-sm font-semibold text-ink-700">
                 Payee
                 <input
                   name="payee"
                   placeholder="Grocery store"
-                  className="mt-1 w-full rounded-xl border border-ink-900/10 bg-white px-3 py-3 outline-none ring-moss-400 focus:ring-2"
+                  className="mt-1 box-border min-w-0 max-w-full w-full rounded-xl border border-ink-900/10 bg-white px-3 py-3 outline-none ring-moss-400 focus:ring-2"
                 />
               </label>
-              <label className="block text-sm font-semibold text-ink-700">
+              <label className="block min-w-0 text-sm font-semibold text-ink-700">
                 Category
                 <select
                   name="category_id"
-                  className="mt-1 w-full rounded-xl border border-ink-900/10 bg-white px-3 py-3 outline-none ring-moss-400 focus:ring-2"
+                  className="mt-1 box-border min-w-0 max-w-full w-full rounded-xl border border-ink-900/10 bg-white px-3 py-3 outline-none ring-moss-400 focus:ring-2"
                   defaultValue=""
                 >
                   <option value="">Uncategorized</option>
@@ -125,35 +128,35 @@ export function RegisterAccountMenu({
                   ))}
                 </select>
               </label>
-              <div className="grid grid-cols-2 gap-3">
-                <label className="block text-sm font-semibold text-ink-700">
+              <div className="grid min-w-0 grid-cols-2 gap-3">
+                <label className="block min-w-0 text-sm font-semibold text-ink-700">
                   Amount
                   <input
                     required
                     name="amount"
                     inputMode="decimal"
                     placeholder="12.34"
-                    className="mt-1 w-full rounded-xl border border-ink-900/10 bg-white px-3 py-3 outline-none ring-moss-400 focus:ring-2"
+                    className="mt-1 box-border min-w-0 max-w-full w-full rounded-xl border border-ink-900/10 bg-white px-3 py-3 outline-none ring-moss-400 focus:ring-2"
                   />
                 </label>
-                <label className="block text-sm font-semibold text-ink-700">
+                <label className="block min-w-0 text-sm font-semibold text-ink-700">
                   Direction
                   <select
                     name="direction"
                     defaultValue="outflow"
-                    className="mt-1 w-full rounded-xl border border-ink-900/10 bg-white px-3 py-3 outline-none ring-moss-400 focus:ring-2"
+                    className="mt-1 box-border min-w-0 max-w-full w-full rounded-xl border border-ink-900/10 bg-white px-3 py-3 outline-none ring-moss-400 focus:ring-2"
                   >
                     <option value="outflow">Outflow</option>
                     <option value="inflow">Inflow</option>
                   </select>
                 </label>
               </div>
-              <label className="block text-sm font-semibold text-ink-700">
+              <label className="block min-w-0 text-sm font-semibold text-ink-700">
                 Memo
                 <input
                   name="memo"
                   placeholder="Optional note"
-                  className="mt-1 w-full rounded-xl border border-ink-900/10 bg-white px-3 py-3 outline-none ring-moss-400 focus:ring-2"
+                  className="mt-1 box-border min-w-0 max-w-full w-full rounded-xl border border-ink-900/10 bg-white px-3 py-3 outline-none ring-moss-400 focus:ring-2"
                 />
               </label>
               <PendingSubmitButton
