@@ -39,12 +39,15 @@ type BudgetRealtimeContextValue = {
   peers: BudgetPeer[];
   setEditing: (editing: PresenceEditing) => void;
   live: boolean;
+  /** Tell other clients on this budget to refresh (broadcast + local signal). */
+  notifyChange: () => void;
 };
 
 const BudgetRealtimeContext = createContext<BudgetRealtimeContextValue>({
   peers: [],
   setEditing: () => {},
   live: false,
+  notifyChange: () => {},
 });
 
 const LIVE_TABLES = [
@@ -54,6 +57,9 @@ const LIVE_TABLES = [
   "category_months",
   "accounts",
 ] as const;
+
+const BUDGET_CHANGED_EVENT = "alte:budget-changed";
+const PEER_POLL_MS = 6_000;
 
 function peersFromPresenceState(
   state: Record<string, PresencePayload[]>,
@@ -98,6 +104,7 @@ export function BudgetRealtimeProvider({
   const [editing, setEditingState] = useState<PresenceEditing>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
   const refreshTimer = useRef<number | null>(null);
+  const lastLocalNotify = useRef(0);
 
   const scheduleRefresh = useCallback(() => {
     if (refreshTimer.current != null) {
@@ -106,17 +113,38 @@ export function BudgetRealtimeProvider({
     refreshTimer.current = window.setTimeout(() => {
       refreshTimer.current = null;
       router.refresh();
-    }, 250);
+    }, 200);
   }, [router]);
 
   const setEditing = useCallback((next: PresenceEditing) => {
     setEditingState(next);
   }, []);
 
+  const notifyChange = useCallback(() => {
+    lastLocalNotify.current = Date.now();
+    const channel = channelRef.current;
+    if (channel) {
+      void channel.send({
+        type: "broadcast",
+        event: "budget-changed",
+        payload: {
+          budgetId,
+          userId,
+          at: new Date().toISOString(),
+        },
+      });
+    }
+    // Let any local listeners know too (same-tab helpers).
+    window.dispatchEvent(new CustomEvent(BUDGET_CHANGED_EVENT));
+  }, [budgetId, userId]);
+
   useEffect(() => {
     const supabase = createClient();
     const channel = supabase.channel(`budget-live:${budgetId}`, {
-      config: { presence: { key: userId } },
+      config: {
+        presence: { key: userId },
+        broadcast: { self: false },
+      },
     });
     channelRef.current = channel;
 
@@ -130,10 +158,20 @@ export function BudgetRealtimeProvider({
           filter: `budget_id=eq.${budgetId}`,
         },
         () => {
+          // Skip echo right after our own notify (local page already refreshed).
+          if (Date.now() - lastLocalNotify.current < 800) return;
           scheduleRefresh();
         },
       );
     }
+
+    channel.on("broadcast", { event: "budget-changed" }, (message) => {
+      const fromUser = String(
+        (message?.payload as { userId?: string } | undefined)?.userId ?? "",
+      );
+      if (fromUser && fromUser === userId) return;
+      scheduleRefresh();
+    });
 
     channel
       .on("presence", { event: "sync" }, () => {
@@ -186,9 +224,20 @@ export function BudgetRealtimeProvider({
     } satisfies PresencePayload);
   }, [pathname, editing, live, userId, displayName]);
 
+  // Safety net: while collaborators are present, poll for changes in case
+  // postgres_changes isn't enabled yet on the project.
+  useEffect(() => {
+    if (!live || peers.length === 0) return;
+    const timer = window.setInterval(() => {
+      if (Date.now() - lastLocalNotify.current < 1_500) return;
+      scheduleRefresh();
+    }, PEER_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [live, peers.length, scheduleRefresh]);
+
   const value = useMemo(
-    () => ({ peers, setEditing, live }),
-    [peers, setEditing, live],
+    () => ({ peers, setEditing, live, notifyChange }),
+    [peers, setEditing, live, notifyChange],
   );
 
   return (
@@ -217,4 +266,10 @@ export function useAnnounceEditing(editing: PresenceEditing) {
     setEditing({ kind, id, label });
     return () => setEditing(null);
   }, [kind, id, label, setEditing]);
+}
+
+/** Call after a successful local mutation so other clients refresh promptly. */
+export function useNotifyBudgetChange() {
+  const { notifyChange } = useBudgetRealtime();
+  return notifyChange;
 }
