@@ -5,6 +5,7 @@ import {
   roleAtLeast,
 } from "@/lib/budget-context";
 import { dollarsToCents, isValidIsoDate } from "@/lib/money";
+import { suggestCategoryForPayee } from "@/lib/payee-categorization";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -80,7 +81,7 @@ export async function POST(request: Request) {
         continue;
       }
 
-      const categoryId: string | null = item.payload.category_id || null;
+      let categoryId: string | null = item.payload.category_id || null;
       if (categoryId) {
         const category = await supabase
           .from("categories")
@@ -92,6 +93,12 @@ export async function POST(request: Request) {
           failed.push({ id: item.id, error: "Category not found." });
           continue;
         }
+      } else if (item.payload.payee.trim()) {
+        categoryId = await suggestCategoryForPayee(
+          supabase,
+          active.budget.id,
+          item.payload.payee.trim(),
+        );
       }
 
       const amountCents =
