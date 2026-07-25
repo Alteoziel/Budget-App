@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { EmailOtpType } from "@supabase/supabase-js";
 
 /**
- * Handles Supabase email links (password recovery, etc.).
+ * Handles Supabase email links (password recovery, magic-link login approval, etc.).
  * After a recovery confirmation, grants a short-lived cookie so the user can
  * set a new password on /settings/password.
  */
@@ -14,13 +14,15 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get("code");
   const tokenHash = searchParams.get("token_hash");
   const type = searchParams.get("type");
+  const requestedNext = searchParams.get("next");
+  const isRecoveryType = type === "recovery";
   const next = safeInternalPath(
-    searchParams.get("next"),
-    "/settings/password",
+    requestedNext,
+    isRecoveryType ? "/settings/password" : "/budget",
   );
 
   const supabase = await createClient();
-  let isRecovery = type === "recovery" || next.startsWith("/settings/password");
+  let isRecovery = isRecoveryType || next.startsWith("/settings/password");
 
   if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);

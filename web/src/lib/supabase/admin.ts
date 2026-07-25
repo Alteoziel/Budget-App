@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { supabaseAuthOptions } from "@/lib/supabase/auth-options";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 
 /**
@@ -17,6 +18,10 @@ export function createServiceClient() {
     );
   }
   return createClient(url, secretKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
+    auth: {
+      ...supabaseAuthOptions,
+      persistSession: false,
+      autoRefreshToken: false,
+    },
   });
 }

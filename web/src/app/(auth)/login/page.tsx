@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PasskeySignInButton } from "@/components/PasskeySignInButton";
 import { PendingSubmitButton } from "@/components/PendingSubmitButton";
 import { signInAction, signUpAction } from "@/lib/actions";
 import { safeInternalPath } from "@/lib/paths";
@@ -6,7 +7,12 @@ import { safeInternalPath } from "@/lib/paths";
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; mode?: string; next?: string }>;
+  searchParams: Promise<{
+    error?: string;
+    notice?: string;
+    mode?: string;
+    next?: string;
+  }>;
 }) {
   const params = await searchParams;
   const isSignup = params.mode === "signup";
@@ -25,13 +31,33 @@ export default async function LoginPage({
           Private by design. Your numbers stay in your Supabase project.
         </p>
 
+        {params.notice ? (
+          <p className="mt-4 rounded-xl bg-moss-500/15 px-3 py-2 text-sm text-moss-600">
+            {params.notice}
+          </p>
+        ) : null}
+
         {params.error ? (
           <p className="mt-4 rounded-xl bg-coral-400/15 px-3 py-2 text-sm text-coral-500">
             {params.error}
           </p>
         ) : null}
 
-        <form action={isSignup ? signUpAction : signInAction} className="mt-6 space-y-3">
+        {!isSignup ? (
+          <div className="mt-6 space-y-4">
+            <PasskeySignInButton next={nextPath} />
+            <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-wide text-ink-600">
+              <span className="h-px flex-1 bg-ink-900/10" />
+              Or use password
+              <span className="h-px flex-1 bg-ink-900/10" />
+            </div>
+          </div>
+        ) : null}
+
+        <form
+          action={isSignup ? signUpAction : signInAction}
+          className={`${isSignup ? "mt-6" : "mt-4"} space-y-3`}
+        >
           <input type="hidden" name="next" value={nextPath} />
           {isSignup ? (
             <label className="block text-sm font-semibold text-ink-700">
@@ -70,9 +96,16 @@ export default async function LoginPage({
             pendingLabel={isSignup ? "Creating…" : "Signing in…"}
             className="w-full rounded-2xl bg-ink-900 px-4 py-3.5 text-sm font-bold text-sand-50 hover:bg-ink-800"
           >
-            {isSignup ? "Create account" : "Sign in"}
+            {isSignup ? "Create account" : "Sign in with password"}
           </PendingSubmitButton>
         </form>
+
+        {!isSignup ? (
+          <p className="mt-3 text-xs text-ink-600">
+            If this account already has a passkey, password sign-in sends an
+            email link you must open to finish logging in.
+          </p>
+        ) : null}
 
         <p className="mt-5 text-center text-sm text-ink-600">
           {isSignup ? (

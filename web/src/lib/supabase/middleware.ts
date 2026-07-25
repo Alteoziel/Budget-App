@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { supabaseAuthOptions } from "@/lib/supabase/auth-options";
 
 function isPublicPath(path: string): boolean {
   return (
@@ -55,6 +56,7 @@ export async function updateSession(request: NextRequest) {
         });
       },
     },
+    auth: supabaseAuthOptions,
   });
 
   const {

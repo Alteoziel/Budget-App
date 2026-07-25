@@ -6,6 +6,7 @@ import { InstallGuide } from "@/components/InstallGuide";
 import { InviteRoleLink } from "@/components/InviteRoleLink";
 import { PendingSubmitButton } from "@/components/PendingSubmitButton";
 import { PlaidLinkButton } from "@/components/PlaidLinkButton";
+import { PasskeySettings } from "@/components/PasskeySettings";
 import { ProfileSettings } from "@/components/ProfileSettings";
 import { RecentChangesOverlay } from "@/components/RecentChangesOverlay";
 import { SettingsCategory } from "@/components/SettingsCategory";
@@ -86,6 +87,22 @@ export default async function SettingsPage({
     .eq("id", user.id)
     .maybeSingle();
 
+  let initialPasskeys: Array<{
+    id: string;
+    friendly_name?: string | null;
+    created_at: string;
+    last_used_at?: string | null;
+  }> = [];
+  let passkeyLoadError: string | null = null;
+  try {
+    const { data, error } = await supabase.auth.passkey.list();
+    if (error) passkeyLoadError = error.message;
+    else initialPasskeys = data ?? [];
+  } catch (err) {
+    passkeyLoadError =
+      err instanceof Error ? err.message : "Could not load passkeys.";
+  }
+
   const { data: memberRows } = await supabase
     .from("budget_members")
     .select("id,user_id,role")
@@ -143,6 +160,16 @@ export default async function SettingsPage({
           <ProfileSettings
             email={user.email ?? ""}
             displayName={profile?.display_name || user.user_metadata?.display_name || ""}
+          />
+        </SettingsCard>
+
+        <SettingsCard
+          title="Passkeys"
+          description="Biometric sign-in for this account. Password fallback requires email approval once a passkey exists."
+        >
+          <PasskeySettings
+            initialPasskeys={initialPasskeys}
+            initialError={passkeyLoadError}
           />
         </SettingsCard>
 

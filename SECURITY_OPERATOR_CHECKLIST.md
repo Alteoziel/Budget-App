@@ -99,6 +99,8 @@ Flow: Doppler dashboard → set secrets → **Integrations → Vercel** (`dev` /
 Key list: [`web/doppler.secrets.example`](web/doppler.secrets.example).
 
 - [ ] Supabase migration applied (RLS on)
+- [ ] Supabase Passkeys enabled (Authentication → Passkeys) with correct RP ID/origins
+- [ ] `/auth/callback` allowed in Supabase redirect URLs
 - [ ] Doppler project + secrets created in the dashboard
 - [ ] Doppler → Vercel sync configured for Development / Preview / Production
 - [ ] Vercel project Root Directory = `web`
