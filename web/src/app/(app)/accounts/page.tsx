@@ -8,7 +8,7 @@ import { getAccountsWithBalances } from "@/lib/budget-data";
 export default async function AccountsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; notice?: string }>;
 }) {
   const params = await searchParams;
   const accounts = await getAccountsWithBalances();
@@ -19,6 +19,7 @@ export default async function AccountsPage({
   return (
     <AppShell title="Accounts" subtitle="Balances from your transactions">
       <FlashError message={params.error} />
+      <FlashError message={params.notice} tone="success" />
       <section className="hero-panel animate-rise rounded-2xl px-4 py-4">
         <p className="text-[11px] font-bold uppercase tracking-[0.16em] opacity-80">
           All accounts
