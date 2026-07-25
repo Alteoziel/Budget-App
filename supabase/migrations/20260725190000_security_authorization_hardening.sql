@@ -88,6 +88,11 @@ security definer
 set search_path = ''
 as $$
 begin
+  -- Serialize owner-count changes for this budget so two concurrent requests
+  -- cannot both observe another owner and remove the final two.
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended(old.budget_id::text, 0)
+  );
   if old.role = 'owner'
      and (
        tg_op = 'DELETE'
@@ -551,5 +556,99 @@ with check (
     (select realtime.topic())
   )
 );
+
+-- CHECKPOINT 5 follow-up: serialize overspend fixes per budget/month.
+create table if not exists public.overspend_fix_locks (
+  budget_id uuid not null references public.budgets (id) on delete cascade,
+  month text not null,
+  lock_token uuid not null,
+  expires_at timestamptz not null,
+  primary key (budget_id, month)
+);
+
+alter table public.overspend_fix_locks enable row level security;
+revoke all on table public.overspend_fix_locks from public, anon, authenticated;
+
+create or replace function public.acquire_overspend_fix_lock(
+  p_budget_id uuid,
+  p_month text,
+  p_lock_token uuid
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  inserted_count integer;
+begin
+  if auth.uid() is null
+     or not public.has_budget_role(p_budget_id, 'editor') then
+    raise exception 'Not allowed';
+  end if;
+  if p_month !~ '^[0-9]{4}-(0[1-9]|1[0-2])$' then
+    raise exception 'Invalid month';
+  end if;
+
+  delete from public.overspend_fix_locks
+  where budget_id = p_budget_id
+    and month = p_month
+    and expires_at < pg_catalog.now();
+
+  insert into public.overspend_fix_locks (
+    budget_id,
+    month,
+    lock_token,
+    expires_at
+  )
+  values (
+    p_budget_id,
+    p_month,
+    p_lock_token,
+    pg_catalog.now() + interval '2 minutes'
+  )
+  on conflict (budget_id, month) do nothing;
+
+  get diagnostics inserted_count = row_count;
+  return inserted_count = 1;
+end;
+$$;
+
+create or replace function public.release_overspend_fix_lock(
+  p_budget_id uuid,
+  p_month text,
+  p_lock_token uuid
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  deleted_count integer;
+begin
+  if auth.uid() is null
+     or not public.has_budget_role(p_budget_id, 'editor') then
+    raise exception 'Not allowed';
+  end if;
+
+  delete from public.overspend_fix_locks
+  where budget_id = p_budget_id
+    and month = p_month
+    and lock_token = p_lock_token;
+
+  get diagnostics deleted_count = row_count;
+  return deleted_count = 1;
+end;
+$$;
+
+revoke all on function public.acquire_overspend_fix_lock(uuid, text, uuid)
+  from public, anon;
+revoke all on function public.release_overspend_fix_lock(uuid, text, uuid)
+  from public, anon;
+grant execute on function public.acquire_overspend_fix_lock(uuid, text, uuid)
+  to authenticated;
+grant execute on function public.release_overspend_fix_lock(uuid, text, uuid)
+  to authenticated;
 
 notify pgrst, 'reload schema';

@@ -244,7 +244,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const updated = await transitionReview(
       id,
       ["merging"],
-      true,
+      false,
       {
         status: "merged",
         merge_sha: mergeJson.sha ?? null,

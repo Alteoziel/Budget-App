@@ -137,7 +137,7 @@ def run_pipeline(
     paths = collect_paths(
         root=root, files=files, changed_only=changed_only, base_ref=base_ref
     )
-    diff_text = get_diff_text(root, base_ref)
+    diff_text = None if skip_llm else get_diff_text(root, base_ref)
 
     steps: list[StepResult] = []
     steps.append(ast_guardrail.run(paths))

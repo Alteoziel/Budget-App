@@ -66,7 +66,19 @@ OWASP_PATTERNS: list[tuple[str, Severity, str, re.Pattern[str]]] = [
 ]
 
 # Injection / RCE patterns only make sense on executable source — not rule YAML.
-_CODE_SUFFIXES = {".py", ".ts", ".tsx", ".js", ".jsx"}
+_CODE_SUFFIXES = {
+    ".py",
+    ".ts",
+    ".tsx",
+    ".js",
+    ".jsx",
+    ".mjs",
+    ".cjs",
+    ".mts",
+    ".cts",
+    ".sql",
+    ".sh",
+}
 # Config may still hide secrets.
 _CONFIG_SUFFIXES = {".yml", ".yaml", ".toml"}
 _SECRET_ONLY_RULES = {"SEC001_HARDCODED_SECRET"}
@@ -83,8 +95,11 @@ _ENDPOINT_AUTH_MARKERS = (
     "siteGateEnabled(",
     "passwordsMatch(",
     'headers.get("origin")',
-    "SECURITY: PUBLIC",
+    "runCron(",
 )
+_PUBLIC_ROUTE_SUFFIXES = {
+    "dashboard/src/app/api/health/route.ts",
+}
 
 SYSTEM_PROMPT = """You are an OWASP-focused secure-code reviewer for an enterprise AI proxy gateway.
 Review ONLY the provided git diff / code snippets.
@@ -136,35 +151,43 @@ def _scan_patterns(path: Path, source: str) -> list[Finding]:
 
 
 def _route_auth_findings(path: Path, source: str) -> list[Finding]:
-    if path.name != "route.ts" or not re.search(
-        r"export\s+(?:async\s+)?function\s+(GET|POST|PUT|PATCH|DELETE)\b",
-        source,
-    ):
+    if path.name not in {"route.ts", "route.js"}:
         return []
-    if any(marker in source for marker in _ENDPOINT_AUTH_MARKERS):
+    normalized = path.as_posix()
+    if any(normalized.endswith(suffix) for suffix in _PUBLIC_ROUTE_SUFFIXES):
         return []
-    match = re.search(
-        r"export\s+(?:async\s+)?function\s+(GET|POST|PUT|PATCH|DELETE)\b",
-        source,
+    # Comments do not count as authorization evidence.
+    code = re.sub(r"/\*.*?\*/|//[^\n]*", "", source, flags=re.DOTALL)
+    handler_re = re.compile(
+        r"export\s+(?:(?:async\s+)?function\s+"
+        r"|const\s+)(GET|POST|PUT|PATCH|DELETE)\b"
     )
-    line = source[: match.start()].count("\n") + 1 if match else 1
-    return [
-        Finding(
-            step=STEP_ID,
-            severity=Severity.CRITICAL,
-            message=(
-                "Route handler has no explicit authentication/authorization "
-                "check or SECURITY: PUBLIC declaration"
-            ),
-            file=str(path),
-            line=line,
-            rule_id="SEC007_ROUTE_AUTH_REQUIRED",
-            suggestion=(
-                "Add a route-level user/role/signature check. If intentionally "
-                "public, document the trust boundary with SECURITY: PUBLIC."
-            ),
+    handlers = list(handler_re.finditer(code))
+    findings: list[Finding] = []
+    for index, match in enumerate(handlers):
+        end = handlers[index + 1].start() if index + 1 < len(handlers) else len(code)
+        handler_region = code[match.start() : end]
+        if any(marker in handler_region for marker in _ENDPOINT_AUTH_MARKERS):
+            continue
+        line = code[: match.start()].count("\n") + 1
+        findings.append(
+            Finding(
+                step=STEP_ID,
+                severity=Severity.CRITICAL,
+                message=(
+                    f"{match.group(1)} route handler has no explicit "
+                    "authentication/authorization check"
+                ),
+                file=str(path),
+                line=line,
+                rule_id="SEC007_ROUTE_AUTH_REQUIRED",
+                suggestion=(
+                    "Add a route-level user/role/signature check. Intentionally "
+                    "public routes must be added to the trusted scanner allowlist."
+                ),
+            )
         )
-    ]
+    return findings
 
 
 def _llm_review(diff_text: str) -> list[Finding]:

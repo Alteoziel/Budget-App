@@ -81,6 +81,8 @@ export function OfflineProvider({
       !local ||
       local.ownerUserId !== userId ||
       local.budget.id !== budgetId ||
+      !Number.isFinite(Date.parse(local.reauthExpiresAt)) ||
+      Date.now() >= Date.parse(local.reauthExpiresAt) ||
       Date.now() - Date.parse(local.savedAt) >= REAUTH_INTERVAL_MS
     ) {
       return null;

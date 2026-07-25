@@ -1,6 +1,9 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { hasRecentPrimarySignIn } from "@/lib/auth/reauth";
+import {
+  hasRecentPrimarySignIn,
+  REAUTH_INTERVAL_MS,
+} from "@/lib/auth/reauth";
 
 function isPublicPath(path: string): boolean {
   return (
@@ -107,6 +110,13 @@ export async function updateSession(request: NextRequest) {
       response.cookies.set(cookie);
     });
     return response;
+  }
+
+  if (user && hasRecentPrimarySignIn(user.last_sign_in_at)) {
+    supabaseResponse.headers.set(
+      "X-Alte-Reauth-Expires",
+      String(Date.parse(user.last_sign_in_at!) + REAUTH_INTERVAL_MS),
+    );
   }
 
   if (

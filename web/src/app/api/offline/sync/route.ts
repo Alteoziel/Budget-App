@@ -7,6 +7,7 @@ import {
 import { dollarsToCents, isValidIsoDate } from "@/lib/money";
 import { suggestCategoryForPayee } from "@/lib/payee-categorization";
 import { createClient } from "@/lib/supabase/server";
+import { hasRecentPrimarySignIn } from "@/lib/auth/reauth";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +39,12 @@ export async function POST(request: Request) {
   } = await supabase.auth.getUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (!hasRecentPrimarySignIn(user.last_sign_in_at)) {
+    return NextResponse.json(
+      { error: "Reauthentication required.", code: "REAUTH_REQUIRED" },
+      { status: 401 },
+    );
   }
 
   const active = await resolveActiveBudget();

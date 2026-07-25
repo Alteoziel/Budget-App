@@ -1,6 +1,7 @@
 export type OfflineSnapshot = {
   version: 2;
   ownerUserId: string;
+  reauthExpiresAt: string;
   savedAt: string;
   budget: { id: string; name: string };
   readyToAssignCents: number;

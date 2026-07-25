@@ -1,0 +1,100 @@
+# Security audit — 2026-07-25
+
+Scope: all tracked application, dashboard, Supabase migration, governance, and
+GitHub Actions code on `main`. Threat model assumes clients can alter every
+payload, URL, cookie, browser state value, and unsigned JWT claim.
+
+## Patched checkpoints
+
+1. Enforced an absolute 14-day primary-sign-in window on pages, server actions,
+   APIs, and offline caches.
+2. Removed arbitrary self-enrollment as a budget owner; owner bootstrap is now
+   limited to a newly created budget owned by the authenticated user.
+3. Enforced owner/admin hierarchy for memberships and invites, including
+   serialized last-owner protection.
+4. Added same-budget foreign keys, RLS, and runtime filters for Plaid/Teller
+   item-to-account mappings.
+5. Added same-budget constraints and runtime validation for transaction-match
+   suggestions.
+6. Aggregated and conserved overspend donations/allocations and serialized
+   fixes per budget/month.
+7. Added Plaid ES256 webhook JWT, key, freshness, and raw-body hash validation
+   before service-role access.
+8. Removed authenticated access to unscoped sync logs and global change-log
+   purge.
+9. Replaced the forgeable password-reset flag with a signed, user-bound,
+   expiring grant and signed recovery state.
+10. Partitioned offline data by user/budget, made replay idempotent, purged
+    private caches on sign-out/login, and bound offline expiry to reauth time.
+11. Made Realtime Presence/Broadcast private and membership-authorized.
+12. Separated dashboard ingest credentials from reviewer/merge credentials.
+13. Bound dashboard merges to the reviewed full SHA, repository, and `main`.
+14. Bounded and validated governance report ingestion and rendering.
+15. Replaced spoofable/unbounded dashboard login buckets with Redis-backed,
+    trusted-IP fixed windows and a bounded fallback.
+16. Added same-origin validation to dashboard logout.
+17. Made dashboard review transitions atomic and reserved merge state before
+    GitHub I/O.
+18. Changed PR governance to run a trusted base-branch engine against the
+    candidate as data, with read-only permissions and no secrets.
+19. Made full-tree governance scans use fail-closed, NUL-safe tracked-file
+    enumeration; added an explicit route-auth gate and false-positive tests.
+20. Replaced the secret-bearing PR FOSSA path with GitHub's secretless,
+    pinned dependency vulnerability/license review.
+
+## Endpoint permission inventory
+
+| Endpoint | Method | Explicit permission boundary |
+|---|---|---|
+| `/auth/callback` | GET | One-time Supabase code/OTP; signed recovery state for password grants |
+| `/api/cron/plaid-sync` | GET/POST | Timing-safe `CRON_SECRET` bearer |
+| `/api/plaid/webhook` | POST | Plaid ES256 JWT + 5-minute age + raw-body SHA-256 |
+| `/api/plaid/link-token` | POST | Fresh Supabase user + active-budget admin |
+| `/api/plaid/exchange` | POST | Fresh Supabase user + active-budget admin |
+| `/api/offline/snapshot` | GET | Fresh Supabase user + active-budget viewer |
+| `/api/offline/sync` | POST | Fresh Supabase user + active-budget editor + user/budget-bound items |
+| Dashboard `/api/health` | GET | Intentionally public; fixed `{ok:true}` only |
+| Dashboard `/api/auth/login` | POST | Rate-limited site-password verification |
+| Dashboard `/api/auth/logout` | POST | Same-origin browser request |
+| Dashboard `/api/reviews` | GET | Site session, ingest secret, or distinct reviewer secret |
+| Dashboard `/api/reviews` | POST | Ingest secret only |
+| Dashboard `/api/reviews/:id` | GET | Site session, ingest secret, or distinct reviewer secret |
+| Dashboard `/api/reviews/:id` | POST | Distinct reviewer secret only |
+| Dashboard `/api/status` | GET | Authorized review read |
+
+All 48 product server actions were also traced. Public actions are limited to
+sign-in, sign-up, and sign-out. User-only actions call `requireUser`; all
+budget reads/mutations call `requireBudget` with viewer/editor/admin/owner
+minimum roles and scope client-supplied entity IDs to the active budget.
+
+No production endpoint remains without either an explicit permission check or
+an intentional, documented public trust boundary.
+
+## Deployment checklist
+
+- Apply `supabase/migrations/20260725190000_security_authorization_hardening.sql`.
+- Set a dedicated random `APP_SECURITY_SECRET` in Doppler/Vercel. The server
+  Supabase secret remains a compatibility fallback until this is configured.
+- Set `GOVERNANCE_REVIEWER_SECRET` to a value different from
+  `GOVERNANCE_DASHBOARD_SECRET`.
+- In Supabase Realtime settings, disable **Allow public access** after deploying
+  the private-channel policies.
+
+## Deferred because they can affect functionality or require platform changes
+
+- Enable GitHub Code Scanning, re-enable the currently disabled CodeQL
+  workflow, and require all three CodeQL matrix checks. The repository cannot
+  enable the account-level feature from code.
+- Automated PR comments/dashboard ingestion were removed from the untrusted
+  scanner job. Restore them only through a trusted `workflow_run` reporter that
+  validates the source run, PR, repository, and head SHA before using secrets.
+- If FOSSA-specific policy is required in addition to GitHub Dependency Review,
+  run a checksum-pinned FOSSA CLI from a trusted follow-up workflow; never pass
+  its key to candidate-controlled workflow code.
+- `BANK_TOKEN_ENCRYPTION_KEY` still has a legacy `CRON_SECRET` fallback.
+  Removing it immediately could make existing encrypted bank tokens
+  undecryptable. Configure a dedicated key, version/re-encrypt existing
+  ciphertext, then remove the fallback.
+- Overspend writes are now input-safe and concurrency-serialized, but a future
+  SQL RPC should make the multi-row operation fully atomic against infrastructure
+  failures.

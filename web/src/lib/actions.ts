@@ -48,6 +48,7 @@ import { suggestCategoryForPayee } from "@/lib/payee-categorization";
 import {
   balanceAnchorExternalId,
   isBalanceAnchorExternalId,
+  isBankExternalId,
   suggestMatchForManualTransaction,
 } from "@/lib/transaction-matching";
 import {
@@ -1442,93 +1443,120 @@ export async function applyOverspendFixAction(payload: {
     }
   }
 
-  const monthUpsert = await supabase.from("budget_months").upsert(
-    { user_id: user.id, budget_id: budget.id, month },
-    { onConflict: "budget_id,month" },
-  );
-  if (monthUpsert.error) {
-    return { ok: false, error: "Could not save budget month." };
+  const lockToken = crypto.randomUUID();
+  const lock = await supabase.rpc("acquire_overspend_fix_lock", {
+    p_budget_id: budget.id,
+    p_month: month,
+    p_lock_token: lockToken,
+  });
+  if (lock.error) {
+    return {
+      ok: false,
+      error: "Could not secure this fix. Apply the latest security migration.",
+    };
+  }
+  if (!lock.data) {
+    return {
+      ok: false,
+      error: "Another budget fix is already in progress. Try again shortly.",
+    };
   }
 
-  // Money returned to Ready to assign lowers what the donor has assigned.
-  const pulledBack = new Map<string, number>();
-  for (const allocation of toReadyToAssign) {
-    pulledBack.set(
-      allocation.fromCategoryId,
-      (pulledBack.get(allocation.fromCategoryId) ?? 0) + allocation.cents,
+  try {
+    const monthUpsert = await supabase.from("budget_months").upsert(
+      { user_id: user.id, budget_id: budget.id, month },
+      { onConflict: "budget_id,month" },
     );
-  }
-  for (const [categoryId, cents] of pulledBack) {
-    const row = rowById.get(categoryId);
-    if (!row) continue;
-    const { error } = await supabase.from("category_months").upsert(
-      {
-        user_id: user.id,
-        budget_id: budget.id,
-        category_id: categoryId,
-        month,
-        assigned_cents: row.assignedCents - cents,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "budget_id,category_id,month" },
-    );
-    if (error) {
-      return { ok: false, error: "Could not return money to Ready to assign." };
-    }
-  }
-
-  // Category-to-category coverage is recorded as a matched pair of transactions.
-  let movedCents = toReadyToAssign.reduce((sum, a) => sum + a.cents, 0);
-  if (betweenCategories.length) {
-    const accountId = await ensureMoneyExchangesAccount(supabase, user.id, budget.id);
-    if (!accountId) {
-      return { ok: false, error: `Could not create the “${MONEY_EXCHANGES_ACCOUNT}” account.` };
+    if (monthUpsert.error) {
+      return { ok: false, error: "Could not save budget month." };
     }
 
-    const today = new Date().toISOString().slice(0, 10);
-    const txnRows = betweenCategories.flatMap((allocation) => {
-      const from = rowById.get(allocation.fromCategoryId);
-      const to = rowById.get(allocation.toCategoryId);
-      const fromName = from?.categoryName ?? "Category";
-      const toName = to?.categoryName ?? "Category";
-      const memo = `Budget fix ${month}`;
-      return [
+    // Money returned to Ready to assign lowers what the donor has assigned.
+    const pulledBack = new Map<string, number>();
+    for (const allocation of toReadyToAssign) {
+      pulledBack.set(
+        allocation.fromCategoryId,
+        (pulledBack.get(allocation.fromCategoryId) ?? 0) + allocation.cents,
+      );
+    }
+    for (const [categoryId, cents] of pulledBack) {
+      const row = rowById.get(categoryId);
+      if (!row) continue;
+      const { error } = await supabase.from("category_months").upsert(
         {
           user_id: user.id,
           budget_id: budget.id,
-          account_id: accountId,
-          category_id: allocation.fromCategoryId,
-          occurred_on: today,
-          payee: `${fromName} → ${toName}`.slice(0, 200),
-          memo,
-          amount_cents: -allocation.cents,
-          cleared: true,
+          category_id: categoryId,
+          month,
+          assigned_cents: row.assignedCents - cents,
+          updated_at: new Date().toISOString(),
         },
-        {
-          user_id: user.id,
-          budget_id: budget.id,
-          account_id: accountId,
-          category_id: allocation.toCategoryId,
-          occurred_on: today,
-          payee: `${toName} ← ${fromName}`.slice(0, 200),
-          memo,
-          amount_cents: allocation.cents,
-          cleared: true,
-        },
-      ];
+        { onConflict: "budget_id,category_id,month" },
+      );
+      if (error) {
+        return { ok: false, error: "Could not return money to Ready to assign." };
+      }
+    }
+
+    // Category-to-category coverage is recorded as a matched pair of transactions.
+    let movedCents = toReadyToAssign.reduce((sum, a) => sum + a.cents, 0);
+    if (betweenCategories.length) {
+      const accountId = await ensureMoneyExchangesAccount(supabase, user.id, budget.id);
+      if (!accountId) {
+        return { ok: false, error: `Could not create the “${MONEY_EXCHANGES_ACCOUNT}” account.` };
+      }
+
+      const today = new Date().toISOString().slice(0, 10);
+      const txnRows = betweenCategories.flatMap((allocation) => {
+        const from = rowById.get(allocation.fromCategoryId);
+        const to = rowById.get(allocation.toCategoryId);
+        const fromName = from?.categoryName ?? "Category";
+        const toName = to?.categoryName ?? "Category";
+        const memo = `Budget fix ${month}`;
+        return [
+          {
+            user_id: user.id,
+            budget_id: budget.id,
+            account_id: accountId,
+            category_id: allocation.fromCategoryId,
+            occurred_on: today,
+            payee: `${fromName} → ${toName}`.slice(0, 200),
+            memo,
+            amount_cents: -allocation.cents,
+            cleared: true,
+          },
+          {
+            user_id: user.id,
+            budget_id: budget.id,
+            account_id: accountId,
+            category_id: allocation.toCategoryId,
+            occurred_on: today,
+            payee: `${toName} ← ${fromName}`.slice(0, 200),
+            memo,
+            amount_cents: allocation.cents,
+            cleared: true,
+          },
+        ];
+      });
+
+      const { error } = await supabase.from("transactions").insert(txnRows);
+      if (error) {
+        return { ok: false, error: "Could not record the money exchange transactions." };
+      }
+      movedCents += betweenCategories.reduce((sum, a) => sum + a.cents, 0);
+    }
+
+    revalidatePath("/budget");
+    revalidatePath("/accounts");
+    revalidatePath("/insights");
+    return { ok: true, movedCents };
+  } finally {
+    await supabase.rpc("release_overspend_fix_lock", {
+      p_budget_id: budget.id,
+      p_month: month,
+      p_lock_token: lockToken,
     });
-
-    const { error } = await supabase.from("transactions").insert(txnRows);
-    if (error) {
-      return { ok: false, error: "Could not record the money exchange transactions." };
-    }
-    movedCents += betweenCategories.reduce((sum, a) => sum + a.cents, 0);
   }
-
-  revalidatePath("/budget");
-  revalidatePath("/accounts");
-  revalidatePath("/insights");
-  return { ok: true, movedCents };
 }
 
 export async function createTransactionAction(formData: FormData) {
@@ -1767,7 +1795,7 @@ export async function approveTransactionMatchAction(formData: FormData) {
     !bankRes.data?.id ||
     manualRes.data.account_id !== suggestion.account_id ||
     bankRes.data.account_id !== suggestion.account_id ||
-    !bankRes.data.external_id?.startsWith("plaid:")
+    !isBankExternalId(bankRes.data.external_id)
   ) {
     redirectWithError(
       `/accounts/${accountId}`,

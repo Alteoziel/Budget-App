@@ -107,9 +107,14 @@ async function freshCachedPage(cache, request) {
   const cached = await cache.match(request);
   if (!cached) return null;
   const cachedAt = Number(cached.headers.get("x-alte-cached-at") || "0");
+  const reauthExpiresAt = Number(
+    cached.headers.get("x-alte-reauth-expires") || "0",
+  );
   if (
     !Number.isFinite(cachedAt) ||
     cachedAt <= 0 ||
+    !Number.isFinite(reauthExpiresAt) ||
+    reauthExpiresAt <= Date.now() ||
     Date.now() - cachedAt >= PRIVATE_CACHE_MAX_AGE_MS
   ) {
     await cache.delete(request);

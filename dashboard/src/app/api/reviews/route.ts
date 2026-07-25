@@ -20,6 +20,25 @@ import { siteGateEnabled } from "@/lib/siteAuth";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+async function readLimitedBody(req: NextRequest): Promise<string | null> {
+  if (!req.body) return "";
+  const reader = req.body.getReader();
+  const decoder = new TextDecoder();
+  let total = 0;
+  let text = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > MAX_INGEST_BYTES) {
+      await reader.cancel();
+      return null;
+    }
+    text += decoder.decode(value, { stream: true });
+  }
+  return text + decoder.decode();
+}
+
 export async function GET(req: NextRequest) {
   if (isProductionLike() && !siteGateEnabled()) {
     // Machine auth can still list; otherwise fail closed.
@@ -53,8 +72,8 @@ export async function POST(req: NextRequest) {
       { status: 413 }
     );
   }
-  const rawBody = await req.text();
-  if (Buffer.byteLength(rawBody, "utf8") > MAX_INGEST_BYTES) {
+  const rawBody = await readLimitedBody(req);
+  if (rawBody === null) {
     return NextResponse.json(
       { error: "payload_too_large" },
       { status: 413 }

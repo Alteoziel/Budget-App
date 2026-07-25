@@ -28,9 +28,8 @@ function trustedClientKey(req: NextRequest): string {
     ? req.headers.get("x-vercel-forwarded-for")
     : req.headers.get("x-real-ip");
   const ip = candidate?.split(",")[0]?.trim() || "unknown";
-  const userAgent = req.headers.get("user-agent")?.slice(0, 256) || "unknown";
   return createHash("sha256")
-    .update(`${ip}\0${userAgent}`)
+    .update(ip)
     .digest("hex")
     .slice(0, 32);
 }

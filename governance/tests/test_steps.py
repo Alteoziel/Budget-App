@@ -193,6 +193,14 @@ def test_security_requires_explicit_route_authorization(tmp_path: Path) -> None:
     assert not result.passed
     assert any(f.rule_id == "SEC007_ROUTE_AUTH_REQUIRED" for f in result.findings)
 
+    src.write_text(
+        "// .auth.getUser()\\n"
+        'export const POST = async () => new Response("ok");\\n',
+        encoding="utf-8",
+    )
+    result = security_auditor.run([src], diff_text=None)
+    assert any(f.rule_id == "SEC007_ROUTE_AUTH_REQUIRED" for f in result.findings)
+
 
 def test_security_ssrf_requires_call_not_type_hint(tmp_path: Path) -> None:
     src = tmp_path / "types.py"

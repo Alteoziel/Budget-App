@@ -3,13 +3,13 @@ import {
   decodeProtectedHeader,
   importJWK,
   jwtVerify,
+  type CryptoKey,
   type JWK,
-  type KeyLike,
 } from "jose";
 import { getPlaidClient } from "@/lib/plaid/client";
 
 const MAX_KEY_CACHE_ENTRIES = 32;
-const keyCache = new Map<string, { key: KeyLike; expiresAtMs: number }>();
+const keyCache = new Map<string, { key: CryptoKey; expiresAtMs: number }>();
 
 type PlaidKeyLoader = (keyId: string) => Promise<JWK & {
   expired_at?: number | null;
@@ -27,7 +27,7 @@ async function loadPlaidKey(keyId: string): Promise<JWK & {
 async function verificationKey(
   keyId: string,
   loadKey: PlaidKeyLoader,
-): Promise<KeyLike> {
+): Promise<CryptoKey> {
   const now = Date.now();
   const cached = keyCache.get(keyId);
   if (cached && cached.expiresAtMs > now) return cached.key;
@@ -44,6 +44,9 @@ async function verificationKey(
   }
 
   const key = await importJWK(jwk, "ES256");
+  if (key instanceof Uint8Array) {
+    throw new Error("Plaid webhook key must be asymmetric.");
+  }
   const expiresAtMs =
     jwk.expired_at == null
       ? now + 60 * 60 * 1000
@@ -53,8 +56,8 @@ async function verificationKey(
     const oldest = keyCache.keys().next().value;
     if (oldest) keyCache.delete(oldest);
   }
-  keyCache.set(keyId, { key: key as KeyLike, expiresAtMs });
-  return key as KeyLike;
+  keyCache.set(keyId, { key, expiresAtMs });
+  return key;
 }
 
 export async function verifyPlaidWebhook(
