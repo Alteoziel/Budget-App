@@ -71,15 +71,16 @@ function MoveButtons({
 export function BudgetManager({
   month,
   groups,
+  collapsedGroupIds,
+  onCollapsedGroupIdsChange,
 }: {
   month: string;
   groups: GroupBlock[];
+  collapsedGroupIds: Set<string>;
+  onCollapsedGroupIdsChange: (next: Set<string>) => void;
 }) {
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
-  const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(
-    () => new Set(),
-  );
   const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null);
 
   const allRows = useMemo(() => groups.flatMap((g) => g.categories), [groups]);
@@ -102,12 +103,10 @@ export function BudgetManager({
   }
 
   function toggleGroup(groupId: string) {
-    setCollapsedGroupIds((current) => {
-      const next = new Set(current);
-      if (next.has(groupId)) next.delete(groupId);
-      else next.add(groupId);
-      return next;
-    });
+    const next = new Set(collapsedGroupIds);
+    if (next.has(groupId)) next.delete(groupId);
+    else next.add(groupId);
+    onCollapsedGroupIdsChange(next);
   }
 
   return (

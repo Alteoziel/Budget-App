@@ -84,6 +84,41 @@ export function previousBudgetMonth(month: string): string | null {
   return `${yearStr}-${String(m - 1).padStart(2, "0")}`;
 }
 
+/** Next YYYY-MM budget month, or null if invalid. */
+export function nextBudgetMonth(month: string): string | null {
+  if (!isBudgetMonth(month)) return null;
+  const [yearStr, monthStr] = month.split("-");
+  const year = Number(yearStr);
+  const m = Number(monthStr);
+  if (m === 12) return `${year + 1}-01`;
+  return `${yearStr}-${String(m + 1).padStart(2, "0")}`;
+}
+
+/** YYYY-MM containing an ISO date. */
+export function budgetMonthFromDate(date: string): string | null {
+  if (!isValidIsoDate(date)) return null;
+  return date.slice(0, 7);
+}
+
+/** Friendly label for a calendar day, e.g. "Jul 15, 2026". */
+export function formatBudgetDate(date: string): string {
+  if (!isValidIsoDate(date)) return date;
+  const [year, month, day] = date.split("-").map(Number);
+  return new Date(year, month - 1, day).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+/** Local today as YYYY-MM-DD. */
+export function currentIsoDate(date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function isValidUtcYmd(year: number, month: number, day: number): boolean {
   if (month < 1 || month > 12 || day < 1 || day > 31) return false;
   const dt = new Date(Date.UTC(year, month - 1, day));

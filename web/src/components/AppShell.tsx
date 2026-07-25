@@ -2,19 +2,24 @@
 export function AppShell({
   title,
   subtitle,
+  actions,
   children,
 }: {
   title: string;
-  subtitle?: string;
+  subtitle?: React.ReactNode;
+  actions?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <>
-      <header className="animate-rise mb-4 min-w-0">
-        <h1 className="font-display text-2xl font-bold text-ink-900 sm:text-3xl">
-          {title}
-        </h1>
-        {subtitle ? <p className="mt-1 text-sm text-ink-600">{subtitle}</p> : null}
+      <header className="animate-rise mb-4 flex items-start justify-between gap-3 min-w-0">
+        <div className="min-w-0">
+          <h1 className="font-display text-2xl font-bold text-ink-900 sm:text-3xl">
+            {title}
+          </h1>
+          {subtitle ? <div className="mt-1">{subtitle}</div> : null}
+        </div>
+        {actions ? <div className="shrink-0 pt-1">{actions}</div> : null}
       </header>
       {children}
     </>

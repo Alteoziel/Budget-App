@@ -88,6 +88,30 @@ export type BudgetRow = {
   assignFixedCents: number;
 } & CategoryGoal;
 
+export type BudgetSnapshotTxn = {
+  id: string;
+  occurredOn: string;
+  payee: string;
+  memo: string;
+  amountCents: number;
+  categoryName: string | null;
+  accountName: string;
+};
+
+export type BudgetSnapshot = {
+  kind: "month" | "day";
+  month: string;
+  date: string | null;
+  label: string;
+  readyToAssignCents: number;
+  totalMoneyCents: number;
+  activityCents: number;
+  incomeCents: number;
+  spendingCents: number;
+  rows: BudgetRow[];
+  transactions: BudgetSnapshotTxn[];
+};
+
 export type TrendFinding = {
   id: string;
   kind: string;
