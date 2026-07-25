@@ -143,6 +143,7 @@ export function BudgetManager({
   const fixedTotal = allRows
     .filter((row) => row.assignMode === "fixed")
     .reduce((sum, row) => sum + (row.assignFixedCents || 0), 0);
+  const priorityCount = allRows.filter((row) => row.assignPriority > 0).length;
 
   if (groups.length === 0) {
     return (
@@ -175,6 +176,14 @@ export function BudgetManager({
           <>
             {" + "}
             <span className="font-bold text-ink-800">{formatCents(fixedTotal)}</span>
+          </>
+        ) : null}
+        {priorityCount > 0 ? (
+          <>
+            {" · "}
+            <span className="font-bold text-ink-800">
+              {priorityCount} AP
+            </span>
           </>
         ) : null}{" "}
         of Ready to Assign
@@ -370,6 +379,11 @@ export function BudgetManager({
                                 ) : row.assignMode !== "fixed" && row.assignPercent > 0 ? (
                                   <span className="text-[11px] font-semibold text-ink-500">
                                     auto {row.assignPercent.toFixed(1)}%
+                                  </span>
+                                ) : null}
+                                {row.assignPriority > 0 ? (
+                                  <span className="text-[11px] font-semibold text-ink-500">
+                                    AP {row.assignPriority}
                                   </span>
                                 ) : null}
                               </span>

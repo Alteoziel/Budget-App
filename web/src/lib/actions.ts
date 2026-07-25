@@ -13,7 +13,12 @@ import {
   isValidIsoDate,
   maxAssignableBudgetMonth,
 } from "@/lib/money";
-import { distributeByPercent } from "@/lib/auto-assign";
+import {
+  distributeByPercent,
+  distributeByPriority,
+  priorityNeedCents,
+  type AutoAssignMode,
+} from "@/lib/auto-assign";
 import { getBudgetRows } from "@/lib/budget-data";
 import { requireBudget, setActiveBudgetId } from "@/lib/budget-context";
 import {
@@ -1160,7 +1165,7 @@ function budgetError(month: string, message: string): never {
   );
 }
 
-/** One amount box: +, −, set, auto:%, auto:# */
+/** One amount box: +, −, set, auto:%, auto:#, AP */
 export async function categoryAmountAction(formData: FormData) {
   const { supabase, user, budget } = await requireBudget("editor");
   const categoryId = String(formData.get("category_id") ?? "");
@@ -1239,6 +1244,36 @@ export async function categoryAmountAction(formData: FormData) {
     return;
   }
 
+  if (intent === "auto_priority") {
+    const priority = Number(amountRaw || "0");
+    if (
+      !Number.isFinite(priority) ||
+      !Number.isInteger(priority) ||
+      priority < 0 ||
+      priority > 9999
+    ) {
+      budgetError(
+        month,
+        "Enter a whole-number AP priority (0 clears; 1 funds before 2).",
+      );
+    }
+    const { error } = await supabase
+      .from("categories")
+      .update({ assign_priority: priority })
+      .eq("budget_id", budget.id)
+      .eq("id", categoryId);
+    if (error) {
+      budgetError(
+        month,
+        /assign_priority|column|schema cache/i.test(error.message)
+          ? "Run the assign_priority migration in Supabase, then try again."
+          : "Could not save AP priority.",
+      );
+    }
+    revalidatePath("/budget");
+    return;
+  }
+
   const delta = dollarsToCents(amountRaw || "0");
   if (delta === null) {
     budgetError(month, "Enter a valid dollar amount.");
@@ -1304,6 +1339,10 @@ export async function autoAssignAction(formData: FormData) {
     budgetError(liveMonth, "Invalid month.");
   }
 
+  const modeRaw = String(formData.get("mode") ?? "regular");
+  const mode: AutoAssignMode =
+    modeRaw === "priority" ? "priority" : "regular";
+
   const { readyToAssignCents, rows } = await getBudgetRows(month);
   if (readyToAssignCents <= 0) {
     budgetError(
@@ -1311,16 +1350,34 @@ export async function autoAssignAction(formData: FormData) {
       "Ready to assign is not positive. Use Fix Now to cover the shortfall first.",
     );
   }
-  const { assignments, totalAdded, error: distError } = distributeByPercent(
-    readyToAssignCents,
-    rows.map((row) => ({
-      categoryId: row.categoryId,
-      assignMode: row.assignMode,
-      assignPercent: row.assignPercent,
-      assignFixedCents: row.assignFixedCents,
-      currentAssignedCents: row.assignedCents,
-    })),
-  );
+
+  const distributed =
+    mode === "priority"
+      ? distributeByPriority(
+          readyToAssignCents,
+          rows.map((row) => ({
+            categoryId: row.categoryId,
+            assignPriority: row.assignPriority,
+            needCents: priorityNeedCents({
+              goalCents: row.goalCents,
+              availableCents: row.availableCents,
+              assignFixedCents: row.assignFixedCents,
+            }),
+            currentAssignedCents: row.assignedCents,
+          })),
+        )
+      : distributeByPercent(
+          readyToAssignCents,
+          rows.map((row) => ({
+            categoryId: row.categoryId,
+            assignMode: row.assignMode,
+            assignPercent: row.assignPercent,
+            assignFixedCents: row.assignFixedCents,
+            currentAssignedCents: row.assignedCents,
+          })),
+        );
+
+  const { assignments, totalAdded, error: distError } = distributed;
   if (distError) {
     budgetError(month, distError);
   }
@@ -1376,15 +1433,17 @@ export async function autoAssignAction(formData: FormData) {
     entityType: "assignment",
     entityId: null,
     action: "update",
-    summary: `Auto-assigned ${formatCents(totalAdded)} for ${month}`,
+    summary: `${mode === "priority" ? "Priority auto-assigned" : "Auto-assigned"} ${formatCents(totalAdded)} for ${month}`,
     beforeSnapshot: {
       kind: "auto_assign",
+      mode,
       month,
       category_months: beforeMonths ?? [],
       touched_category_ids: touchedCategoryIds,
     },
     afterSnapshot: {
       kind: "auto_assign",
+      mode,
       month,
       category_months: afterMonths ?? [],
       touched_category_ids: touchedCategoryIds,
