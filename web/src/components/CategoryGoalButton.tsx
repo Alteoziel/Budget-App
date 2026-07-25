@@ -18,7 +18,14 @@ function frequencyLabel(frequency: GoalFrequency): string {
   return FREQUENCIES.find((f) => f.value === frequency)?.label ?? "Monthly";
 }
 
-export function CategoryGoalButton({ row }: { row: BudgetRow }) {
+export function CategoryGoalButton({
+  row,
+  onExpandClick,
+}: {
+  row: BudgetRow;
+  /** Used when no goal is set — empty space beside “Set goal” expands the row. */
+  onExpandClick?: () => void;
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [amount, setAmount] = useState(
@@ -74,12 +81,12 @@ export function CategoryGoalButton({ row }: { row: BudgetRow }) {
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="mt-1.5 block w-full text-left"
-      >
-        {hasGoal ? (
+      {hasGoal ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="mt-1.5 block w-full text-left"
+        >
           <span className="block rounded-xl border border-moss-500/30 bg-moss-500/10 px-2.5 py-1.5">
             <span className="flex items-baseline justify-between gap-2">
               <span className="min-w-0 truncate text-sm font-bold text-ink-900">
@@ -107,12 +114,26 @@ export function CategoryGoalButton({ row }: { row: BudgetRow }) {
               </>
             ) : null}
           </span>
-        ) : (
-          <span className="inline-flex min-h-9 items-center rounded-xl border border-dashed border-moss-500/40 px-2.5 text-sm font-bold text-moss-500">
+        </button>
+      ) : (
+        <div className="mt-1.5 flex items-stretch gap-1">
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="inline-flex min-h-9 shrink-0 items-center rounded-xl border border-dashed border-moss-500/40 px-2.5 text-sm font-bold text-moss-500"
+          >
             Set goal
-          </span>
-        )}
-      </button>
+          </button>
+          {onExpandClick ? (
+            <button
+              type="button"
+              onClick={onExpandClick}
+              aria-label={`Expand ${row.categoryName}`}
+              className="min-h-9 min-w-0 flex-1 rounded-xl outline-none ring-moss-400 focus-visible:ring-2"
+            />
+          ) : null}
+        </div>
+      )}
 
       {open ? (
         <div
