@@ -250,9 +250,15 @@ export async function createAccountAction(formData: FormData) {
 
 export async function reorderAccountAction(formData: FormData) {
   const { supabase, budget } = await requireBudget("editor");
-  const accountId = String(formData.get("account_id") ?? "");
+  const accountId = String(formData.get("account_id") ?? "").trim();
+  const neighborId = String(formData.get("neighbor_id") ?? "").trim();
   const direction = String(formData.get("direction") ?? "");
-  if (!accountId || (direction !== "up" && direction !== "down")) {
+  if (
+    !accountId ||
+    !neighborId ||
+    accountId === neighborId ||
+    (direction !== "up" && direction !== "down")
+  ) {
     redirectWithError("/accounts", "Invalid reorder.");
   }
 
@@ -269,29 +275,51 @@ export async function reorderAccountAction(formData: FormData) {
     );
   }
 
-  const rows = ((data ?? []) as Array<{
+  const ordered = ((data ?? []) as Array<{
     id: string;
     name: string;
-    sort_order: number;
-  }>).map((row) => ({
-    id: row.id,
-    name: row.name,
-    sort_order: Number(row.sort_order ?? 0),
-  }));
+    sort_order: number | null;
+  }>)
+    .map((row) => ({
+      id: row.id,
+      name: row.name,
+      sort_order: Number(row.sort_order ?? 0),
+    }))
+    .sort(compareSortable);
 
-  const result = await swapSortOrder({
-    supabase,
-    table: "accounts",
-    budgetId: budget.id,
-    rows,
-    targetId: accountId,
-    direction: direction as "up" | "down",
-  });
-  if (!result.ok) {
-    redirectWithError("/accounts", result.error);
+  const from = ordered.findIndex((row) => row.id === accountId);
+  const to = ordered.findIndex((row) => row.id === neighborId);
+  if (from < 0 || to < 0) {
+    redirectWithError("/accounts", "Account not found.");
+  }
+
+  // Move the account to its on-screen neighbor’s slot, then renumber 0..n-1.
+  const [moved] = ordered.splice(from, 1);
+  ordered.splice(to, 0, moved);
+
+  for (let i = 0; i < ordered.length; i += 1) {
+    const { data: updated, error: updateError } = await supabase
+      .from("accounts")
+      .update({ sort_order: i })
+      .eq("budget_id", budget.id)
+      .eq("id", ordered[i].id)
+      .select("id")
+      .maybeSingle();
+    if (updateError) {
+      redirectWithError(
+        "/accounts",
+        /sort_order|schema cache|column/i.test(updateError.message)
+          ? "Run the accounts sort_order migration in Supabase to reorder accounts."
+          : "Could not update account order.",
+      );
+    }
+    if (!updated) {
+      redirectWithError("/accounts", "Could not update account order.");
+    }
   }
 
   revalidatePath("/accounts");
+  redirect("/accounts");
 }
 
 export async function setAccountIncludeInTotalAction(formData: FormData) {
@@ -1321,6 +1349,9 @@ export async function createTransactionAction(formData: FormData) {
   revalidatePath(`/accounts/${accountId}`);
   revalidatePath("/accounts");
   revalidatePath("/budget");
+  redirect(
+    `/accounts/${accountId}?notice=${encodeURIComponent("Transaction Saved")}`,
+  );
 }
 
 export async function setAccountBalanceAction(formData: FormData) {

@@ -97,6 +97,11 @@ export function AccountsList({
             <div className="flex shrink-0 gap-1">
               <form action={reorderAccountAction}>
                 <input type="hidden" name="account_id" value={account.id} />
+                <input
+                  type="hidden"
+                  name="neighbor_id"
+                  value={index > 0 ? accounts[index - 1]!.id : ""}
+                />
                 <input type="hidden" name="direction" value="up" />
                 <PendingSubmitButton
                   pendingLabel="…"
@@ -109,6 +114,13 @@ export function AccountsList({
               </form>
               <form action={reorderAccountAction}>
                 <input type="hidden" name="account_id" value={account.id} />
+                <input
+                  type="hidden"
+                  name="neighbor_id"
+                  value={
+                    index < accounts.length - 1 ? accounts[index + 1]!.id : ""
+                  }
+                />
                 <input type="hidden" name="direction" value="down" />
                 <PendingSubmitButton
                   pendingLabel="…"
