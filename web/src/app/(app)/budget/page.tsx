@@ -1,8 +1,6 @@
-import { AddCategoryForm } from "@/components/AddCategoryForm";
 import { AppShell } from "@/components/AppShell";
 import { BudgetCalendarPicker } from "@/components/BudgetCalendarPicker";
-import { BudgetManager } from "@/components/BudgetManager";
-import { BudgetOverview } from "@/components/BudgetOverview";
+import { BudgetLiveView } from "@/components/BudgetLiveView";
 import { BudgetSnapshotPanel } from "@/components/BudgetSnapshotPanel";
 import { FlashError } from "@/components/FlashError";
 import { getBudgetRows, getBudgetSnapshot } from "@/lib/budget-data";
@@ -10,7 +8,6 @@ import {
   currentBudgetMonth,
   formatBudgetDate,
   formatBudgetMonth,
-  formatCents,
   isBudgetMonth,
   isValidIsoDate,
 } from "@/lib/money";
@@ -99,37 +96,19 @@ export default async function BudgetPage({
   const assignedCents = params.assigned ? Number(params.assigned) : null;
 
   return (
-    <AppShell
-      title="Budget"
-      subtitle={
-        <BudgetCalendarPicker
-          selectedAs={null}
-          currentMonth={liveMonth}
-          buttonLabel={formatBudgetMonth(month)}
-        />
+    <BudgetLiveView
+      month={month}
+      liveMonth={liveMonth}
+      groups={groups}
+      allGroups={allGroups}
+      rows={rows}
+      readyToAssignCents={readyToAssignCents}
+      error={params.error}
+      assignedCents={
+        assignedCents != null && Number.isFinite(assignedCents)
+          ? assignedCents
+          : null
       }
-    >
-      <FlashError message={params.error} />
-      {assignedCents != null && Number.isFinite(assignedCents) ? (
-        <FlashError
-          tone="success"
-          message={`Auto-assigned ${formatCents(assignedCents)} across categories.`}
-        />
-      ) : null}
-      <BudgetOverview
-        month={month}
-        rows={rows}
-        readyToAssignCents={readyToAssignCents}
-      />
-
-      <section className="animate-rise-delay mt-4">
-        <BudgetManager month={month} groups={groups} />
-      </section>
-
-      <section className="card-surface mt-4 rounded-2xl p-4">
-        <h2 className="font-display text-base font-bold text-ink-900">Add category</h2>
-        <AddCategoryForm groups={allGroups} />
-      </section>
-    </AppShell>
+    />
   );
 }
