@@ -67,17 +67,24 @@ export function AccountsList({
     setError(null);
 
     startTransition(async () => {
-      const result = await reorderAccountsAction(next.map((row) => row.id));
-      if (!result.ok) {
+      try {
+        const result = await reorderAccountsAction(next.map((row) => row.id));
+        if (!result?.ok) {
+          setOptimistic(null);
+          setError(result?.error || "Could not save account order.");
+          return;
+        }
+        notifyChange();
+        // Hard navigation guarantees a fresh server read of sort_order after save.
+        window.location.assign(
+          `/accounts?notice=${encodeURIComponent("Account order updated")}`,
+        );
+      } catch (err) {
         setOptimistic(null);
-        setError(result.error);
-        return;
+        setError(
+          err instanceof Error ? err.message : "Could not save account order.",
+        );
       }
-      notifyChange();
-      router.replace(
-        `/accounts?notice=${encodeURIComponent("Account order updated")}`,
-      );
-      router.refresh();
     });
   }
 

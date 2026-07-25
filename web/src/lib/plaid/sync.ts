@@ -261,27 +261,50 @@ export async function ensureLocalAccountsForItem(
           account.mask ? ` ·${account.mask}` : ""
         }`;
 
-      const { data: created, error } = await supabase
+      const { data: maxSort } = await supabase
+        .from("accounts")
+        .select("sort_order")
+        .eq("budget_id", args.budgetId)
+        .order("sort_order", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const nextSortOrder = Number(maxSort?.sort_order ?? -1) + 1;
+      const baseRow = {
+        user_id: args.userId,
+        budget_id: args.budgetId,
+        name: name.slice(0, 80),
+        account_type: mapPlaidAccountType(account.type, account.subtype),
+        currency: (account.balances.iso_currency_code || "USD").toUpperCase(),
+      };
+
+      let created: { id: string } | null = null;
+      let error: { message: string } | null = null;
+      ({ data: created, error } = await supabase
         .from("accounts")
         .insert({
-          user_id: args.userId,
-          budget_id: args.budgetId,
-          name: name.slice(0, 80),
-          account_type: mapPlaidAccountType(account.type, account.subtype),
-          currency: (account.balances.iso_currency_code || "USD").toUpperCase(),
+          ...baseRow,
+          include_in_total: true,
+          sort_order: nextSortOrder,
         })
         .select("id")
-        .single();
+        .single());
+
+      if (error && /include_in_total|sort_order|schema cache|column/i.test(error.message)) {
+        ({ data: created, error } = await supabase
+          .from("accounts")
+          .insert(baseRow)
+          .select("id")
+          .single());
+      }
 
       if (error || !created) {
         const { data: retry } = await supabase
           .from("accounts")
           .insert({
-            user_id: args.userId,
-            budget_id: args.budgetId,
+            ...baseRow,
             name: `${name.slice(0, 60)} (${account.account_id.slice(-6)})`,
-            account_type: mapPlaidAccountType(account.type, account.subtype),
-            currency: (account.balances.iso_currency_code || "USD").toUpperCase(),
+            include_in_total: true,
+            sort_order: nextSortOrder,
           })
           .select("id")
           .single();
