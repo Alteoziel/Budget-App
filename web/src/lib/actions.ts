@@ -1349,6 +1349,9 @@ export async function createTransactionAction(formData: FormData) {
   revalidatePath(`/accounts/${accountId}`);
   revalidatePath("/accounts");
   revalidatePath("/budget");
+  redirect(
+    `/accounts/${accountId}?notice=${encodeURIComponent("Transaction Saved")}`,
+  );
 }
 
 export async function setAccountBalanceAction(formData: FormData) {
