@@ -4,6 +4,7 @@ import { requireBudget } from "@/lib/budget-context";
 import {
   budgetMonthDateRange,
   budgetMonthFromDate,
+  computeReadyToAssignCents,
   currentBudgetMonth,
   formatBudgetDate,
   formatBudgetMonth,
@@ -117,11 +118,17 @@ export const getBudgetRows = cache(async (month = currentBudgetMonth()): Promise
   const range = budgetMonthDateRange(month);
   if (!range) return { month, rows: [], readyToAssignCents: 0, groups: [] };
 
+  const liveMonth = currentBudgetMonth();
+  // Current and future months share one Ready to assign pool; money assigned to
+  // any later month is already spoken for and must reduce RTA here.
+  const includeFutureAssignments = month >= liveMonth;
+
   const [
     groupsRes,
     categoriesLoaded,
     assignmentsRes,
     priorAssignmentsRes,
+    futureAssignmentsRes,
     txnsRes,
     priorTxnsRes,
   ] = await Promise.all([
@@ -142,6 +149,13 @@ export const getBudgetRows = cache(async (month = currentBudgetMonth()): Promise
       .select("category_id,assigned_cents")
       .eq("budget_id", budget.id)
       .lt("month", month),
+    includeFutureAssignments
+      ? supabase
+          .from("category_months")
+          .select("assigned_cents")
+          .eq("budget_id", budget.id)
+          .gt("month", month)
+      : Promise.resolve({ data: [] as Array<{ assigned_cents: number }>, error: null }),
     supabase
       .from("transactions")
       .select("category_id,amount_cents,occurred_on")
@@ -162,6 +176,7 @@ export const getBudgetRows = cache(async (month = currentBudgetMonth()): Promise
   assertNoError(categoriesError, "Failed to load categories");
   assertNoError(assignmentsRes.error, "Failed to load assignments");
   assertNoError(priorAssignmentsRes.error, "Failed to load prior assignments");
+  assertNoError(futureAssignmentsRes.error, "Failed to load future assignments");
   assertNoError(txnsRes.error, "Failed to load transactions");
   assertNoError(priorTxnsRes.error, "Failed to load prior transactions");
 
@@ -169,6 +184,7 @@ export const getBudgetRows = cache(async (month = currentBudgetMonth()): Promise
   const categories = categoriesData;
   const assignments = assignmentsRes.data;
   const priorAssignments = priorAssignmentsRes.data;
+  const futureAssignments = futureAssignmentsRes.data;
   const txns = txnsRes.data;
   const priorTxns = priorTxnsRes.data;
 
@@ -221,6 +237,12 @@ export const getBudgetRows = cache(async (month = currentBudgetMonth()): Promise
     (sum, row) => sum + (row.assigned_cents as number),
     0,
   );
+  const futureAssignedTotal = includeFutureAssignments
+    ? (futureAssignments ?? []).reduce(
+        (sum, row) => sum + (row.assigned_cents as number),
+        0,
+      )
+    : 0;
 
   const rows: BudgetRow[] = ((categories as CategoryRecord[] | null) ?? [])
     .filter((c) => !c.hidden)
@@ -262,8 +284,13 @@ export const getBudgetRows = cache(async (month = currentBudgetMonth()): Promise
       return a.categoryName.localeCompare(b.categoryName);
     });
 
-  const readyToAssignCents =
-    uncategorizedPrior - priorAssignedTotal + uncategorizedCurrent - totalAssigned;
+  const readyToAssignCents = computeReadyToAssignCents({
+    uncategorizedPrior,
+    uncategorizedCurrent,
+    priorAssignedTotal,
+    totalAssigned,
+    futureAssignedTotal,
+  });
 
   return {
     month,
@@ -513,8 +540,12 @@ export const getBudgetSnapshot = cache(async (as: string): Promise<BudgetSnapsho
     (sum, row) => sum + (row.amount_cents as number),
     0,
   );
-  const readyToAssignCents =
-    uncategorizedPrior - priorAssignedTotal + uncategorizedCurrent - totalAssigned;
+  const readyToAssignCents = computeReadyToAssignCents({
+    uncategorizedPrior,
+    uncategorizedCurrent,
+    priorAssignedTotal,
+    totalAssigned,
+  });
 
   return {
     kind: isDay ? "day" : "month",

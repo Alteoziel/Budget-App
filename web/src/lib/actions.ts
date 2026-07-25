@@ -5,11 +5,13 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import {
+  budgetPagePath,
   currentBudgetMonth,
   dollarsToCents,
   formatCents,
   isBudgetMonth,
   isValidIsoDate,
+  maxAssignableBudgetMonth,
 } from "@/lib/money";
 import { distributeByPercent } from "@/lib/auto-assign";
 import { getBudgetRows } from "@/lib/budget-data";
@@ -1130,7 +1132,7 @@ async function upsertAssignedCents(options: {
     { onConflict: "budget_id,month" },
   );
   if (monthUpsert.error) {
-    redirectWithError("/budget", "Could not save budget month.");
+    budgetError(options.month, "Could not save budget month.");
   }
 
   const { error } = await options.supabase.from("category_months").upsert(
@@ -1145,8 +1147,17 @@ async function upsertAssignedCents(options: {
     { onConflict: "budget_id,category_id,month" },
   );
   if (error) {
-    redirectWithError("/budget", "Could not save assignment.");
+    budgetError(options.month, "Could not save assignment.");
   }
+}
+
+function budgetError(month: string, message: string): never {
+  redirect(
+    budgetPagePath({
+      month,
+      error: message,
+    }),
+  );
 }
 
 /** One amount box: +, −, set, auto:%, auto:# */
@@ -1156,9 +1167,16 @@ export async function categoryAmountAction(formData: FormData) {
   const month = String(formData.get("month") ?? currentBudgetMonth());
   const intent = String(formData.get("intent") ?? "");
   const amountRaw = String(formData.get("amount") ?? "").trim();
+  const liveMonth = currentBudgetMonth();
+  const maxFuture = maxAssignableBudgetMonth(liveMonth);
 
-  if (!categoryId || !isBudgetMonth(month)) {
-    redirectWithError("/budget", "Invalid assignment.");
+  if (
+    !categoryId ||
+    !isBudgetMonth(month) ||
+    month < liveMonth ||
+    (maxFuture != null && month > maxFuture)
+  ) {
+    budgetError(liveMonth, "Invalid assignment.");
   }
 
   const owned = await supabase
@@ -1168,13 +1186,13 @@ export async function categoryAmountAction(formData: FormData) {
     .eq("id", categoryId)
     .maybeSingle();
   if (!owned.data?.id) {
-    redirectWithError("/budget", "Category not found.");
+    budgetError(month, "Category not found.");
   }
 
   if (intent === "auto_percent") {
     const percent = Number(amountRaw);
     if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
-      redirectWithError("/budget", "Enter a percentage between 0 and 100.");
+      budgetError(month, "Enter a percentage between 0 and 100.");
     }
     const { error } = await supabase
       .from("categories")
@@ -1185,8 +1203,8 @@ export async function categoryAmountAction(formData: FormData) {
       .eq("budget_id", budget.id)
       .eq("id", categoryId);
     if (error) {
-      redirectWithError(
-        "/budget",
+      budgetError(
+        month,
         /assign_mode|assign_percent|column|schema cache/i.test(error.message)
           ? "Run the assign_fixed_cents migration in Supabase, then try again."
           : "Could not save auto:% rule.",
@@ -1199,7 +1217,7 @@ export async function categoryAmountAction(formData: FormData) {
   if (intent === "auto_fixed") {
     const cents = dollarsToCents(amountRaw || "0");
     if (cents === null || cents < 0) {
-      redirectWithError("/budget", "Enter a valid dollar amount for auto:#.");
+      budgetError(month, "Enter a valid dollar amount for auto:#.");
     }
     const { error } = await supabase
       .from("categories")
@@ -1210,8 +1228,8 @@ export async function categoryAmountAction(formData: FormData) {
       .eq("budget_id", budget.id)
       .eq("id", categoryId);
     if (error) {
-      redirectWithError(
-        "/budget",
+      budgetError(
+        month,
         /assign_mode|assign_fixed|column|schema cache/i.test(error.message)
           ? "Run the assign_fixed_cents migration in Supabase, then try again."
           : "Could not save auto:# rule.",
@@ -1223,7 +1241,7 @@ export async function categoryAmountAction(formData: FormData) {
 
   const delta = dollarsToCents(amountRaw || "0");
   if (delta === null) {
-    redirectWithError("/budget", "Enter a valid dollar amount.");
+    budgetError(month, "Enter a valid dollar amount.");
   }
 
   const currentRes = await supabase
@@ -1234,7 +1252,7 @@ export async function categoryAmountAction(formData: FormData) {
     .eq("month", month)
     .maybeSingle();
   if (currentRes.error) {
-    redirectWithError("/budget", "Could not load current assignment.");
+    budgetError(month, "Could not load current assignment.");
   }
   const current = Number(currentRes.data?.assigned_cents ?? 0);
 
@@ -1242,7 +1260,7 @@ export async function categoryAmountAction(formData: FormData) {
   if (intent === "add") next = current + delta;
   else if (intent === "sub") next = current - delta;
   else if (intent === "set") next = delta;
-  else redirectWithError("/budget", "Unknown amount action.");
+  else budgetError(month, "Unknown amount action.");
 
   await upsertAssignedCents({
     supabase,
@@ -1276,14 +1294,20 @@ export async function setCategoryAssignPercentAction(formData: FormData) {
 export async function autoAssignAction(formData: FormData) {
   const { supabase, user, budget } = await requireBudget("editor");
   const month = String(formData.get("month") ?? currentBudgetMonth());
-  if (!isBudgetMonth(month)) {
-    redirectWithError("/budget", "Invalid month.");
+  const liveMonth = currentBudgetMonth();
+  const maxFuture = maxAssignableBudgetMonth(liveMonth);
+  if (
+    !isBudgetMonth(month) ||
+    month < liveMonth ||
+    (maxFuture != null && month > maxFuture)
+  ) {
+    budgetError(liveMonth, "Invalid month.");
   }
 
   const { readyToAssignCents, rows } = await getBudgetRows(month);
   if (readyToAssignCents <= 0) {
-    redirectWithError(
-      "/budget",
+    budgetError(
+      month,
       "Ready to assign is not positive. Use Fix Now to cover the shortfall first.",
     );
   }
@@ -1298,10 +1322,10 @@ export async function autoAssignAction(formData: FormData) {
     })),
   );
   if (distError) {
-    redirectWithError("/budget", distError);
+    budgetError(month, distError);
   }
   if (totalAdded <= 0) {
-    redirectWithError("/budget", "Nothing to auto-assign.");
+    budgetError(month, "Nothing to auto-assign.");
   }
 
   const touchedCategoryIds = assignments
@@ -1319,7 +1343,7 @@ export async function autoAssignAction(formData: FormData) {
     { onConflict: "budget_id,month" },
   );
   if (monthUpsert.error) {
-    redirectWithError("/budget", "Could not save budget month.");
+    budgetError(month, "Could not save budget month.");
   }
 
   for (const assignment of assignments) {
@@ -1336,7 +1360,7 @@ export async function autoAssignAction(formData: FormData) {
       { onConflict: "budget_id,category_id,month" },
     );
     if (error) {
-      redirectWithError("/budget", "Auto-assign failed partway — try again.");
+      budgetError(month, "Auto-assign failed partway — try again.");
     }
   }
 
@@ -1370,7 +1394,7 @@ export async function autoAssignAction(formData: FormData) {
 
   revalidatePath("/budget");
   revalidatePath("/settings");
-  redirect(`/budget?assigned=${totalAdded}`);
+  redirect(budgetPagePath({ month, assigned: totalAdded }));
 }
 
 const MONEY_EXCHANGES_ACCOUNT = "Money Exchanges";

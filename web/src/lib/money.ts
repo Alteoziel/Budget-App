@@ -94,6 +94,69 @@ export function nextBudgetMonth(month: string): string | null {
   return `${yearStr}-${String(m + 1).padStart(2, "0")}`;
 }
 
+/** How many months ahead users can open and assign into from Ready to assign. */
+export const MAX_FUTURE_BUDGET_MONTHS = 24;
+
+/** Add (or subtract) whole months from a YYYY-MM key. */
+export function addBudgetMonths(month: string, delta: number): string | null {
+  if (!isBudgetMonth(month) || !Number.isInteger(delta)) return null;
+  const [yearStr, monthStr] = month.split("-");
+  const monthIndex = Number(yearStr) * 12 + (Number(monthStr) - 1) + delta;
+  if (monthIndex < 0) return null;
+  const year = Math.floor(monthIndex / 12);
+  const m = (monthIndex % 12) + 1;
+  return `${year}-${String(m).padStart(2, "0")}`;
+}
+
+/** Latest YYYY-MM that can be opened for future-month assigning. */
+export function maxAssignableBudgetMonth(
+  from = currentBudgetMonth(),
+  monthsAhead = MAX_FUTURE_BUDGET_MONTHS,
+): string | null {
+  return addBudgetMonths(from, monthsAhead);
+}
+
+/**
+ * Ready to assign for a month.
+ * When `futureAssignedTotal` is included (current/future months), money already
+ * put toward later months comes out of this pool.
+ */
+export function computeReadyToAssignCents(input: {
+  uncategorizedPrior: number;
+  uncategorizedCurrent: number;
+  priorAssignedTotal: number;
+  totalAssigned: number;
+  futureAssignedTotal?: number;
+}): number {
+  return (
+    input.uncategorizedPrior -
+    input.priorAssignedTotal +
+    input.uncategorizedCurrent -
+    input.totalAssigned -
+    (input.futureAssignedTotal ?? 0)
+  );
+}
+
+/** Budget URL that keeps a non-current month selected via `?as=`. */
+export function budgetPagePath(options?: {
+  month?: string | null;
+  error?: string;
+  assigned?: string | number;
+}): string {
+  const params = new URLSearchParams();
+  const live = currentBudgetMonth();
+  const month = options?.month;
+  if (month && isBudgetMonth(month) && month !== live) {
+    params.set("as", month);
+  }
+  if (options?.error) params.set("error", options.error);
+  if (options?.assigned != null && options.assigned !== "") {
+    params.set("assigned", String(options.assigned));
+  }
+  const query = params.toString();
+  return query ? `/budget?${query}` : "/budget";
+}
+
 /** YYYY-MM containing an ISO date. */
 export function budgetMonthFromDate(date: string): string | null {
   if (!isValidIsoDate(date)) return null;

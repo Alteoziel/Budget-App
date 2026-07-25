@@ -5,14 +5,17 @@ import { Money } from "@/components/Money";
 import { OverspentFixer, type FixerStage } from "@/components/OverspentFixer";
 import { PendingSubmitButton } from "@/components/PendingSubmitButton";
 import { autoAssignAction } from "@/lib/actions";
+import { formatBudgetMonth } from "@/lib/money";
 import type { BudgetRow } from "@/lib/types";
 
 export function BudgetOverview({
   month,
+  liveMonth,
   rows,
   readyToAssignCents,
 }: {
   month: string;
+  liveMonth: string;
   rows: BudgetRow[];
   readyToAssignCents: number;
 }) {
@@ -20,6 +23,7 @@ export function BudgetOverview({
   const shortfall = readyToAssignCents < 0;
   const canAutoAssign = readyToAssignCents > 0;
   const canFix = shortfall || rows.some((row) => row.availableCents < 0);
+  const isFutureMonth = month > liveMonth;
   // Sticky only when there’s money left to assign (skip transform animation —
   // it breaks position: sticky).
   const stickyReady = canAutoAssign;
@@ -50,6 +54,11 @@ export function BudgetOverview({
           <p className="font-display text-2xl font-bold leading-tight">
             <Money cents={readyToAssignCents} className="text-inherit" />
           </p>
+          {isFutureMonth ? (
+            <p className="mt-0.5 text-[11px] font-semibold opacity-75">
+              From {formatBudgetMonth(liveMonth)}
+            </p>
+          ) : null}
         </div>
 
         {canAutoAssign ? (

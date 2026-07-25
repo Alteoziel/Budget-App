@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
 import {
+  addBudgetMonths,
   budgetMonthDateRange,
   budgetMonthFromDate,
+  budgetPagePath,
+  computeReadyToAssignCents,
+  currentBudgetMonth,
   dollarsToCents,
   formatBudgetDate,
   isBudgetMonth,
   isValidIsoDate,
+  maxAssignableBudgetMonth,
   nextBudgetMonth,
   previousBudgetMonth,
 } from "@/lib/money";
@@ -50,5 +55,51 @@ assert.equal(nextBudgetMonth("2026-13"), null);
 assert.equal(budgetMonthFromDate("2026-07-15"), "2026-07");
 assert.equal(budgetMonthFromDate("2026-13-01"), null);
 assert.equal(formatBudgetDate("2026-07-15"), "Jul 15, 2026");
+
+assert.equal(addBudgetMonths("2026-07", 1), "2026-08");
+assert.equal(addBudgetMonths("2026-12", 1), "2027-01");
+assert.equal(addBudgetMonths("2026-01", -1), "2025-12");
+assert.equal(addBudgetMonths("2026-07", 24), "2028-07");
+assert.equal(addBudgetMonths("2026-13", 1), null);
+
+assert.equal(maxAssignableBudgetMonth("2026-07", 24), "2028-07");
+assert.equal(maxAssignableBudgetMonth("2026-07", 1), "2026-08");
+
+// Assigning to a future month reduces Ready to assign by that amount.
+assert.equal(
+  computeReadyToAssignCents({
+    uncategorizedPrior: 0,
+    uncategorizedCurrent: 50_000,
+    priorAssignedTotal: 0,
+    totalAssigned: 10_000,
+    futureAssignedTotal: 15_000,
+  }),
+  25_000,
+);
+
+assert.equal(
+  computeReadyToAssignCents({
+    uncategorizedPrior: 100_000,
+    uncategorizedCurrent: 0,
+    priorAssignedTotal: 40_000,
+    totalAssigned: 20_000,
+  }),
+  40_000,
+);
+
+const liveMonth = currentBudgetMonth();
+const futureMonth = nextBudgetMonth(liveMonth);
+assert.ok(futureMonth);
+assert.equal(budgetPagePath(), "/budget");
+assert.equal(budgetPagePath({ month: liveMonth }), "/budget");
+assert.equal(
+  budgetPagePath({ month: futureMonth, assigned: 1234 }),
+  `/budget?as=${futureMonth}&assigned=1234`,
+);
+assert.ok(
+  budgetPagePath({ month: futureMonth, error: "Nope" }).startsWith(
+    `/budget?as=${futureMonth}&error=`,
+  ),
+);
 
 console.log("money.test.ts: ok");
