@@ -41,7 +41,6 @@ export default async function AccountRegisterPage({
           balanceCents={balanceCents}
           categories={categories}
           today={today}
-          forceClosed={Boolean(query.notice)}
         />
 
         <section className="hero-panel animate-rise rounded-2xl px-4 py-4">

@@ -19,16 +19,13 @@ export function RegisterAccountMenu({
   balanceCents,
   categories,
   today,
-  /** When set (e.g. after save redirect), keep the menu collapsed. */
-  forceClosed = false,
 }: {
   accountId: string;
   balanceCents: number;
   categories: CategoryOption[];
   today: string;
-  forceClosed?: boolean;
 }) {
-  const [open, setOpen] = useState(!forceClosed);
+  const [open, setOpen] = useState(false);
   const [panel, setPanel] = useState<"add" | "balance">("add");
 
   return (
