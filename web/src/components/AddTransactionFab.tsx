@@ -55,7 +55,7 @@ export function AddTransactionFab({
               role="dialog"
               aria-modal="true"
               aria-labelledby={titleId}
-              className="relative z-10 max-h-[min(90vh,44rem)] w-full max-w-lg overflow-y-auto rounded-2xl bg-sand-50 p-4 shadow-xl ring-1 ring-ink-900/10"
+              className="relative z-10 max-h-[min(90vh,44rem)] w-full max-w-lg overflow-x-hidden overflow-y-auto rounded-2xl bg-sand-50 p-4 shadow-xl ring-1 ring-ink-900/10"
             >
               <div className="mb-3 flex items-start justify-between gap-3">
                 <h2 id={titleId} className="font-display text-xl font-bold text-ink-900">
