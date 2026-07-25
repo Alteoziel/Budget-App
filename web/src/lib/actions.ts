@@ -1739,19 +1739,25 @@ export async function approveTransactionMatchAction(formData: FormData) {
   const [manualRes, bankRes] = await Promise.all([
     supabase
       .from("transactions")
-      .select("id,category_id,payee,memo,amount_cents,occurred_on")
+      .select("id,account_id,category_id,payee,memo,amount_cents,occurred_on")
       .eq("budget_id", budget.id)
       .eq("id", suggestion.manual_transaction_id)
       .maybeSingle(),
     supabase
       .from("transactions")
-      .select("id,external_id,amount_cents,occurred_on,payee,cleared")
+      .select("id,account_id,external_id,amount_cents,occurred_on,payee,cleared")
       .eq("budget_id", budget.id)
       .eq("id", suggestion.bank_transaction_id)
       .maybeSingle(),
   ]);
 
-  if (!manualRes.data?.id || !bankRes.data?.id || !bankRes.data.external_id) {
+  if (
+    !manualRes.data?.id ||
+    !bankRes.data?.id ||
+    manualRes.data.account_id !== suggestion.account_id ||
+    bankRes.data.account_id !== suggestion.account_id ||
+    !bankRes.data.external_id?.startsWith("plaid:")
+  ) {
     redirectWithError(
       `/accounts/${accountId}`,
       "Linked transactions are missing. Deny this match or sync again.",

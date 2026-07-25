@@ -356,3 +356,89 @@ with check (
       and a.budget_id = teller_accounts.budget_id
   )
 );
+
+-- CHECKPOINT 4: match suggestions may reference only same-budget rows.
+delete from public.transaction_match_suggestions s
+where not exists (
+    select 1 from public.accounts a
+    where a.id = s.account_id and a.budget_id = s.budget_id
+  )
+  or not exists (
+    select 1 from public.transactions t
+    where t.id = s.manual_transaction_id
+      and t.budget_id = s.budget_id
+      and t.account_id = s.account_id
+  )
+  or not exists (
+    select 1 from public.transactions t
+    where t.id = s.bank_transaction_id
+      and t.budget_id = s.budget_id
+      and t.account_id = s.account_id
+  );
+
+create unique index if not exists transactions_budget_id_id_uidx
+  on public.transactions (budget_id, id);
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'suggestions_account_same_budget_fk'
+      and conrelid = 'public.transaction_match_suggestions'::regclass
+  ) then
+    alter table public.transaction_match_suggestions
+      add constraint suggestions_account_same_budget_fk
+      foreign key (budget_id, account_id)
+      references public.accounts (budget_id, id)
+      on delete cascade;
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'suggestions_manual_same_budget_fk'
+      and conrelid = 'public.transaction_match_suggestions'::regclass
+  ) then
+    alter table public.transaction_match_suggestions
+      add constraint suggestions_manual_same_budget_fk
+      foreign key (budget_id, manual_transaction_id)
+      references public.transactions (budget_id, id)
+      on delete cascade;
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'suggestions_bank_same_budget_fk'
+      and conrelid = 'public.transaction_match_suggestions'::regclass
+  ) then
+    alter table public.transaction_match_suggestions
+      add constraint suggestions_bank_same_budget_fk
+      foreign key (budget_id, bank_transaction_id)
+      references public.transactions (budget_id, id)
+      on delete cascade;
+  end if;
+end
+$$;
+
+drop policy if exists "transaction_match_suggestions_write"
+  on public.transaction_match_suggestions;
+create policy "transaction_match_suggestions_write"
+on public.transaction_match_suggestions for all
+using (public.has_budget_role(budget_id, 'editor'))
+with check (
+  public.has_budget_role(budget_id, 'editor')
+  and exists (
+    select 1 from public.accounts a
+    where a.id = transaction_match_suggestions.account_id
+      and a.budget_id = transaction_match_suggestions.budget_id
+  )
+  and exists (
+    select 1 from public.transactions t
+    where t.id = transaction_match_suggestions.manual_transaction_id
+      and t.budget_id = transaction_match_suggestions.budget_id
+      and t.account_id = transaction_match_suggestions.account_id
+  )
+  and exists (
+    select 1 from public.transactions t
+    where t.id = transaction_match_suggestions.bank_transaction_id
+      and t.budget_id = transaction_match_suggestions.budget_id
+      and t.account_id = transaction_match_suggestions.account_id
+  )
+);
