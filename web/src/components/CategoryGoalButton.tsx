@@ -1,7 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useId, useRef, useState, useTransition } from "react";
+import { createPortal } from "react-dom";
 import { clearCategoryGoalAction, setCategoryGoalAction } from "@/lib/actions";
 import { formatCents } from "@/lib/money";
 import type { BudgetRow, GoalFrequency } from "@/lib/types";
@@ -27,6 +28,8 @@ export function CategoryGoalButton({
   onExpandClick?: () => void;
 }) {
   const router = useRouter();
+  const titleId = useId();
+  const amountRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [amount, setAmount] = useState(
     row.goalCents == null ? "" : (row.goalCents / 100).toFixed(2),
@@ -42,6 +45,24 @@ export function CategoryGoalButton({
     hasGoal && row.goalCents! > 0
       ? Math.max(0, Math.min(100, (row.availableCents / row.goalCents!) * 100))
       : 0;
+
+  useEffect(() => {
+    if (!open) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    // Focus without scrolling the page (autoFocus would jump to the category).
+    amountRef.current?.focus({ preventScroll: true });
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
 
   function save() {
     setError(null);
@@ -78,6 +99,132 @@ export function CategoryGoalButton({
       router.refresh();
     });
   }
+
+  const dialog =
+    open && typeof document !== "undefined"
+      ? createPortal(
+          <div
+            className="fixed inset-0 z-[80] flex items-end justify-center bg-black/50 p-4 sm:items-center"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) setOpen(false);
+            }}
+          >
+            <div className="max-h-[min(90dvh,40rem)] w-full max-w-md overflow-y-auto rounded-3xl bg-sand-50 p-5 shadow-soft">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3
+                    id={titleId}
+                    className="font-display text-lg font-bold text-ink-900"
+                  >
+                    Goal for {row.categoryName}
+                  </h3>
+                  <p className="mt-1 text-xs text-ink-600">
+                    Everything here is optional. Leave the amount blank to remove
+                    the goal.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  className="min-h-11 shrink-0 px-2 text-sm font-semibold text-ink-600"
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="mt-4 space-y-3">
+                <label className="block text-sm font-semibold text-ink-700">
+                  Goal amount
+                  <input
+                    ref={amountRef}
+                    inputMode="decimal"
+                    value={amount}
+                    onChange={(event) => setAmount(event.target.value)}
+                    placeholder="250.00"
+                    className="mt-1 min-h-11 w-full touch-manipulation rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm outline-none ring-moss-400 focus:ring-2"
+                  />
+                </label>
+
+                <label className="block text-sm font-semibold text-ink-700">
+                  Goal name
+                  <input
+                    value={goalName}
+                    onChange={(event) => setGoalName(event.target.value)}
+                    placeholder="Weekly groceries"
+                    maxLength={120}
+                    className="mt-1 min-h-11 w-full touch-manipulation rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm outline-none ring-moss-400 focus:ring-2"
+                  />
+                </label>
+
+                <label className="block text-sm font-semibold text-ink-700">
+                  Frequency
+                  <select
+                    value={frequency}
+                    onChange={(event) =>
+                      setFrequency(event.target.value as GoalFrequency)
+                    }
+                    className="mt-1 min-h-11 w-full touch-manipulation rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm outline-none ring-moss-400 focus:ring-2"
+                  >
+                    {FREQUENCIES.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block text-sm font-semibold text-ink-700">
+                  Note
+                  <textarea
+                    value={note}
+                    onChange={(event) => setNote(event.target.value)}
+                    rows={3}
+                    maxLength={500}
+                    placeholder="Why this goal matters, or how you picked the number."
+                    className="mt-1 w-full touch-manipulation rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm outline-none ring-moss-400 focus:ring-2"
+                  />
+                </label>
+
+                <p className="text-xs text-ink-600">
+                  Activity this month: {formatCents(row.activityCents)} · Available:{" "}
+                  {formatCents(row.availableCents)}
+                </p>
+
+                {error ? (
+                  <p className="rounded-xl bg-coral-500/15 px-3 py-2 text-sm font-semibold text-coral-600">
+                    {error}
+                  </p>
+                ) : null}
+
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={save}
+                    disabled={pending}
+                    className="min-h-11 flex-1 rounded-2xl bg-moss-500 px-4 py-2 text-sm font-bold text-sand-50 disabled:opacity-60"
+                  >
+                    {pending ? "Saving…" : "Save goal"}
+                  </button>
+                  {hasGoal ? (
+                    <button
+                      type="button"
+                      onClick={clearGoal}
+                      disabled={pending}
+                      className="min-h-11 rounded-2xl border border-coral-400/40 px-4 py-2 text-sm font-bold text-coral-500"
+                    >
+                      Remove
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )
+      : null;
 
   return (
     <>
@@ -134,121 +281,7 @@ export function CategoryGoalButton({
           ) : null}
         </div>
       )}
-
-      {open ? (
-        <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-4 sm:items-center"
-          role="dialog"
-          aria-modal="true"
-          aria-label={`Goal for ${row.categoryName}`}
-        >
-          <div className="w-full max-w-md rounded-3xl bg-sand-50 p-5 shadow-soft">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h3 className="font-display text-lg font-bold text-ink-900">
-                  Goal for {row.categoryName}
-                </h3>
-                <p className="mt-1 text-xs text-ink-600">
-                  Everything here is optional. Leave the amount blank to remove the goal.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                className="min-h-11 shrink-0 px-2 text-sm font-semibold text-ink-600"
-              >
-                Close
-              </button>
-            </div>
-
-            <div className="mt-4 space-y-3">
-              <label className="block text-sm font-semibold text-ink-700">
-                Goal amount
-                <input
-                  autoFocus
-                  inputMode="decimal"
-                  value={amount}
-                  onChange={(event) => setAmount(event.target.value)}
-                  placeholder="250.00"
-                  className="mt-1 min-h-11 w-full touch-manipulation rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm outline-none ring-moss-400 focus:ring-2"
-                />
-              </label>
-
-              <label className="block text-sm font-semibold text-ink-700">
-                Goal name
-                <input
-                  value={goalName}
-                  onChange={(event) => setGoalName(event.target.value)}
-                  placeholder="Weekly groceries"
-                  maxLength={120}
-                  className="mt-1 min-h-11 w-full touch-manipulation rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm outline-none ring-moss-400 focus:ring-2"
-                />
-              </label>
-
-              <label className="block text-sm font-semibold text-ink-700">
-                Frequency
-                <select
-                  value={frequency}
-                  onChange={(event) =>
-                    setFrequency(event.target.value as GoalFrequency)
-                  }
-                  className="mt-1 min-h-11 w-full touch-manipulation rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm outline-none ring-moss-400 focus:ring-2"
-                >
-                  {FREQUENCIES.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="block text-sm font-semibold text-ink-700">
-                Note
-                <textarea
-                  value={note}
-                  onChange={(event) => setNote(event.target.value)}
-                  rows={3}
-                  maxLength={500}
-                  placeholder="Why this goal matters, or how you picked the number."
-                  className="mt-1 w-full touch-manipulation rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm outline-none ring-moss-400 focus:ring-2"
-                />
-              </label>
-
-              <p className="text-xs text-ink-600">
-                Activity this month: {formatCents(row.activityCents)} · Available:{" "}
-                {formatCents(row.availableCents)}
-              </p>
-
-              {error ? (
-                <p className="rounded-xl bg-coral-500/15 px-3 py-2 text-sm font-semibold text-coral-600">
-                  {error}
-                </p>
-              ) : null}
-
-              <div className="flex flex-wrap gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={save}
-                  disabled={pending}
-                  className="min-h-11 flex-1 rounded-2xl bg-moss-500 px-4 py-2 text-sm font-bold text-sand-50 disabled:opacity-60"
-                >
-                  {pending ? "Saving…" : "Save goal"}
-                </button>
-                {hasGoal ? (
-                  <button
-                    type="button"
-                    onClick={clearGoal}
-                    disabled={pending}
-                    className="min-h-11 rounded-2xl border border-coral-400/40 px-4 py-2 text-sm font-bold text-coral-500"
-                  >
-                    Remove
-                  </button>
-                ) : null}
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      {dialog}
     </>
   );
 }
