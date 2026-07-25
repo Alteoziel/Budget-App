@@ -247,7 +247,7 @@ export default async function SettingsPage({
         {canEdit ? (
           <SettingsCard
             title="Recent changes"
-            description="Review deletes and edits from the last 7 days and undo mistakes. Older history is permanently removed."
+            description="Review deletes, edits, and auto-assign runs from the last 7 days and undo mistakes. Older history is permanently removed."
           >
             <RecentChangesOverlay
               changes={recentChanges}
