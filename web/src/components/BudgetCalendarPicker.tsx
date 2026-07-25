@@ -105,13 +105,13 @@ export function BudgetCalendarPicker({
   const isLive = selectedAs == null;
 
   return (
-    <div ref={rootRef} className="relative inline-block">
+    <div ref={rootRef} className="relative z-50 inline-block">
       <button
         type="button"
         aria-expanded={open}
         aria-controls={panelId}
         onClick={toggleOpen}
-        className="inline-flex min-h-9 touch-manipulation items-center gap-1.5 rounded-xl border border-ink-900/10 bg-sand-50 px-3 py-1.5 text-sm font-semibold text-ink-700 shadow-sm transition hover:border-ink-900/20 hover:bg-white dark:bg-ink-50"
+        className="inline-flex min-h-9 touch-manipulation items-center gap-1.5 rounded-xl border border-ink-900/15 bg-sand-50 px-3 py-1.5 text-sm font-semibold text-ink-700 shadow-sm transition hover:border-ink-900/25 hover:bg-white dark:bg-ink-50"
       >
         <span>{buttonLabel}</span>
         <svg
@@ -131,7 +131,7 @@ export function BudgetCalendarPicker({
           id={panelId}
           role="dialog"
           aria-label="Choose a budget date"
-          className="card-surface absolute left-0 z-40 mt-2 w-[min(100vw-2rem,19rem)] rounded-2xl p-3 shadow-lg"
+          className="absolute left-0 z-50 mt-2 w-[min(100vw-2rem,19rem)] rounded-2xl border border-ink-900/20 bg-sand-50 p-3 shadow-soft ring-1 ring-ink-900/5 dark:bg-ink-50"
         >
           <div className="mb-2 flex items-center gap-1">
             <button
