@@ -23,6 +23,7 @@ import { getBudgetRows } from "@/lib/budget-data";
 import { requireBudget, setActiveBudgetId } from "@/lib/budget-context";
 import {
   clearPasswordResetGrant,
+  createRecoveryState,
   hasPasswordResetGrant,
 } from "@/lib/password-reset";
 import { hasRecentPrimarySignIn } from "@/lib/auth/reauth";
@@ -167,7 +168,11 @@ export async function requestPasswordResetAction(): Promise<
   }
 
   const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
-    redirectTo: absoluteUrl("/auth/callback?next=/settings/password"),
+    redirectTo: absoluteUrl(
+      `/auth/callback?next=/settings/password&recovery_state=${encodeURIComponent(
+        createRecoveryState(user.id),
+      )}`,
+    ),
   });
   if (error) return { ok: false, error: error.message };
   return {
@@ -183,8 +188,8 @@ export async function requestPasswordResetAction(): Promise<
 export async function updatePasswordAction(
   formData: FormData,
 ): Promise<{ ok: true; message: string } | { ok: false; error: string }> {
-  await requireUser();
-  if (!(await hasPasswordResetGrant())) {
+  const { user } = await requireUser();
+  if (!(await hasPasswordResetGrant(user.id))) {
     return {
       ok: false,
       error:
