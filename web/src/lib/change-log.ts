@@ -268,6 +268,7 @@ async function restoreCategoryDelete(
     goal_name: category.goal_name ?? "",
     goal_frequency: category.goal_frequency ?? "monthly",
     goal_note: category.goal_note ?? "",
+    goal_due_on: category.goal_due_on ?? null,
   };
 
   let { error } = await supabase.from("categories").upsert(payload, {
@@ -389,6 +390,7 @@ export async function restoreBudgetChange(
           goal_name: row.goal_name,
           goal_frequency: row.goal_frequency,
           goal_note: row.goal_note,
+          goal_due_on: row.goal_due_on ?? null,
         })
         .eq("budget_id", budgetId)
         .eq("id", String(row.id));

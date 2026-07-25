@@ -29,7 +29,7 @@ function assertNoError(error: { message: string } | null, label: string) {
 }
 
 const CATEGORY_COLUMNS =
-  "id,group_id,name,sort_order,hidden,budget_id,assign_percent,assign_mode,assign_fixed_cents,goal_cents,goal_name,goal_frequency,goal_note";
+  "id,group_id,name,sort_order,hidden,budget_id,assign_percent,assign_mode,assign_fixed_cents,goal_cents,goal_name,goal_frequency,goal_note,goal_due_on";
 
 type CategoryRecord = Category & {
   assign_percent?: number;
@@ -39,6 +39,7 @@ type CategoryRecord = Category & {
   goal_name?: string | null;
   goal_frequency?: string | null;
   goal_note?: string | null;
+  goal_due_on?: string | null;
 };
 
 function toAssignMode(value: unknown): AssignMode {
@@ -233,6 +234,7 @@ export const getBudgetRows = cache(async (month = currentBudgetMonth()): Promise
         goalName: category.goal_name ?? "",
         goalFrequency: toGoalFrequency(category.goal_frequency),
         goalNote: category.goal_note ?? "",
+        goalDueOn: category.goal_due_on ?? null,
       };
     })
     .sort((a, b) => {
@@ -477,6 +479,7 @@ export const getBudgetSnapshot = cache(async (as: string): Promise<BudgetSnapsho
         goalName: category.goal_name ?? "",
         goalFrequency: toGoalFrequency(category.goal_frequency),
         goalNote: category.goal_note ?? "",
+        goalDueOn: category.goal_due_on ?? null,
       };
     })
     .sort((a, b) => {

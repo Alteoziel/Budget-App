@@ -655,6 +655,8 @@ export async function setCategoryGoalAction(
     goalName: string;
     frequency: string;
     note: string;
+    dueOnEnabled?: boolean;
+    dueOn?: string;
   },
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const { supabase, budget } = await requireBudget("editor");
@@ -674,6 +676,15 @@ export async function setCategoryGoalAction(
     goalCents = parsed;
   }
 
+  let goalDueOn: string | null = null;
+  if (goalCents != null && input.dueOnEnabled) {
+    const dueOn = String(input.dueOn ?? "").trim();
+    if (!isValidIsoDate(dueOn)) {
+      return { ok: false, error: "Pick a valid due date, or turn due date off." };
+    }
+    goalDueOn = dueOn;
+  }
+
   const owned = await supabase
     .from("categories")
     .select("id")
@@ -682,16 +693,39 @@ export async function setCategoryGoalAction(
     .maybeSingle();
   if (!owned.data?.id) return { ok: false, error: "Category not found." };
 
-  const { error } = await supabase
+  const payload = {
+    goal_cents: goalCents,
+    goal_name: goalCents == null ? "" : input.goalName.trim().slice(0, 120),
+    goal_frequency: frequency,
+    goal_note: goalCents == null ? "" : input.note.trim().slice(0, 500),
+    goal_due_on: goalDueOn,
+  };
+
+  let { error } = await supabase
     .from("categories")
-    .update({
-      goal_cents: goalCents,
-      goal_name: input.goalName.trim().slice(0, 120),
-      goal_frequency: frequency,
-      goal_note: input.note.trim().slice(0, 500),
-    })
+    .update(payload)
     .eq("budget_id", budget.id)
     .eq("id", categoryId);
+
+  if (error && /goal_due_on|column|schema cache/i.test(error.message)) {
+    const withoutDue = {
+      goal_cents: payload.goal_cents,
+      goal_name: payload.goal_name,
+      goal_frequency: payload.goal_frequency,
+      goal_note: payload.goal_note,
+    };
+    ({ error } = await supabase
+      .from("categories")
+      .update(withoutDue)
+      .eq("budget_id", budget.id)
+      .eq("id", categoryId));
+    if (!error && goalDueOn) {
+      return {
+        ok: false,
+        error: "Run the goal due-date migration in Supabase, then try again.",
+      };
+    }
+  }
 
   if (error) {
     return {
@@ -715,6 +749,8 @@ export async function clearCategoryGoalAction(
     goalName: "",
     frequency: "monthly",
     note: "",
+    dueOnEnabled: false,
+    dueOn: "",
   });
 }
 
