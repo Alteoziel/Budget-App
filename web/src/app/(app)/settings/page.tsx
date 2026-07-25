@@ -442,7 +442,7 @@ export default async function SettingsPage({
         >
           <SettingsCard
             title="Bank sync (Plaid)"
-            description={`Environment: ${plaidEnv}. Start in sandbox, then switch Doppler when Plaid approves real institutions.`}
+            description={`Environment: ${plaidEnv}. Daily cron at 6:15 AM Mountain; if that misses, opening the app also catch-up syncs when the last sync is older than 16 hours.`}
           >
             {plaidReady ? (
               <PlaidLinkButton />

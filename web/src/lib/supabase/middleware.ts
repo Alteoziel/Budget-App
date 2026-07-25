@@ -24,6 +24,12 @@ export async function updateSession(request: NextRequest) {
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   const path = request.nextUrl.pathname;
 
+  // Cron must never hit auth/redirect logic (Vercel cron does not follow redirects
+  // and failed middleware often leaves no useful function logs).
+  if (path.startsWith("/api/cron/")) {
+    return supabaseResponse;
+  }
+
   // Fail closed: without Supabase env, only public routes are reachable.
   if (!url || !anonKey) {
     if (!isPublicPath(path)) {
@@ -58,7 +64,6 @@ export async function updateSession(request: NextRequest) {
   const isAuthRoute = path.startsWith("/login");
   const isInviteRoute = path.startsWith("/invite");
   const isAuthCallback = path.startsWith("/auth/");
-  const isCronRoute = path.startsWith("/api/cron/");
   const isPlaidWebhook = path.startsWith("/api/plaid/webhook");
   const isPublicAsset =
     path.startsWith("/_next") ||
@@ -72,7 +77,6 @@ export async function updateSession(request: NextRequest) {
     !isAuthRoute &&
     !isInviteRoute &&
     !isAuthCallback &&
-    !isCronRoute &&
     !isPlaidWebhook &&
     !isPublicAsset &&
     path !== "/"

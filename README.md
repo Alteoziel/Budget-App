@@ -53,7 +53,7 @@ This app is meant to run on **Vercel**. Secrets live in **Doppler** and sync int
 1. Import this GitHub repo
 2. Set **Root Directory** to `web`
 3. Deploy — env vars arrive from the Doppler sync (do not paste secrets into Vercel by hand)
-4. Cron: [`web/vercel.json`](web/vercel.json) hits `/api/cron/plaid-sync` daily at `15 12 * * *` UTC with `Authorization: Bearer CRON_SECRET` (Hobby allows one cron/day; on Pro you can restore morning+evening `15 0,12 * * *`)
+4. Cron: [`web/vercel.json`](web/vercel.json) hits `/api/cron/plaid-sync` daily at `15 12 * * *` UTC (6:15 AM Mountain) with `Authorization: Bearer CRON_SECRET`. The route bypasses auth middleware, retries once per item, and logs loudly. Opening the app also catch-up syncs when the last sync is older than 16 hours.
 
 Preview / production URLs come from Vercel after deploy.
 

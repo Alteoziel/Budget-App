@@ -1,9 +1,12 @@
+import { after } from "next/server";
 import { DesktopSideNav, MobileBottomNav } from "@/components/AppNav";
 import { AppLiveShell } from "@/components/AppLiveShell";
 import { AppOfflineShell } from "@/components/AppOfflineShell";
 import { BudgetSwitcher } from "@/components/BudgetSwitcher";
 import { CollaboratorsBadge } from "@/components/CollaboratorsBadge";
 import { listUserBudgets, resolveActiveBudget } from "@/lib/budget-context";
+import { catchUpStalePlaidSyncForBudget } from "@/lib/plaid/catch-up";
+import { plaidConfigured } from "@/lib/plaid/client";
 import { createClient } from "@/lib/supabase/server";
 
 /** Shared authenticated chrome — lives in the layout so tab switches reuse it. */
@@ -22,6 +25,15 @@ export async function AppChrome({ children }: { children: React.ReactNode }) {
       .eq("id", active.userId)
       .maybeSingle();
     displayName = profile?.display_name?.trim() || "You";
+
+    // If the daily cron missed, catch up after the page is sent so open-app
+    // still refreshes bank data without blocking navigation.
+    if (plaidConfigured()) {
+      const budgetId = active.budget.id;
+      after(() => {
+        void catchUpStalePlaidSyncForBudget(budgetId);
+      });
+    }
   }
 
   return (
