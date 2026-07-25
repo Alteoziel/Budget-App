@@ -27,17 +27,20 @@ function isAuthPublicPath(pathname: string): boolean {
 
 function hasGovernanceMachineAuth(req: NextRequest): boolean {
   const dashboard = process.env.GOVERNANCE_DASHBOARD_SECRET?.trim();
-  const reviewer =
-    process.env.GOVERNANCE_REVIEWER_SECRET?.trim() || dashboard;
+  const reviewer = process.env.GOVERNANCE_REVIEWER_SECRET?.trim();
   if (!dashboard && !reviewer) return false;
 
   const ingest = req.headers.get("x-governance-secret");
-  const review =
-    req.headers.get("x-governance-reviewer-secret") ||
-    req.headers.get("x-governance-secret");
+  const review = req.headers.get("x-governance-reviewer-secret");
 
   if (dashboard && secretsMatch(ingest, dashboard)) return true;
-  if (reviewer && secretsMatch(review, reviewer)) return true;
+  if (
+    reviewer &&
+    (!dashboard || !secretsMatch(reviewer, dashboard)) &&
+    secretsMatch(review, reviewer)
+  ) {
+    return true;
+  }
   return false;
 }
 
