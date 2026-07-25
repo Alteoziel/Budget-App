@@ -1,7 +1,11 @@
 name: FOSSA License Scan
 
+# Must stay on pull_request so the required check context "FOSSA License Scan"
+# reports on the PR head. pull_request_target only runs the workflow from the
+# base branch, which still expects the old FOSSA secret path and leaves this
+# required check stuck as "Expected — Waiting for status to be reported".
 on:
-  pull_request_target:
+  pull_request:
     branches: [main]
 
 permissions:
