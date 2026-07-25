@@ -2653,10 +2653,14 @@ export async function generateRoleInviteAction(
   | { ok: true; url: string; token: string; role: BudgetRole }
   | { ok: false; error: string }
 > {
-  const { supabase, user, budget } = await requireBudget("admin");
+  const { supabase, user, budget, role: callerRole } =
+    await requireBudget("admin");
   const role = roleInput as BudgetRole;
   if (!["owner", "admin", "editor", "viewer"].includes(role)) {
     return { ok: false, error: "Invalid role." };
+  }
+  if (role === "owner" && callerRole !== "owner") {
+    return { ok: false, error: "Only an owner can invite another owner." };
   }
 
   const token = createHash("sha256")
@@ -2697,9 +2701,19 @@ export async function createInviteLinkAction(formData: FormData) {
 }
 
 export async function revokeInviteAction(formData: FormData) {
-  const { supabase, budget } = await requireBudget("admin");
+  const { supabase, budget, role: callerRole } = await requireBudget("admin");
   const inviteId = String(formData.get("invite_id") ?? "");
   if (!inviteId) redirectWithError("/settings", "Invite required.");
+  const { data: invite } = await supabase
+    .from("budget_invites")
+    .select("role")
+    .eq("id", inviteId)
+    .eq("budget_id", budget.id)
+    .maybeSingle();
+  if (!invite) redirectWithError("/settings", "Invite not found.");
+  if (invite.role === "owner" && callerRole !== "owner") {
+    redirectWithError("/settings", "Only an owner can revoke an owner invite.");
+  }
   const { data: updated, error } = await supabase
     .from("budget_invites")
     .update({ revoked_at: new Date().toISOString() })
@@ -2715,19 +2729,22 @@ export async function revokeInviteAction(formData: FormData) {
 }
 
 export async function deleteInviteAction(formData: FormData) {
-  const { supabase, budget } = await requireBudget("admin");
+  const { supabase, budget, role: callerRole } = await requireBudget("admin");
   const inviteId = String(formData.get("invite_id") ?? "").trim();
   if (!inviteId) redirectWithError("/settings", "Invite required.");
 
   const { data: invite, error: lookupError } = await supabase
     .from("budget_invites")
-    .select("id,revoked_at")
+    .select("id,role,revoked_at")
     .eq("id", inviteId)
     .eq("budget_id", budget.id)
     .maybeSingle();
 
   if (lookupError || !invite) {
     redirectWithError("/settings", "Invite not found.");
+  }
+  if (invite.role === "owner" && callerRole !== "owner") {
+    redirectWithError("/settings", "Only an owner can delete an owner invite.");
   }
   if (!invite.revoked_at) {
     redirectWithError(
@@ -2801,11 +2818,40 @@ export async function acceptInviteAction(formData: FormData) {
 }
 
 export async function updateMemberRoleAction(formData: FormData) {
-  const { supabase, budget } = await requireBudget("admin");
+  const { supabase, budget, role: callerRole } = await requireBudget("admin");
   const memberId = String(formData.get("member_id") ?? "");
   const role = String(formData.get("role") ?? "") as BudgetRole;
   if (!memberId || !["owner", "admin", "editor", "viewer"].includes(role)) {
     redirectWithError("/settings", "Invalid member update.");
+  }
+  const { data: target } = await supabase
+    .from("budget_members")
+    .select("id,role")
+    .eq("id", memberId)
+    .eq("budget_id", budget.id)
+    .maybeSingle();
+  if (!target) redirectWithError("/settings", "Member not found.");
+  if (
+    callerRole !== "owner" &&
+    (target.role === "owner" || role === "owner")
+  ) {
+    redirectWithError(
+      "/settings",
+      "Only an owner can grant or change owner access.",
+    );
+  }
+  if (target.role === "owner" && role !== "owner") {
+    const { count } = await supabase
+      .from("budget_members")
+      .select("id", { count: "exact", head: true })
+      .eq("budget_id", budget.id)
+      .eq("role", "owner");
+    if ((count ?? 0) <= 1) {
+      redirectWithError(
+        "/settings",
+        "Transfer ownership before changing the last owner.",
+      );
+    }
   }
   const { error } = await supabase
     .from("budget_members")
@@ -2817,11 +2863,22 @@ export async function updateMemberRoleAction(formData: FormData) {
 }
 
 export async function removeMemberAction(formData: FormData) {
-  const { supabase, user, budget } = await requireBudget("admin");
+  const { supabase, user, budget, role: callerRole } =
+    await requireBudget("admin");
   const memberUserId = String(formData.get("user_id") ?? "");
   if (!memberUserId) redirectWithError("/settings", "Member required.");
   if (memberUserId === user.id) {
     redirectWithError("/settings", "Use Leave budget to remove yourself.");
+  }
+  const { data: target } = await supabase
+    .from("budget_members")
+    .select("role")
+    .eq("budget_id", budget.id)
+    .eq("user_id", memberUserId)
+    .maybeSingle();
+  if (!target) redirectWithError("/settings", "Member not found.");
+  if (target.role === "owner" && callerRole !== "owner") {
+    redirectWithError("/settings", "Only an owner can remove another owner.");
   }
   const { error } = await supabase
     .from("budget_members")

@@ -21,7 +21,11 @@ async function shareInvite(url: string, role: string) {
   return false;
 }
 
-export function InviteRoleLink() {
+export function InviteRoleLink({
+  canInviteOwner = false,
+}: {
+  canInviteOwner?: boolean;
+}) {
   const [role, setRole] = useState<(typeof ROLES)[number]>("editor");
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -62,7 +66,7 @@ export function InviteRoleLink() {
           onChange={(e) => setRole(e.target.value as (typeof ROLES)[number])}
           className="mt-1 min-h-11 w-full touch-manipulation rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm"
         >
-          {ROLES.map((r) => (
+          {ROLES.filter((r) => canInviteOwner || r !== "owner").map((r) => (
             <option key={r} value={r}>
               {r}
             </option>

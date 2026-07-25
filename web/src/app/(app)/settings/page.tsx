@@ -307,7 +307,9 @@ export default async function SettingsPage({
                   </p>
                   <p className="text-xs text-ink-600">{m.role}</p>
                 </div>
-                {canAdmin && m.user_id !== user.id ? (
+                {canAdmin &&
+                m.user_id !== user.id &&
+                (isOwner || m.role !== "owner") ? (
                   <div className="flex flex-wrap gap-2">
                     <form action={updateMemberRoleAction} className="flex gap-1">
                       <input type="hidden" name="member_id" value={m.id} />
@@ -319,7 +321,7 @@ export default async function SettingsPage({
                         <option value="viewer">viewer</option>
                         <option value="editor">editor</option>
                         <option value="admin">admin</option>
-                        <option value="owner">owner</option>
+                        {isOwner ? <option value="owner">owner</option> : null}
                       </select>
                       <PendingSubmitButton
                         pendingLabel="…"
@@ -349,13 +351,15 @@ export default async function SettingsPage({
             title="Invite links"
             description="Create a role invite, revoke it when you’re done, then delete revoked links from history."
           >
-            <InviteRoleLink />
+            <InviteRoleLink canInviteOwner={isOwner} />
             <ul className="space-y-2 border-t border-ink-900/5 pt-4 text-xs text-ink-600">
               {(invites ?? []).length === 0 ? (
                 <li>No invite links yet.</li>
               ) : (
                 (invites ?? []).map((invite) => {
                   const revoked = Boolean(invite.revoked_at);
+                  const canManageInvite =
+                    isOwner || String(invite.role || "editor") !== "owner";
                   return (
                     <li
                       key={String(invite.id)}
@@ -371,7 +375,7 @@ export default async function SettingsPage({
                           ? ` · ${new Date(String(invite.created_at)).toLocaleDateString()}`
                           : ""}
                       </span>
-                      {revoked ? (
+                      {!canManageInvite ? null : revoked ? (
                         <form action={deleteInviteAction}>
                           <input type="hidden" name="invite_id" value={String(invite.id)} />
                           <PendingSubmitButton
