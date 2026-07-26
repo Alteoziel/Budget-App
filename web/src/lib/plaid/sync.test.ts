@@ -55,14 +55,19 @@ async function main() {
 
   const goodCipher = encryptSecret("access-sandbox-test-token");
 
+  function lastStatus(updates: Record<string, unknown>[]) {
+    const last = updates[updates.length - 1];
+    return last ? last["status"] : undefined;
+  }
+
   // Missing encryption key must not throw out to the RSC error boundary.
   const previousKey = process.env.BANK_TOKEN_ENCRYPTION_KEY;
   delete process.env.BANK_TOKEN_ENCRYPTION_KEY;
-  let markedError: Record<string, unknown> | null = null;
+  const missingKeyUpdates: Record<string, unknown>[] = [];
   const missingKeyResult = await syncPlaidItem(
     mockSupabase({
       onItemUpdate: (payload) => {
-        markedError = payload;
+        missingKeyUpdates.push(payload);
       },
     }),
     {
@@ -76,15 +81,15 @@ async function main() {
   assert.equal(missingKeyResult.inserted, 0);
   assert.equal(missingKeyResult.errors.length, 1);
   assert.match(missingKeyResult.errors[0]!, /BANK_TOKEN_ENCRYPTION_KEY/);
-  assert.equal(markedError?.status, "error");
+  assert.equal(lastStatus(missingKeyUpdates), "error");
   process.env.BANK_TOKEN_ENCRYPTION_KEY = previousKey;
 
   // Rotated / invalid ciphertext must return an error result, not throw.
-  markedError = null;
+  const badCipherUpdates: Record<string, unknown>[] = [];
   const badCipherResult = await syncPlaidItem(
     mockSupabase({
       onItemUpdate: (payload) => {
-        markedError = payload;
+        badCipherUpdates.push(payload);
       },
     }),
     {
@@ -97,18 +102,18 @@ async function main() {
   );
   assert.equal(badCipherResult.errors.length, 1);
   assert.ok(badCipherResult.errors[0]);
-  assert.equal(markedError?.status, "error");
+  assert.equal(lastStatus(badCipherUpdates), "error");
 
   // Valid ciphertext + missing Plaid API keys must also stay non-throwing.
   const previousClient = process.env.PLAID_CLIENT_ID;
   const previousSecret = process.env.PLAID_SECRET;
   delete process.env.PLAID_CLIENT_ID;
   delete process.env.PLAID_SECRET;
-  markedError = null;
+  const missingPlaidUpdates: Record<string, unknown>[] = [];
   const missingPlaidResult = await syncPlaidItem(
     mockSupabase({
       onItemUpdate: (payload) => {
-        markedError = payload;
+        missingPlaidUpdates.push(payload);
       },
     }),
     {
@@ -121,7 +126,7 @@ async function main() {
   );
   assert.equal(missingPlaidResult.errors.length, 1);
   assert.match(missingPlaidResult.errors[0]!, /PLAID_CLIENT_ID|PLAID_SECRET/);
-  assert.equal(markedError?.status, "error");
+  assert.equal(lastStatus(missingPlaidUpdates), "error");
   process.env.PLAID_CLIENT_ID = previousClient;
   process.env.PLAID_SECRET = previousSecret;
 
