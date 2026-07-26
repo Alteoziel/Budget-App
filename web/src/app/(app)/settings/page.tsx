@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
+import { FeedbackSettings } from "@/components/FeedbackSettings";
 import { FlashError } from "@/components/FlashError";
 import { ImportForm } from "@/components/ImportForm";
 import { InstallGuide } from "@/components/InstallGuide";
@@ -221,6 +222,18 @@ export default async function SettingsPage({
           description="End your session on this device."
         >
           <SecureSignOutButton />
+        </SettingsCard>
+      </SettingsCategory>
+
+      <SettingsCategory
+        title="Feedback"
+        description="Tell us what’s working, what’s broken, or what you want next."
+      >
+        <SettingsCard
+          title="Send a note"
+          description="Feedback, feature requests, and bug reports go to the app maintainers. Include enough detail that we can act on it."
+        >
+          <FeedbackSettings />
         </SettingsCard>
       </SettingsCategory>
 
