@@ -22,13 +22,11 @@ type GrantPurpose =
   | "login-approval-state";
 
 function signingSecret(): string {
-  const secret =
-    process.env.APP_SECURITY_SECRET ||
-    process.env.SUPABASE_SECRET_KEY ||
-    process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const secret = process.env.APP_SECURITY_SECRET;
   if (!secret) {
     throw new Error(
-      "Missing APP_SECURITY_SECRET (or a server-side Supabase secret fallback).",
+      "Missing APP_SECURITY_SECRET. Set a dedicated random secret in Doppler " +
+        "(do not reuse the Supabase service/secret key).",
     );
   }
   return secret;

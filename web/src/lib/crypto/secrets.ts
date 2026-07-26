@@ -3,15 +3,11 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 const AUTH_TAG_LENGTH = 16;
 
 function keyBytes(): Buffer {
-  const raw =
-    process.env.BANK_TOKEN_ENCRYPTION_KEY ||
-    process.env.PLAID_TOKEN_ENCRYPTION_KEY ||
-    process.env.TELLER_TOKEN_ENCRYPTION_KEY ||
-    process.env.CRON_SECRET ||
-    "";
+  const raw = process.env.BANK_TOKEN_ENCRYPTION_KEY || "";
   if (!raw) {
     throw new Error(
-      "Missing BANK_TOKEN_ENCRYPTION_KEY (or CRON_SECRET fallback) for token encryption.",
+      "Missing BANK_TOKEN_ENCRYPTION_KEY for token encryption. " +
+        "Set a dedicated random secret in Doppler (do not reuse CRON_SECRET).",
     );
   }
   return createHash("sha256").update(raw).digest();
@@ -47,9 +43,8 @@ export function decryptSecret(payload: string): string {
     { authTagLength: AUTH_TAG_LENGTH },
   );
   decipher.setAuthTag(tag);
-  const dec = Buffer.concat([
+  return Buffer.concat([
     decipher.update(Buffer.from(dataHex, "hex")),
     decipher.final(),
-  ]);
-  return dec.toString("utf8");
+  ]).toString("utf8");
 }

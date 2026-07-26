@@ -62,7 +62,7 @@ Alternative: use Snyk with your own workflow if preferred.
 Require:
 
 1. Pull request before merge
-2. Status checks: **`Governance Steps 1–5`**, **`Enterprise Layers B–E`**, **`CodeQL (Layer C)`**
+2. Status checks: **`Governance Steps 1–5`**, **`Enterprise Layers B–E`**, **`FOSSA License Scan`**, **`CodeQL (Layer C)`**
 3. Code Owner review
 4. Dismiss stale approvals
 5. Up-to-date branch before merge
@@ -93,17 +93,27 @@ Manage secrets in the **Doppler dashboard** and sync them to **Vercel**. No loca
 |--------|----------|-------|
 | `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Publishable anon key (RLS enforced) |
-| `SUPABASE_SERVICE_ROLE_KEY` | No | Server-only if needed later; never ship to client |
+| `SUPABASE_SECRET_KEY` (or legacy `SUPABASE_SERVICE_ROLE_KEY`) | Yes | Server-only; never ship to client |
+| `APP_SECURITY_SECRET` | Yes | Dedicated random value; do not reuse Supabase keys |
+| `BANK_TOKEN_ENCRYPTION_KEY` | Yes | Dedicated random value; do not reuse `CRON_SECRET` |
+| `CRON_SECRET` | Yes | Bearer for `/api/cron/plaid-sync` |
+| Plaid keys (`PLAID_*`) | If bank sync | From Plaid dashboard |
 
 Flow: Doppler dashboard → set secrets → **Integrations → Vercel** (`dev` / `preview` / `prd`).  
 Key list: [`web/doppler.secrets.example`](web/doppler.secrets.example).
 
-- [ ] Supabase migration applied (RLS on)
+**What “hardening migration” means:** run the SQL files under `supabase/migrations/` on your Supabase project (SQL editor or `supabase db push`). At minimum apply through:
+- `20260725190000_security_authorization_hardening.sql`
+- `20260726010000_publish_security_fixes.sql`
+
+- [ ] Supabase migrations applied (including hardening + publish-security-fixes)
+- [ ] Supabase Realtime **Allow public access** disabled
 - [ ] Supabase Passkeys enabled (Authentication → Passkeys) with correct RP ID/origins
 - [ ] `/auth/callback` allowed in Supabase redirect URLs
 - [ ] Doppler project + secrets created in the dashboard
 - [ ] Doppler → Vercel sync configured for Development / Preview / Production
 - [ ] Vercel project Root Directory = `web`
+- [ ] Protect Main requires **`CodeQL (Layer C)`**
 
 ---
 

@@ -1,6 +1,6 @@
 "use server";
 
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -2797,8 +2797,15 @@ export async function renameBudgetAction(formData: FormData) {
 export async function deleteBudgetAction(formData: FormData) {
   const { supabase, user, budget, role } = await requireBudget("owner");
   const confirmName = String(formData.get("confirm_name") ?? "").trim();
+  const confirmDelete = String(formData.get("confirm_delete") ?? "").trim();
   if (confirmName !== budget.name) {
     redirectWithError("/settings", "Type the budget name exactly to delete it.");
+  }
+  if (confirmDelete !== "DELETE") {
+    redirectWithError(
+      "/settings",
+      "Type DELETE in capitals to confirm permanent budget deletion.",
+    );
   }
   if (role !== "owner") {
     redirectWithError("/settings", "Only an owner can delete a budget.");
@@ -2816,7 +2823,9 @@ function hashInviteToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
-/** Role invite with unlimited uses. Returns a complete URL for the client UI. */
+const INVITE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** Single-use role invite that expires in 30 days. Returns a complete URL. */
 export async function generateRoleInviteAction(
   roleInput: string,
 ): Promise<
@@ -2833,10 +2842,7 @@ export async function generateRoleInviteAction(
     return { ok: false, error: "Only an owner can invite another owner." };
   }
 
-  const token = createHash("sha256")
-    .update(`${budget.id}:${user.id}:${Date.now()}:${Math.random()}`)
-    .digest("hex")
-    .slice(0, 48);
+  const token = randomBytes(32).toString("base64url");
   const tokenHash = hashInviteToken(token);
   const { error } = await supabase.from("budget_invites").insert({
     budget_id: budget.id,
@@ -2844,8 +2850,8 @@ export async function generateRoleInviteAction(
     kind: "role",
     role,
     created_by: user.id,
-    expires_at: null,
-    max_uses: null,
+    expires_at: new Date(Date.now() + INVITE_TTL_MS).toISOString(),
+    max_uses: 1,
   });
   if (error) return { ok: false, error: "Could not create invite link." };
 
@@ -2974,9 +2980,9 @@ export async function acceptInviteAction(formData: FormData) {
   const { supabase } = await requireUser();
   const token = String(formData.get("token") ?? "").trim();
   if (!token) redirectWithError("/login", "Invite token missing.");
-  const tokenHash = hashInviteToken(token);
+  // Server-side RPC hashes the raw token; clients never see or send token_hash.
   const { data, error } = await supabase.rpc("accept_budget_invite", {
-    p_token_hash: tokenHash,
+    p_token: token,
   });
   if (error) {
     redirectWithError(`/invite/${token}`, error.message);
@@ -3090,7 +3096,10 @@ export async function disconnectPlaidItemAction(formData: FormData) {
   const itemId = String(formData.get("item_id") ?? "");
   if (!itemId) redirectWithError("/settings", "Bank connection required.");
 
-  const { data: item } = await supabase
+  // Token ciphertext is not selectable via the user JWT; use service role after authz.
+  const { createServiceClient } = await import("@/lib/supabase/admin");
+  const admin = createServiceClient();
+  const { data: item } = await admin
     .from("plaid_items")
     .select("id,access_token_encrypted,status")
     .eq("id", itemId)
@@ -3135,11 +3144,13 @@ export async function disconnectPlaidItemAction(formData: FormData) {
 }
 
 export async function syncPlaidNowAction(formData: FormData) {
-  const { supabase, budget } = await requireBudget("admin");
+  const { budget } = await requireBudget("admin");
   const itemId = String(formData.get("item_id") ?? "");
   if (!itemId) redirectWithError("/settings", "Bank connection required.");
 
-  const { data: item, error } = await supabase
+  const { createServiceClient } = await import("@/lib/supabase/admin");
+  const admin = createServiceClient();
+  const { data: item, error } = await admin
     .from("plaid_items")
     .select("id,budget_id,access_token_encrypted,sync_cursor,created_by,status")
     .eq("id", itemId)
@@ -3152,8 +3163,8 @@ export async function syncPlaidNowAction(formData: FormData) {
 
   const { syncPlaidItem } = await import("@/lib/plaid/sync");
   const started = new Date().toISOString();
-  const result = await syncPlaidItem(supabase, item!);
-  await supabase.from("sync_runs").insert({
+  const result = await syncPlaidItem(admin, item!);
+  await admin.from("sync_runs").insert({
     budget_id: budget.id,
     plaid_item_id: item!.id,
     source: "manual",

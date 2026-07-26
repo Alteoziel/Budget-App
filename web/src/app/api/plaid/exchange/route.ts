@@ -3,6 +3,7 @@ import { resolveActiveBudget, roleAtLeast } from "@/lib/budget-context";
 import { encryptSecret } from "@/lib/crypto/secrets";
 import { getPlaidClient, plaidConfigured, plaidErrorMessage } from "@/lib/plaid/client";
 import { ensureLocalAccountsForItem, syncPlaidItem } from "@/lib/plaid/sync";
+import { createServiceClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { hasRecentPrimarySignIn } from "@/lib/auth/reauth";
 
@@ -63,7 +64,10 @@ export async function POST(req: Request) {
     const institutionName = body.institution?.name || "Linked bank";
     const institutionId = body.institution?.institution_id || null;
 
-    const { data: item, error: itemErr } = await supabase
+    // Persist ciphertext with service role so token columns stay non-selectable
+    // via the user JWT even for budget admins.
+    const admin = createServiceClient();
+    const { data: item, error: itemErr } = await admin
       .from("plaid_items")
       .upsert(
         {
@@ -89,7 +93,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const accounts = await ensureLocalAccountsForItem(supabase, {
+    const accounts = await ensureLocalAccountsForItem(admin, {
       budgetId: active.budget.id,
       userId: user.id,
       itemRowId: item.id,
@@ -98,8 +102,8 @@ export async function POST(req: Request) {
     });
 
     const started = new Date().toISOString();
-    const syncResult = await syncPlaidItem(supabase, item);
-    await supabase.from("sync_runs").insert({
+    const syncResult = await syncPlaidItem(admin, item);
+    await admin.from("sync_runs").insert({
       budget_id: active.budget.id,
       plaid_item_id: item.id,
       source: "manual",
