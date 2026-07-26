@@ -102,8 +102,8 @@ export default async function LoginPage({
 
         {!isSignup ? (
           <p className="mt-3 text-xs text-ink-600">
-            If this account already has a passkey, password sign-in sends an
-            email link you must open to finish logging in.
+            Sign in with a passkey or with your email and password — either
+            works.
           </p>
         ) : null}
 

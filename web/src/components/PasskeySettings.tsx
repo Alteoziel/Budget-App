@@ -50,8 +50,8 @@ export function PasskeySettings({
   return (
     <div className="space-y-3">
       <p className="text-sm text-ink-600">
-        Use Face ID, Touch ID, or a device PIN to sign in. If a passkey is set
-        up, signing in with your password instead sends an email approval link.
+        Use Face ID, Touch ID, or a device PIN to sign in. You can always use
+        your email and password instead.
       </p>
 
       {loadError ? (

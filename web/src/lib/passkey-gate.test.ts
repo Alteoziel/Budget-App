@@ -10,7 +10,7 @@ assert.deepEqual(
     passkeyCheckOk: true,
     next: "/budget",
   }),
-  { kind: "email_approval" },
+  { kind: "continue", next: "/budget" },
 );
 
 assert.deepEqual(

@@ -53,8 +53,8 @@ export function PasskeySetupPanel({ next }: { next: string }) {
       ) : null}
 
       <p className="text-xs text-ink-600">
-        After you set up a passkey, password sign-in will require an email
-        approval link for extra security.
+        You can still sign in with your email and password after setting up a
+        passkey.
       </p>
     </div>
   );
