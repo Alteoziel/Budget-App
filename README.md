@@ -25,6 +25,7 @@ PR quality gates from the governance stack stay in place.
 - YNAB register / Reflect **CSV import**
 - Plaid bank sync (Link + transactions sync) + daily Vercel Cron
 - Supabase Auth + budget-scoped RLS
+- Passkey (WebAuthn) sign-in; password fallback requires email approval once a passkey is enrolled
 - Installable PWA shell
 
 ## Quickstart — Alte' Budgeting (cloud only)
@@ -36,6 +37,7 @@ This app is meant to run on **Vercel**. Secrets live in **Doppler** and sync int
 1. Create a Supabase project
 2. Run **all** SQL files in [`supabase/migrations/`](supabase/migrations/) in order in the SQL editor (including multi-budget, Plaid, and assign-percent migrations). Skipping these causes logged-in pages to 500.
 3. Enable Email auth (password) under Authentication → Providers
+4. Enable **Passkeys** under Authentication → Passkeys (beta). Set Relying Party display name to `Alte' Budgeting`, RP ID to your app domain (e.g. `your-app.vercel.app`), and origins to your production/preview HTTPS URLs (plus `http://localhost:3000` for local). Also allow `/auth/callback` redirects under Authentication → URL Configuration.
 
 ### 2. Doppler (source of truth for secrets)
 

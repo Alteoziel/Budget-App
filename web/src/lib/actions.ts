@@ -21,12 +21,17 @@ import {
 } from "@/lib/auto-assign";
 import { getBudgetRows } from "@/lib/budget-data";
 import { requireBudget, setActiveBudgetId } from "@/lib/budget-context";
+import { hasRecentPrimarySignIn } from "@/lib/auth/reauth";
+import {
+  isPasskeyApiUnavailable,
+  resolvePasswordLoginGate,
+} from "@/lib/passkey-gate";
 import {
   clearPasswordResetGrant,
+  createLoginApprovalState,
   createRecoveryState,
   hasPasswordResetGrant,
 } from "@/lib/password-reset";
-import { hasRecentPrimarySignIn } from "@/lib/auth/reauth";
 import { safeInternalPath } from "@/lib/paths";
 import { absoluteUrl, siteOrigin } from "@/lib/site-url";
 import { createClient } from "@/lib/supabase/server";
@@ -95,6 +100,111 @@ function escapeIlikeExact(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
 }
 
+async function countUserPasskeys(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+): Promise<{ ok: true; count: number } | { ok: false }> {
+  try {
+    const { data, error } = await supabase.auth.passkey.list();
+    if (error) {
+      if (isPasskeyApiUnavailable(error)) return { ok: false };
+      return { ok: false };
+    }
+    return { ok: true, count: data?.length ?? 0 };
+  } catch (error) {
+    if (
+      isPasskeyApiUnavailable(
+        error instanceof Error ? { message: error.message } : null,
+      )
+    ) {
+      return { ok: false };
+    }
+    return { ok: false };
+  }
+}
+
+/**
+ * After password auth: offer passkey setup, or (if a passkey already exists)
+ * revoke the session and email a one-time approval link instead.
+ */
+async function finishPasswordAuth(options: {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  email: string;
+  next: string;
+  errorExtra?: string;
+}): Promise<never> {
+  const passkeys = await countUserPasskeys(options.supabase);
+  const gate = resolvePasswordLoginGate({
+    passkeyCount: passkeys.ok ? passkeys.count : null,
+    passkeyCheckOk: passkeys.ok,
+    next: options.next,
+  });
+
+  if (gate.kind === "email_approval") {
+    const {
+      data: { user },
+    } = await options.supabase.auth.getUser();
+
+    if (!siteOrigin()) {
+      await options.supabase.auth.signOut();
+      redirectWithError(
+        "/login",
+        "Site URL is not configured, so we can’t email a login approval link.",
+        options.errorExtra,
+      );
+    }
+    if (!user) {
+      await options.supabase.auth.signOut();
+      redirectWithError(
+        "/login",
+        "Could not verify the signed-in user.",
+        options.errorExtra,
+      );
+    }
+
+    let approvalState: string;
+    try {
+      approvalState = createLoginApprovalState(user.id);
+    } catch {
+      await options.supabase.auth.signOut();
+      redirectWithError(
+        "/login",
+        "Server security secret is not configured, so password fallback can’t be approved by email.",
+        options.errorExtra,
+      );
+    }
+
+    // Drop the password session immediately — email possession must finish login.
+    await options.supabase.auth.signOut();
+
+    const { error: otpError } = await options.supabase.auth.signInWithOtp({
+      email: options.email,
+      options: {
+        shouldCreateUser: false,
+        emailRedirectTo: absoluteUrl(
+          `/auth/callback?next=${encodeURIComponent(options.next)}&login_approval_state=${encodeURIComponent(approvalState)}`,
+        ),
+      },
+    });
+    if (otpError) {
+      redirectWithError("/login", otpError.message, options.errorExtra);
+    }
+
+    redirect(
+      `/login?notice=${encodeURIComponent(
+        "This account uses a passkey. Check your email and open the link to approve this password sign-in.",
+      )}${options.errorExtra ?? ""}`,
+    );
+  }
+
+  if (gate.kind === "passkey_setup") {
+    redirect(
+      `/passkey-setup?next=${encodeURIComponent(gate.next)}`,
+    );
+  }
+
+  redirect(gate.next);
+}
+
 export async function signInAction(formData: FormData) {
   const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
@@ -105,7 +215,7 @@ export async function signInAction(formData: FormData) {
   if (error) {
     redirectWithError("/login", error.message);
   }
-  redirect(next);
+  await finishPasswordAuth({ supabase, email, next });
 }
 
 export async function signUpAction(formData: FormData) {
@@ -115,7 +225,7 @@ export async function signUpAction(formData: FormData) {
   const next = safeInternalPath(String(formData.get("next") ?? "/budget"));
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.signUp({
+  const { data, error } = await supabase.auth.signUp({
     email,
     password,
     options: {
@@ -125,7 +235,20 @@ export async function signUpAction(formData: FormData) {
   if (error) {
     redirectWithError("/login", error.message, "&mode=signup");
   }
-  redirect(next);
+  // Email confirmation may leave the user without a session yet.
+  if (!data.session) {
+    redirect(
+      `/login?notice=${encodeURIComponent(
+        "Check your email to confirm your account, then sign in.",
+      )}&mode=signup`,
+    );
+  }
+  await finishPasswordAuth({
+    supabase,
+    email,
+    next,
+    errorExtra: "&mode=signup",
+  });
 }
 
 export async function signOutAction() {

@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { cache } from "react";
+import { supabaseAuthOptions } from "@/lib/supabase/auth-options";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 
 /** One Supabase server client per request (deduped across layout + pages). */
@@ -23,5 +24,6 @@ export const createClient = cache(async () => {
         }
       },
     },
+    auth: supabaseAuthOptions,
   });
 });

@@ -13,7 +13,13 @@ export const PASSWORD_RESET_TTL_SECONDS = 15 * 60;
 
 const RECOVERY_STATE_TTL_SECONDS = 60 * 60;
 
-type GrantPurpose = "password-reset" | "recovery-state";
+/** Password + email approval links for passkey-protected accounts. */
+const LOGIN_APPROVAL_STATE_TTL_SECONDS = 20 * 60;
+
+type GrantPurpose =
+  | "password-reset"
+  | "recovery-state"
+  | "login-approval-state";
 
 function signingSecret(): string {
   const secret =
@@ -104,6 +110,26 @@ export function verifyRecoveryState(
   userId: string,
 ): boolean {
   return verifyGrant(token, userId, "recovery-state");
+}
+
+/**
+ * Bound to a user after password verification when that account already has a
+ * passkey. Embedded in the email approval redirect so a raw magic link (anon
+ * OTP) cannot bypass passkey/password+approval for those accounts.
+ */
+export function createLoginApprovalState(userId: string): string {
+  return signGrant(
+    userId,
+    "login-approval-state",
+    LOGIN_APPROVAL_STATE_TTL_SECONDS,
+  );
+}
+
+export function verifyLoginApprovalState(
+  token: string | null | undefined,
+  userId: string,
+): boolean {
+  return verifyGrant(token, userId, "login-approval-state");
 }
 
 export async function grantPasswordReset(userId: string): Promise<void> {

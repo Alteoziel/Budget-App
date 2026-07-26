@@ -4,6 +4,7 @@ import {
   hasRecentPrimarySignIn,
   REAUTH_INTERVAL_MS,
 } from "@/lib/auth/reauth";
+import { supabaseAuthOptions } from "@/lib/supabase/auth-options";
 
 function isPublicPath(path: string): boolean {
   return (
@@ -59,6 +60,7 @@ export async function updateSession(request: NextRequest) {
         });
       },
     },
+    auth: supabaseAuthOptions,
   });
 
   const {
