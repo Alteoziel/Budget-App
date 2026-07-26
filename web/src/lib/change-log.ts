@@ -96,7 +96,9 @@ export async function listRecentBudgetChanges(
 
   if (error) {
     if (missingTable(error)) return [];
-    throw new Error(error.message);
+    // Don't take down Settings / Sync flows for change-log RLS/permission noise.
+    console.error("Failed to list budget changes", error.message);
+    return [];
   }
   return (data ?? []) as BudgetChangeLogRow[];
 }

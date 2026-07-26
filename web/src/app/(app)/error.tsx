@@ -12,6 +12,10 @@ export default function AppError({
     /relation|column|budget_members|budget_id|does not exist|permission denied/i.test(
       message,
     );
+  const looksLikeBankSync =
+    /BANK_TOKEN_ENCRYPTION_KEY|PLAID_CLIENT_ID|PLAID_SECRET|SUPABASE_SECRET_KEY|encrypted secret|Plaid sync/i.test(
+      message,
+    );
 
   return (
     <div className="mx-auto flex min-h-dvh max-w-lg flex-col justify-center px-5 py-10">
@@ -29,6 +33,15 @@ export default function AppError({
           <code className="font-mono text-xs">supabase/migrations/</code> in order
           (especially <code className="font-mono text-xs">20260724120000_*</code> and{" "}
           <code className="font-mono text-xs">20260724140000_*</code>).
+        </p>
+      ) : null}
+      {looksLikeBankSync ? (
+        <p className="mt-3 rounded-2xl bg-amber-100/80 px-4 py-3 text-sm text-amber-950">
+          Bank sync needs <code className="font-mono text-xs">PLAID_*</code>,{" "}
+          <code className="font-mono text-xs">SUPABASE_SECRET_KEY</code>, and{" "}
+          <code className="font-mono text-xs">BANK_TOKEN_ENCRYPTION_KEY</code> in
+          Doppler. If you recently rotated the encryption key, disconnect the bank
+          in Settings and connect it again.
         </p>
       ) : null}
       <button
