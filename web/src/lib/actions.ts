@@ -277,6 +277,75 @@ export async function updateDisplayNameAction(
   return { ok: true, message: "Display name saved." };
 }
 
+const FEEDBACK_KINDS = new Set(["feedback", "request", "bug"]);
+const FEEDBACK_MAX_LEN = 4000;
+const FEEDBACK_RATE_LIMIT = 10;
+const FEEDBACK_RATE_WINDOW_MS = 60 * 60 * 1000;
+
+/** Submit product feedback / feature request / bug report from Settings. */
+export async function submitFeedbackAction(
+  formData: FormData,
+): Promise<{ ok: true; message: string } | { ok: false; error: string }> {
+  const { supabase, user, budget } = await requireBudget("viewer");
+  const kind = String(formData.get("kind") ?? "").trim();
+  const message = String(formData.get("message") ?? "").trim();
+
+  if (!FEEDBACK_KINDS.has(kind)) {
+    return { ok: false, error: "Choose a feedback type." };
+  }
+  if (message.length < 3) {
+    return { ok: false, error: "Please write a bit more detail (at least 3 characters)." };
+  }
+  if (message.length > FEEDBACK_MAX_LEN) {
+    return {
+      ok: false,
+      error: `Keep feedback to ${FEEDBACK_MAX_LEN} characters or fewer.`,
+    };
+  }
+
+  const since = new Date(Date.now() - FEEDBACK_RATE_WINDOW_MS).toISOString();
+  const { count, error: countError } = await supabase
+    .from("app_feedback")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", user.id)
+    .gte("created_at", since);
+  if (countError) {
+    return {
+      ok: false,
+      error:
+        "Feedback isn’t available yet. Apply the latest Supabase feedback migration, then try again.",
+    };
+  }
+  if ((count ?? 0) >= FEEDBACK_RATE_LIMIT) {
+    return {
+      ok: false,
+      error: "You’ve sent several notes recently. Try again in a bit.",
+    };
+  }
+
+  const { error } = await supabase.from("app_feedback").insert({
+    user_id: user.id,
+    budget_id: budget.id,
+    kind,
+    message,
+  });
+  if (error) {
+    return {
+      ok: false,
+      error:
+        /relation|schema cache|does not exist/i.test(error.message)
+          ? "Feedback isn’t available yet. Apply supabase/migrations/20260726020000_app_feedback.sql in Supabase."
+          : "Could not send feedback. Try again.",
+    };
+  }
+
+  revalidatePath("/settings");
+  return {
+    ok: true,
+    message: "Thanks — your note was sent.",
+  };
+}
+
 /** Email a password-reset confirmation link to the signed-in user. */
 export async function requestPasswordResetAction(): Promise<
   { ok: true; message: string } | { ok: false; error: string }
