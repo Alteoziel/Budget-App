@@ -108,5 +108,6 @@ an intentional, documented public trust boundary.
 - Overspend writes are now input-safe and concurrency-serialized, but a future
   SQL RPC should make the multi-row operation fully atomic against infrastructure
   failures.
-- CSP still allows `'unsafe-inline'` / `'unsafe-eval'` for Next.js bootstrapping;
-  migrate to nonces when practical.
+- Production CSP uses per-request script nonces + `'strict-dynamic'` (no
+  `'unsafe-inline'` / `'unsafe-eval'` on scripts). `style-src` still allows
+  `'unsafe-inline'` for React style attributes.
