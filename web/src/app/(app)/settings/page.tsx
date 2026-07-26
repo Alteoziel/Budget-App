@@ -369,7 +369,7 @@ export default async function SettingsPage({
         {canAdmin ? (
           <SettingsCard
             title="Invite links"
-            description="Create a role invite, revoke it when you’re done, then delete revoked links from history."
+            description="Create a single-use role invite (expires in 30 days or when accepted). Revoke early if needed, then delete revoked links from history."
           >
             <InviteRoleLink canInviteOwner={isOwner} />
             <ul className="space-y-2 border-t border-ink-900/5 pt-4 text-xs text-ink-600">
@@ -559,13 +559,20 @@ export default async function SettingsPage({
         {isOwner ? (
           <SettingsCard
             title="Delete budget"
-            description={`Permanently deletes “${budget.name}” and all of its data. Type the name to confirm.`}
+            description={`Permanently deletes “${budget.name}” and all of its data. Type the budget name, then DELETE, to confirm.`}
             danger
           >
             <form action={deleteBudgetAction} className="space-y-2">
               <input
                 name="confirm_name"
                 placeholder={budget.name}
+                autoComplete="off"
+                className="min-h-11 w-full touch-manipulation rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm outline-none ring-moss-400 focus:ring-2"
+              />
+              <input
+                name="confirm_delete"
+                placeholder="Type DELETE"
+                autoComplete="off"
                 className="min-h-11 w-full touch-manipulation rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm outline-none ring-moss-400 focus:ring-2"
               />
               <PendingSubmitButton

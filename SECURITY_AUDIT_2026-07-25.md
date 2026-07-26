@@ -78,9 +78,13 @@ an intentional, documented public trust boundary.
 
 ## Deployment checklist
 
-- Apply `supabase/migrations/20260725190000_security_authorization_hardening.sql`.
-- Set a dedicated random `APP_SECURITY_SECRET` in Doppler/Vercel. The server
-  Supabase secret remains a compatibility fallback until this is configured.
+- Apply `supabase/migrations/20260725190000_security_authorization_hardening.sql`
+  **and** `supabase/migrations/20260726010000_publish_security_fixes.sql`
+  (Supabase SQL editor or CLI). The hardening migration is the July 25 authz
+  pass; the publish-fixes migration closes invite-hash escalation, auth-delete
+  cascades, and bank-token column reads.
+- Set dedicated random `APP_SECURITY_SECRET` and `BANK_TOKEN_ENCRYPTION_KEY`
+  in Doppler/Vercel (no shared fallbacks).
 - Set `GOVERNANCE_REVIEWER_SECRET` to a value different from
   `GOVERNANCE_DASHBOARD_SECRET`.
 - In Supabase Realtime settings, disable **Allow public access** after deploying
@@ -89,12 +93,11 @@ an intentional, documented public trust boundary.
   `private: true` channels, and the hardening migration creates the
   `realtime.messages` RLS policies (`can_access_budget_realtime_topic`). Do not
   hand-create extra policies unless that migration has not been applied.
+- In GitHub Protect Main, require **`CodeQL (Layer C)`** in addition to FOSSA,
+  Enterprise Layers B–E, and Governance Steps 1–5.
 
 ## Deferred because they can affect functionality or require platform changes
 
-- Enable GitHub Code Scanning, re-enable the currently disabled CodeQL
-  workflow, and require all three CodeQL matrix checks. The repository cannot
-  enable the account-level feature from code.
 - Automated PR comments/dashboard ingestion were removed from the untrusted
   scanner job. Restore them only through a trusted `workflow_run` reporter that
   validates the source run, PR, repository, and head SHA before using secrets.
@@ -102,10 +105,8 @@ an intentional, documented public trust boundary.
   required check to pinned Dependency Review. Until then, keep `FOSSA_API_KEY`
   set for full transitive license SCA; the secretless manifest gate is only a
   same-repo fallback.
-- `BANK_TOKEN_ENCRYPTION_KEY` still has a legacy `CRON_SECRET` fallback.
-  Removing it immediately could make existing encrypted bank tokens
-  undecryptable. Configure a dedicated key, version/re-encrypt existing
-  ciphertext, then remove the fallback.
 - Overspend writes are now input-safe and concurrency-serialized, but a future
   SQL RPC should make the multi-row operation fully atomic against infrastructure
   failures.
+- CSP still allows `'unsafe-inline'` / `'unsafe-eval'` for Next.js bootstrapping;
+  migrate to nonces when practical.
