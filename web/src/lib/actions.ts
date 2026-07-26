@@ -23,8 +23,10 @@ import { getBudgetRows } from "@/lib/budget-data";
 import { requireBudget, setActiveBudgetId } from "@/lib/budget-context";
 import {
   clearPasswordResetGrant,
+  createRecoveryState,
   hasPasswordResetGrant,
 } from "@/lib/password-reset";
+import { hasRecentPrimarySignIn } from "@/lib/auth/reauth";
 import { safeInternalPath } from "@/lib/paths";
 import { absoluteUrl, siteOrigin } from "@/lib/site-url";
 import { createClient } from "@/lib/supabase/server";
@@ -38,11 +40,15 @@ import {
   readExcludedAccountIds,
   writeExcludedAccountIds,
 } from "@/lib/account-total-filter";
-import { READY_TO_ASSIGN_TARGET_ID } from "@/lib/overspend-fix";
+import {
+  READY_TO_ASSIGN_TARGET_ID,
+  validateOverspendTransferPlan,
+} from "@/lib/overspend-fix";
 import { suggestCategoryForPayee } from "@/lib/payee-categorization";
 import {
   balanceAnchorExternalId,
   isBalanceAnchorExternalId,
+  isBankExternalId,
   suggestMatchForManualTransaction,
 } from "@/lib/transaction-matching";
 import {
@@ -66,6 +72,13 @@ async function requireUser() {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
+  if (!hasRecentPrimarySignIn(user.last_sign_in_at)) {
+    await supabase.auth.signOut();
+    redirect(
+      "/login?error=" +
+        encodeURIComponent("Your 14-day session expired. Sign in again to continue."),
+    );
+  }
   return { supabase, user };
 }
 
@@ -118,6 +131,7 @@ export async function signUpAction(formData: FormData) {
 export async function signOutAction() {
   const supabase = await createClient();
   await supabase.auth.signOut();
+  await clearPasswordResetGrant();
   redirect("/login");
 }
 
@@ -156,7 +170,11 @@ export async function requestPasswordResetAction(): Promise<
   }
 
   const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
-    redirectTo: absoluteUrl("/auth/callback?next=/settings/password"),
+    redirectTo: absoluteUrl(
+      `/auth/callback?next=/settings/password&recovery_state=${encodeURIComponent(
+        createRecoveryState(user.id),
+      )}`,
+    ),
   });
   if (error) return { ok: false, error: error.message };
   return {
@@ -172,8 +190,8 @@ export async function requestPasswordResetAction(): Promise<
 export async function updatePasswordAction(
   formData: FormData,
 ): Promise<{ ok: true; message: string } | { ok: false; error: string }> {
-  await requireUser();
-  if (!(await hasPasswordResetGrant())) {
+  const { user } = await requireUser();
+  if (!(await hasPasswordResetGrant(user.id))) {
     return {
       ok: false,
       error:
@@ -1381,135 +1399,166 @@ export async function applyOverspendFixAction(payload: {
   allocations: Array<{ fromCategoryId: string; toCategoryId: string; cents: number }>;
 }): Promise<{ ok: true; movedCents: number } | { ok: false; error: string }> {
   const { supabase, user, budget } = await requireBudget("editor");
+  if (
+    !payload ||
+    !Array.isArray(payload.donations) ||
+    !Array.isArray(payload.allocations) ||
+    payload.donations.length > 500 ||
+    payload.allocations.length > 1000
+  ) {
+    return { ok: false, error: "Invalid or oversized budget fix." };
+  }
   const month = isBudgetMonth(payload.month) ? payload.month : currentBudgetMonth();
 
-  const donations = (payload.donations ?? []).filter((d) => d.cents > 0);
-  const allocations = (payload.allocations ?? []).filter((a) => a.cents > 0);
-  if (!donations.length || !allocations.length) {
-    return { ok: false, error: "Nothing to move yet." };
+  const donations = payload.donations;
+  const allocations = payload.allocations;
+  const plan = validateOverspendTransferPlan(donations, allocations);
+  if (!plan.ok) return plan;
+
+  const lockToken = crypto.randomUUID();
+  const lock = await supabase.rpc("acquire_overspend_fix_lock", {
+    p_budget_id: budget.id,
+    p_month: month,
+    p_lock_token: lockToken,
+  });
+  if (lock.error) {
+    return {
+      ok: false,
+      error: "Could not secure this fix. Apply the latest security migration.",
+    };
+  }
+  if (!lock.data) {
+    return {
+      ok: false,
+      error: "Another budget fix is already in progress. Try again shortly.",
+    };
   }
 
-  const { rows } = await getBudgetRows(month);
-  const rowById = new Map(rows.map((row) => [row.categoryId, row]));
+  try {
+    const { rows } = await getBudgetRows(month);
+    const rowById = new Map(rows.map((row) => [row.categoryId, row]));
 
-  // A donor can never give away more than it actually has available.
-  for (const donation of donations) {
-    const row = rowById.get(donation.categoryId);
-    if (!row) return { ok: false, error: "A category in this fix no longer exists." };
-    if (donation.cents > row.availableCents) {
-      return {
-        ok: false,
-        error: `${row.categoryName} only has ${(row.availableCents / 100).toFixed(2)} available.`,
-      };
+    // A donor can never give away more than it actually has available.
+    for (const [categoryId, donatedCents] of plan.donatedByCategory) {
+      const row = rowById.get(categoryId);
+      if (!row) return { ok: false, error: "A category in this fix no longer exists." };
+      if (donatedCents > row.availableCents) {
+        return {
+          ok: false,
+          error: `${row.categoryName} only has ${(row.availableCents / 100).toFixed(2)} available.`,
+        };
+      }
     }
-  }
 
-  const donatedTotal = donations.reduce((sum, d) => sum + d.cents, 0);
-  const allocatedTotal = allocations.reduce((sum, a) => sum + a.cents, 0);
-  if (allocatedTotal > donatedTotal) {
-    return { ok: false, error: "Allocations exceed the money pulled from categories." };
-  }
-
-  const toReadyToAssign = allocations.filter(
-    (a) => a.toCategoryId === READY_TO_ASSIGN_TARGET_ID,
-  );
-  const betweenCategories = allocations.filter(
-    (a) => a.toCategoryId !== READY_TO_ASSIGN_TARGET_ID,
-  );
-
-  for (const allocation of betweenCategories) {
-    if (!rowById.has(allocation.toCategoryId)) {
-      return { ok: false, error: "An overspent category no longer exists." };
-    }
-  }
-
-  const monthUpsert = await supabase.from("budget_months").upsert(
-    { user_id: user.id, budget_id: budget.id, month },
-    { onConflict: "budget_id,month" },
-  );
-  if (monthUpsert.error) {
-    return { ok: false, error: "Could not save budget month." };
-  }
-
-  // Money returned to Ready to assign lowers what the donor has assigned.
-  const pulledBack = new Map<string, number>();
-  for (const allocation of toReadyToAssign) {
-    pulledBack.set(
-      allocation.fromCategoryId,
-      (pulledBack.get(allocation.fromCategoryId) ?? 0) + allocation.cents,
+    const toReadyToAssign = allocations.filter(
+      (a) => a.toCategoryId === READY_TO_ASSIGN_TARGET_ID,
     );
-  }
-  for (const [categoryId, cents] of pulledBack) {
-    const row = rowById.get(categoryId);
-    if (!row) continue;
-    const { error } = await supabase.from("category_months").upsert(
-      {
+    const betweenCategories = allocations.filter(
+      (a) => a.toCategoryId !== READY_TO_ASSIGN_TARGET_ID,
+    );
+
+    for (const allocation of betweenCategories) {
+      if (!rowById.has(allocation.toCategoryId)) {
+        return { ok: false, error: "An overspent category no longer exists." };
+      }
+    }
+
+    const monthUpsert = await supabase.from("budget_months").upsert(
+      { user_id: user.id, budget_id: budget.id, month },
+      { onConflict: "budget_id,month" },
+    );
+    if (monthUpsert.error) {
+      return { ok: false, error: "Could not save budget month." };
+    }
+
+    // Money returned to Ready to assign lowers what the donor has assigned.
+    const pulledBack = new Map<string, number>();
+    for (const allocation of toReadyToAssign) {
+      pulledBack.set(
+        allocation.fromCategoryId,
+        (pulledBack.get(allocation.fromCategoryId) ?? 0) + allocation.cents,
+      );
+    }
+    const pulledBackRows = [...pulledBack].map(([categoryId, cents]) => {
+      const row = rowById.get(categoryId);
+      return {
         user_id: user.id,
         budget_id: budget.id,
         category_id: categoryId,
         month,
-        assigned_cents: row.assignedCents - cents,
+        assigned_cents: (row?.assignedCents ?? 0) - cents,
         updated_at: new Date().toISOString(),
-      },
-      { onConflict: "budget_id,category_id,month" },
-    );
-    if (error) {
-      return { ok: false, error: "Could not return money to Ready to assign." };
-    }
-  }
-
-  // Category-to-category coverage is recorded as a matched pair of transactions.
-  let movedCents = toReadyToAssign.reduce((sum, a) => sum + a.cents, 0);
-  if (betweenCategories.length) {
-    const accountId = await ensureMoneyExchangesAccount(supabase, user.id, budget.id);
-    if (!accountId) {
-      return { ok: false, error: `Could not create the “${MONEY_EXCHANGES_ACCOUNT}” account.` };
-    }
-
-    const today = new Date().toISOString().slice(0, 10);
-    const txnRows = betweenCategories.flatMap((allocation) => {
-      const from = rowById.get(allocation.fromCategoryId);
-      const to = rowById.get(allocation.toCategoryId);
-      const fromName = from?.categoryName ?? "Category";
-      const toName = to?.categoryName ?? "Category";
-      const memo = `Budget fix ${month}`;
-      return [
-        {
-          user_id: user.id,
-          budget_id: budget.id,
-          account_id: accountId,
-          category_id: allocation.fromCategoryId,
-          occurred_on: today,
-          payee: `${fromName} → ${toName}`.slice(0, 200),
-          memo,
-          amount_cents: -allocation.cents,
-          cleared: true,
-        },
-        {
-          user_id: user.id,
-          budget_id: budget.id,
-          account_id: accountId,
-          category_id: allocation.toCategoryId,
-          occurred_on: today,
-          payee: `${toName} ← ${fromName}`.slice(0, 200),
-          memo,
-          amount_cents: allocation.cents,
-          cleared: true,
-        },
-      ];
+      };
     });
-
-    const { error } = await supabase.from("transactions").insert(txnRows);
-    if (error) {
-      return { ok: false, error: "Could not record the money exchange transactions." };
+    if (pulledBackRows.length) {
+      const { error } = await supabase.from("category_months").upsert(
+        pulledBackRows,
+        { onConflict: "budget_id,category_id,month" },
+      );
+      if (error) {
+        return { ok: false, error: "Could not return money to Ready to assign." };
+      }
     }
-    movedCents += betweenCategories.reduce((sum, a) => sum + a.cents, 0);
-  }
 
-  revalidatePath("/budget");
-  revalidatePath("/accounts");
-  revalidatePath("/insights");
-  return { ok: true, movedCents };
+    // Category-to-category coverage is recorded as a matched pair of transactions.
+    let movedCents = toReadyToAssign.reduce((sum, a) => sum + a.cents, 0);
+    if (betweenCategories.length) {
+      const accountId = await ensureMoneyExchangesAccount(supabase, user.id, budget.id);
+      if (!accountId) {
+        return { ok: false, error: `Could not create the “${MONEY_EXCHANGES_ACCOUNT}” account.` };
+      }
+
+      const today = new Date().toISOString().slice(0, 10);
+      const txnRows = betweenCategories.flatMap((allocation) => {
+        const from = rowById.get(allocation.fromCategoryId);
+        const to = rowById.get(allocation.toCategoryId);
+        const fromName = from?.categoryName ?? "Category";
+        const toName = to?.categoryName ?? "Category";
+        const memo = `Budget fix ${month}`;
+        return [
+          {
+            user_id: user.id,
+            budget_id: budget.id,
+            account_id: accountId,
+            category_id: allocation.fromCategoryId,
+            occurred_on: today,
+            payee: `${fromName} → ${toName}`.slice(0, 200),
+            memo,
+            amount_cents: -allocation.cents,
+            cleared: true,
+          },
+          {
+            user_id: user.id,
+            budget_id: budget.id,
+            account_id: accountId,
+            category_id: allocation.toCategoryId,
+            occurred_on: today,
+            payee: `${toName} ← ${fromName}`.slice(0, 200),
+            memo,
+            amount_cents: allocation.cents,
+            cleared: true,
+          },
+        ];
+      });
+
+      const { error } = await supabase.from("transactions").insert(txnRows);
+      if (error) {
+        return { ok: false, error: "Could not record the money exchange transactions." };
+      }
+      movedCents += betweenCategories.reduce((sum, a) => sum + a.cents, 0);
+    }
+
+    revalidatePath("/budget");
+    revalidatePath("/accounts");
+    revalidatePath("/insights");
+    return { ok: true, movedCents };
+  } finally {
+    await supabase.rpc("release_overspend_fix_lock", {
+      p_budget_id: budget.id,
+      p_month: month,
+      p_lock_token: lockToken,
+    });
+  }
 }
 
 export async function createTransactionAction(formData: FormData) {
@@ -1731,19 +1780,25 @@ export async function approveTransactionMatchAction(formData: FormData) {
   const [manualRes, bankRes] = await Promise.all([
     supabase
       .from("transactions")
-      .select("id,category_id,payee,memo,amount_cents,occurred_on")
+      .select("id,account_id,category_id,payee,memo,amount_cents,occurred_on")
       .eq("budget_id", budget.id)
       .eq("id", suggestion.manual_transaction_id)
       .maybeSingle(),
     supabase
       .from("transactions")
-      .select("id,external_id,amount_cents,occurred_on,payee,cleared")
+      .select("id,account_id,external_id,amount_cents,occurred_on,payee,cleared")
       .eq("budget_id", budget.id)
       .eq("id", suggestion.bank_transaction_id)
       .maybeSingle(),
   ]);
 
-  if (!manualRes.data?.id || !bankRes.data?.id || !bankRes.data.external_id) {
+  if (
+    !manualRes.data?.id ||
+    !bankRes.data?.id ||
+    manualRes.data.account_id !== suggestion.account_id ||
+    bankRes.data.account_id !== suggestion.account_id ||
+    !isBankExternalId(bankRes.data.external_id)
+  ) {
     redirectWithError(
       `/accounts/${accountId}`,
       "Linked transactions are missing. Deny this match or sync again.",
@@ -2645,10 +2700,14 @@ export async function generateRoleInviteAction(
   | { ok: true; url: string; token: string; role: BudgetRole }
   | { ok: false; error: string }
 > {
-  const { supabase, user, budget } = await requireBudget("admin");
+  const { supabase, user, budget, role: callerRole } =
+    await requireBudget("admin");
   const role = roleInput as BudgetRole;
   if (!["owner", "admin", "editor", "viewer"].includes(role)) {
     return { ok: false, error: "Invalid role." };
+  }
+  if (role === "owner" && callerRole !== "owner") {
+    return { ok: false, error: "Only an owner can invite another owner." };
   }
 
   const token = createHash("sha256")
@@ -2689,9 +2748,19 @@ export async function createInviteLinkAction(formData: FormData) {
 }
 
 export async function revokeInviteAction(formData: FormData) {
-  const { supabase, budget } = await requireBudget("admin");
+  const { supabase, budget, role: callerRole } = await requireBudget("admin");
   const inviteId = String(formData.get("invite_id") ?? "");
   if (!inviteId) redirectWithError("/settings", "Invite required.");
+  const { data: invite } = await supabase
+    .from("budget_invites")
+    .select("role")
+    .eq("id", inviteId)
+    .eq("budget_id", budget.id)
+    .maybeSingle();
+  if (!invite) redirectWithError("/settings", "Invite not found.");
+  if (invite.role === "owner" && callerRole !== "owner") {
+    redirectWithError("/settings", "Only an owner can revoke an owner invite.");
+  }
   const { data: updated, error } = await supabase
     .from("budget_invites")
     .update({ revoked_at: new Date().toISOString() })
@@ -2707,19 +2776,22 @@ export async function revokeInviteAction(formData: FormData) {
 }
 
 export async function deleteInviteAction(formData: FormData) {
-  const { supabase, budget } = await requireBudget("admin");
+  const { supabase, budget, role: callerRole } = await requireBudget("admin");
   const inviteId = String(formData.get("invite_id") ?? "").trim();
   if (!inviteId) redirectWithError("/settings", "Invite required.");
 
   const { data: invite, error: lookupError } = await supabase
     .from("budget_invites")
-    .select("id,revoked_at")
+    .select("id,role,revoked_at")
     .eq("id", inviteId)
     .eq("budget_id", budget.id)
     .maybeSingle();
 
   if (lookupError || !invite) {
     redirectWithError("/settings", "Invite not found.");
+  }
+  if (invite.role === "owner" && callerRole !== "owner") {
+    redirectWithError("/settings", "Only an owner can delete an owner invite.");
   }
   if (!invite.revoked_at) {
     redirectWithError(
@@ -2793,11 +2865,40 @@ export async function acceptInviteAction(formData: FormData) {
 }
 
 export async function updateMemberRoleAction(formData: FormData) {
-  const { supabase, budget } = await requireBudget("admin");
+  const { supabase, budget, role: callerRole } = await requireBudget("admin");
   const memberId = String(formData.get("member_id") ?? "");
   const role = String(formData.get("role") ?? "") as BudgetRole;
   if (!memberId || !["owner", "admin", "editor", "viewer"].includes(role)) {
     redirectWithError("/settings", "Invalid member update.");
+  }
+  const { data: target } = await supabase
+    .from("budget_members")
+    .select("id,role")
+    .eq("id", memberId)
+    .eq("budget_id", budget.id)
+    .maybeSingle();
+  if (!target) redirectWithError("/settings", "Member not found.");
+  if (
+    callerRole !== "owner" &&
+    (target.role === "owner" || role === "owner")
+  ) {
+    redirectWithError(
+      "/settings",
+      "Only an owner can grant or change owner access.",
+    );
+  }
+  if (target.role === "owner" && role !== "owner") {
+    const { count } = await supabase
+      .from("budget_members")
+      .select("id", { count: "exact", head: true })
+      .eq("budget_id", budget.id)
+      .eq("role", "owner");
+    if ((count ?? 0) <= 1) {
+      redirectWithError(
+        "/settings",
+        "Transfer ownership before changing the last owner.",
+      );
+    }
   }
   const { error } = await supabase
     .from("budget_members")
@@ -2809,11 +2910,22 @@ export async function updateMemberRoleAction(formData: FormData) {
 }
 
 export async function removeMemberAction(formData: FormData) {
-  const { supabase, user, budget } = await requireBudget("admin");
+  const { supabase, user, budget, role: callerRole } =
+    await requireBudget("admin");
   const memberUserId = String(formData.get("user_id") ?? "");
   if (!memberUserId) redirectWithError("/settings", "Member required.");
   if (memberUserId === user.id) {
     redirectWithError("/settings", "Use Leave budget to remove yourself.");
+  }
+  const { data: target } = await supabase
+    .from("budget_members")
+    .select("role")
+    .eq("budget_id", budget.id)
+    .eq("user_id", memberUserId)
+    .maybeSingle();
+  if (!target) redirectWithError("/settings", "Member not found.");
+  if (target.role === "owner" && callerRole !== "owner") {
+    redirectWithError("/settings", "Only an owner can remove another owner.");
   }
   const { error } = await supabase
     .from("budget_members")

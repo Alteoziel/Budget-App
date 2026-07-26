@@ -40,7 +40,8 @@ export async function syncPlaidItem(
   const { data: maps, error: mapErr } = await supabase
     .from("plaid_accounts")
     .select("plaid_account_id,account_id")
-    .eq("plaid_item_id", item.id);
+    .eq("plaid_item_id", item.id)
+    .eq("budget_id", item.budget_id);
   if (mapErr) {
     result.errors.push(mapErr.message);
     return result;
@@ -103,7 +104,8 @@ export async function syncPlaidItem(
         status: "active",
         updated_at: new Date().toISOString(),
       })
-      .eq("id", item.id);
+      .eq("id", item.id)
+      .eq("budget_id", item.budget_id);
   } catch (e) {
     const message = plaidErrorMessage(e, "Plaid sync failed");
     result.errors.push(message);
@@ -114,7 +116,8 @@ export async function syncPlaidItem(
         status: "error",
         updated_at: new Date().toISOString(),
       })
-      .eq("id", item.id);
+      .eq("id", item.id)
+      .eq("budget_id", item.budget_id);
   }
 
   return result;

@@ -9,6 +9,7 @@ import {
   plaidErrorMessage,
 } from "@/lib/plaid/client";
 import { siteOrigin } from "@/lib/site-url";
+import { hasRecentPrimarySignIn } from "@/lib/auth/reauth";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +27,12 @@ export async function POST() {
   } = await supabase.auth.getUser();
   if (!user) {
     return NextResponse.json({ error: "Sign in required." }, { status: 401 });
+  }
+  if (!hasRecentPrimarySignIn(user.last_sign_in_at)) {
+    return NextResponse.json(
+      { error: "Reauthentication required.", code: "REAUTH_REQUIRED" },
+      { status: 401 },
+    );
   }
 
   const active = await resolveActiveBudget();

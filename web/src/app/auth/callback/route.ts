@@ -1,5 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { grantPasswordReset } from "@/lib/password-reset";
+import {
+  grantPasswordReset,
+  verifyRecoveryState,
+} from "@/lib/password-reset";
 import { safeInternalPath } from "@/lib/paths";
 import { createClient } from "@/lib/supabase/server";
 import type { EmailOtpType } from "@supabase/supabase-js";
@@ -14,13 +17,11 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get("code");
   const tokenHash = searchParams.get("token_hash");
   const type = searchParams.get("type");
-  const next = safeInternalPath(
-    searchParams.get("next"),
-    "/settings/password",
-  );
+  const requestedNext = searchParams.get("next");
+  const recoveryState = searchParams.get("recovery_state");
 
   const supabase = await createClient();
-  let isRecovery = type === "recovery" || next.startsWith("/settings/password");
+  let isRecovery = false;
 
   if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
@@ -46,9 +47,25 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  if (isRecovery) {
-    await grantPasswordReset();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.redirect(
+      `${origin}/login?error=${encodeURIComponent("Could not verify the signed-in user.")}`,
+    );
   }
 
+  if (code) {
+    isRecovery = verifyRecoveryState(recoveryState, user.id);
+  }
+  if (isRecovery) {
+    await grantPasswordReset(user.id);
+  }
+
+  const next = safeInternalPath(
+    requestedNext,
+    isRecovery ? "/settings/password" : "/budget",
+  );
   return NextResponse.redirect(`${origin}${next}`);
 }

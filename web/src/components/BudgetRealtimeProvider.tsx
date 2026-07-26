@@ -142,6 +142,7 @@ export function BudgetRealtimeProvider({
     const supabase = createClient();
     const channel = supabase.channel(`budget-live:${budgetId}`, {
       config: {
+        private: true,
         presence: { key: userId },
         broadcast: { self: false },
       },

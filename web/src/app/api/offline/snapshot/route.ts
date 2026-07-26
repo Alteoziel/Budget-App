@@ -6,6 +6,10 @@ import {
 import { getAccountsWithBalances, getBudgetRows } from "@/lib/budget-data";
 import { currentBudgetMonth } from "@/lib/money";
 import type { OfflineSnapshot } from "@/lib/offline/types";
+import {
+  hasRecentPrimarySignIn,
+  REAUTH_INTERVAL_MS,
+} from "@/lib/auth/reauth";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +22,12 @@ export async function GET() {
   } = await supabase.auth.getUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (!hasRecentPrimarySignIn(user.last_sign_in_at)) {
+    return NextResponse.json(
+      { error: "Reauthentication required.", code: "REAUTH_REQUIRED" },
+      { status: 401 },
+    );
   }
 
   const active = await resolveActiveBudget();
@@ -52,7 +62,11 @@ export async function GET() {
     const categoryName = new Map(rows.map((r) => [r.categoryId, r.categoryName]));
 
     const snapshot: OfflineSnapshot = {
-      version: 1,
+      version: 2,
+      ownerUserId: user.id,
+      reauthExpiresAt: new Date(
+        Date.parse(user.last_sign_in_at ?? "") + REAUTH_INTERVAL_MS,
+      ).toISOString(),
       savedAt: new Date().toISOString(),
       budget: { id: active.budget.id, name: active.budget.name },
       readyToAssignCents,

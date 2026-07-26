@@ -1,17 +1,20 @@
 name: AI Code Guardrail
 
+# Must stay on pull_request so the required check context "Governance Steps 1–5"
+# reports on the PR head. pull_request_target only runs the workflow from the
+# base branch, which leaves this required check stuck as
+# "Expected — Waiting for status to be reported" until main is updated.
 on:
   pull_request:
     branches: [main]
   workflow_dispatch:
 
 concurrency:
-  group: ai-guardrail-${{ github.workflow }}-${{ github.ref }}
+  group: ai-guardrail-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 permissions:
   contents: read
-  pull-requests: write
 
 jobs:
   verify-code:
@@ -19,12 +22,25 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: governance
+        shell: bash
 
     steps:
-      - name: Checkout
+      - name: Checkout trusted governance engine
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          # Prefer base SHA so the scanner binary/policy come from the merge target.
+          # Falls back to the PR head for workflow_dispatch.
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          path: trusted
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout candidate as untrusted data
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: candidate
           fetch-depth: 0
           persist-credentials: false
 
@@ -34,41 +50,33 @@ jobs:
           python-version: "3.12"
 
       - name: Install governance engine
-        run: pip install -e ".[dev]"
+        run: pip install -e "./trusted/governance[dev]"
 
       - name: Run unit tests
+        working-directory: trusted/governance
         run: pytest -q
 
-      - name: Run guardrail suite on PR diff
+      - name: Scan candidate with trusted engine
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           GITHUB_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          GOVERNANCE_LLM_API_KEY: ${{ secrets.GOVERNANCE_LLM_API_KEY }}
-          GOVERNANCE_LLM_MODEL: ${{ vars.GOVERNANCE_LLM_MODEL }}
-          GOVERNANCE_DASHBOARD_URL: ${{ secrets.GOVERNANCE_DASHBOARD_URL }}
-          GOVERNANCE_DASHBOARD_SECRET: ${{ secrets.GOVERNANCE_DASHBOARD_SECRET }}
+          GOVERNANCE_ALLOW_DYNAMIC_FUZZ: "false"
         run: |
           set -euo pipefail
           ARGS=(
             run
-            --root ..
+            --root candidate
             --json-out /tmp/guardrail-report.json
             --markdown-out /tmp/guardrail-report.md
-            --post-dashboard
+            --skip-llm
           )
 
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            ARGS+=(--changed-only --base-ref "origin/${{ github.base_ref }}")
+          if [ -n "${{ github.event.pull_request.number }}" ]; then
             ARGS+=(--pr-number "${{ github.event.pull_request.number }}")
             ARGS+=(--commit-sha "${{ github.event.pull_request.head.sha }}")
             ARGS+=(--repo "${{ github.repository }}")
-            ARGS+=(--comment-pr --inline-comments)
           else
-            # workflow_dispatch: no PR context — scan full tree, skip PR flags
-            ARGS+=(--base-ref origin/main)
             ARGS+=(--commit-sha "${{ github.sha }}")
             ARGS+=(--repo "${{ github.repository }}")
           fi

@@ -1,8 +1,8 @@
 /* Alte' Budgeting service worker — offline shell + last-visited pages. */
-const VERSION = "v6";
+const VERSION = "v7";
 const STATIC_CACHE = `alte-static-${VERSION}`;
 const PAGE_CACHE = `alte-pages-${VERSION}`;
-const DATA_CACHE = `alte-data-${VERSION}`;
+const PRIVATE_CACHE_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
 
 const PRECACHE = [
   "/offline.html",
@@ -43,8 +43,7 @@ self.addEventListener("activate", (event) => {
             (key) =>
               key.startsWith("alte-") &&
               key !== STATIC_CACHE &&
-              key !== PAGE_CACHE &&
-              key !== DATA_CACHE,
+              key !== PAGE_CACHE,
           )
           .map((key) => caches.delete(key)),
       );
@@ -57,7 +56,28 @@ self.addEventListener("message", (event) => {
   if (event.data === "SKIP_WAITING") {
     self.skipWaiting();
   }
+  if (event.data === "PURGE_PRIVATE_DATA") {
+    event.waitUntil(purgePrivateData());
+  }
 });
+
+async function purgePrivateData() {
+  const keys = await caches.keys();
+  await Promise.all(
+    keys
+      .filter(
+        (key) =>
+          key.startsWith("alte-pages-") || key.startsWith("alte-data-"),
+      )
+      .map((key) => caches.delete(key)),
+  );
+  await new Promise((resolve) => {
+    const request = indexedDB.deleteDatabase("alte-offline");
+    request.onsuccess = resolve;
+    request.onerror = resolve;
+    request.onblocked = resolve;
+  });
+}
 
 function isSameOrigin(url) {
   return url.origin === self.location.origin;
@@ -83,7 +103,31 @@ function isOfflineSnapshot(url) {
   return url.pathname === "/api/offline/snapshot";
 }
 
+async function freshCachedPage(cache, request) {
+  const cached = await cache.match(request);
+  if (!cached) return null;
+  const cachedAt = Number(cached.headers.get("x-alte-cached-at") || "0");
+  const reauthExpiresAt = Number(
+    cached.headers.get("x-alte-reauth-expires") || "0",
+  );
+  if (
+    !Number.isFinite(cachedAt) ||
+    cachedAt <= 0 ||
+    !Number.isFinite(reauthExpiresAt) ||
+    reauthExpiresAt <= Date.now() ||
+    Date.now() - cachedAt >= PRIVATE_CACHE_MAX_AGE_MS
+  ) {
+    await cache.delete(request);
+    return null;
+  }
+  return cached;
+}
+
 async function networkFirstPage(request) {
+  const requestUrl = new URL(request.url);
+  if (requestUrl.pathname === "/login") {
+    await purgePrivateData();
+  }
   const cache = await caches.open(PAGE_CACHE);
   try {
     const response = await fetch(request);
@@ -95,17 +139,24 @@ async function networkFirstPage(request) {
           (path) => url.pathname === path || url.pathname.startsWith(`${path}/`),
         )
       ) {
-        await cache.put(request, response.clone());
+        const headers = new Headers(response.headers);
+        headers.set("x-alte-cached-at", String(Date.now()));
+        const cachedResponse = new Response(response.clone().body, {
+          status: response.status,
+          statusText: response.statusText,
+          headers,
+        });
+        await cache.put(request, cachedResponse);
       }
     }
     return response;
   } catch {
-    const cached = await cache.match(request);
+    const cached = await freshCachedPage(cache, request);
     if (cached) return cached;
 
     // Try a bare path match (ignore search params).
     const url = new URL(request.url);
-    const bare = await cache.match(url.pathname);
+    const bare = await freshCachedPage(cache, url.pathname);
     if (bare) return bare;
 
     const offline = await caches.match("/offline.html");
@@ -137,24 +188,6 @@ async function cacheFirstStatic(request) {
   }
 }
 
-async function networkFirstData(request) {
-  const cache = await caches.open(DATA_CACHE);
-  try {
-    const response = await fetch(request);
-    if (response && response.ok) {
-      await cache.put(request, response.clone());
-    }
-    return response;
-  } catch {
-    const cached = await cache.match(request);
-    if (cached) return cached;
-    return new Response(JSON.stringify({ offline: true, error: "Offline" }), {
-      status: 503,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-}
-
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET") return;
@@ -169,7 +202,7 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (isOfflineSnapshot(url)) {
-    event.respondWith(networkFirstData(request));
+    event.respondWith(fetch(request));
     return;
   }
 
