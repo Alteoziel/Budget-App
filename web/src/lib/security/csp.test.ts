@@ -3,18 +3,28 @@ import { buildContentSecurityPolicy } from "@/lib/security/csp";
 
 async function main() {
   const prod = buildContentSecurityPolicy("testnonce123", { isDev: false });
-  assert.match(prod, /script-src[^;]*'nonce-testnonce123'/);
-  assert.match(prod, /'strict-dynamic'/);
-  assert.doesNotMatch(prod, /script-src[^;]*'unsafe-inline'/);
-  assert.doesNotMatch(prod, /script-src[^;]*'unsafe-eval'/);
-  assert.match(prod, /style-src 'self' 'unsafe-inline'/);
-  assert.ok(
-    prod.includes("https://cdn.plaid.com"),
-    "expected Plaid CDN host allowlist fallback",
-  );
+  const prodScript = prod
+    .split("; ")
+    .find((part) => part.startsWith("script-src "));
+  assert.ok(prodScript, "expected script-src directive");
+  assert.match(prodScript, /'nonce-testnonce123'/);
+  assert.match(prodScript, /'strict-dynamic'/);
+  assert.doesNotMatch(prodScript, /'unsafe-inline'/);
+  assert.doesNotMatch(prodScript, /'unsafe-eval'/);
+  // Anchored CSP token check (not URL sanitization).
+  assert.match(prodScript, /(^|\s)https:\/\/cdn\.plaid\.com(\s|$)/);
+
+  const prodStyle = prod
+    .split("; ")
+    .find((part) => part.startsWith("style-src "));
+  assert.equal(prodStyle, "style-src 'self' 'unsafe-inline'");
 
   const dev = buildContentSecurityPolicy("devnonce", { isDev: true });
-  assert.match(dev, /script-src[^;]*'unsafe-eval'/);
+  const devScript = dev
+    .split("; ")
+    .find((part) => part.startsWith("script-src "));
+  assert.ok(devScript, "expected script-src directive");
+  assert.match(devScript, /'unsafe-eval'/);
 
   console.log("csp.test.ts: ok");
 }
