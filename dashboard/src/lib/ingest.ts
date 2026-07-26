@@ -9,6 +9,37 @@ const MAX_STEPS = 32;
 const MAX_FINDINGS = 200;
 const MAX_STRING = 8_000;
 const MAX_SUMMARY_KEYS = 64;
+export const MAX_INGEST_BYTES = 512_000;
+const MAX_METRIC_KEYS = 128;
+
+function isBoundedJson(
+  value: unknown,
+  depth = 0,
+  budget = { nodes: 0 }
+): boolean {
+  budget.nodes += 1;
+  if (budget.nodes > 10_000 || depth > 6) return false;
+  if (value === null || typeof value === "boolean") return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value === "string") return value.length <= MAX_STRING;
+  if (Array.isArray(value)) {
+    return (
+      value.length <= 512 &&
+      value.every((item) => isBoundedJson(item, depth + 1, budget))
+    );
+  }
+  if (typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>);
+    return (
+      entries.length <= MAX_METRIC_KEYS &&
+      entries.every(
+        ([key, item]) =>
+          key.length <= 256 && isBoundedJson(item, depth + 1, budget)
+      )
+    );
+  }
+  return false;
+}
 
 const findingSchema = z.object({
   step: z.string().max(128),
@@ -36,7 +67,7 @@ const ingestSchema = z.object({
   pr_number: z.number().int().positive().nullish(),
   commit_sha: z
     .string()
-    .regex(/^[0-9a-f]{7,40}$/i, "commit_sha must be a git SHA")
+    .regex(/^[0-9a-f]{40}$/i, "commit_sha must be a full 40-character git SHA")
     .nullish(),
   repo: z
     .string()
@@ -71,6 +102,17 @@ export function parseIngestBody(body: unknown):
   const d = parsed.data;
   if (Object.keys(d.summary).length > MAX_SUMMARY_KEYS) {
     return { ok: false, error: `summary exceeds ${MAX_SUMMARY_KEYS} keys` };
+  }
+  if (!isBoundedJson(d.summary)) {
+    return { ok: false, error: "summary has an invalid or oversized shape" };
+  }
+  for (const step of d.steps) {
+    if (step.metrics !== undefined && !isBoundedJson(step.metrics)) {
+      return {
+        ok: false,
+        error: `metrics for ${step.step} have an invalid or oversized shape`,
+      };
+    }
   }
   return {
     ok: true,

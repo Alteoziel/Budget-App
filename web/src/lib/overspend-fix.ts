@@ -23,6 +23,82 @@ export type FixAllocation = {
   cents: number;
 };
 
+type TransferDonation = Pick<FixDonation, "categoryId" | "cents">;
+type TransferAllocation = Pick<
+  FixAllocation,
+  "fromCategoryId" | "toCategoryId" | "cents"
+>;
+
+export function validateOverspendTransferPlan(
+  donations: TransferDonation[],
+  allocations: TransferAllocation[],
+):
+  | {
+      ok: true;
+      donatedByCategory: Map<string, number>;
+      allocatedBySource: Map<string, number>;
+    }
+  | { ok: false; error: string } {
+  if (donations.length === 0 || allocations.length === 0) {
+    return { ok: false, error: "Nothing to move yet." };
+  }
+
+  const donatedByCategory = new Map<string, number>();
+  for (const donation of donations) {
+    if (
+      !donation.categoryId ||
+      !Number.isSafeInteger(donation.cents) ||
+      donation.cents <= 0
+    ) {
+      return { ok: false, error: "Donation amounts must be positive whole cents." };
+    }
+    donatedByCategory.set(
+      donation.categoryId,
+      (donatedByCategory.get(donation.categoryId) ?? 0) + donation.cents,
+    );
+  }
+
+  const allocatedBySource = new Map<string, number>();
+  for (const allocation of allocations) {
+    if (
+      !allocation.fromCategoryId ||
+      !allocation.toCategoryId ||
+      !Number.isSafeInteger(allocation.cents) ||
+      allocation.cents <= 0
+    ) {
+      return {
+        ok: false,
+        error: "Allocation amounts must be positive whole cents.",
+      };
+    }
+    if (allocation.fromCategoryId === allocation.toCategoryId) {
+      return { ok: false, error: "A category cannot fund itself." };
+    }
+    if (!donatedByCategory.has(allocation.fromCategoryId)) {
+      return {
+        ok: false,
+        error: "Every allocation must come from a donated category.",
+      };
+    }
+    allocatedBySource.set(
+      allocation.fromCategoryId,
+      (allocatedBySource.get(allocation.fromCategoryId) ?? 0) +
+        allocation.cents,
+    );
+  }
+
+  for (const [categoryId, allocated] of allocatedBySource) {
+    if (allocated > (donatedByCategory.get(categoryId) ?? 0)) {
+      return {
+        ok: false,
+        error: "Allocations exceed the money pulled from a category.",
+      };
+    }
+  }
+
+  return { ok: true, donatedByCategory, allocatedBySource };
+}
+
 export function totalShortfallCents(targets: FixTarget[]): number {
   return targets.reduce((sum, target) => sum + Math.max(0, target.shortfallCents), 0);
 }

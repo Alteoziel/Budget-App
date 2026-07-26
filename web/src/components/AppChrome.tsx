@@ -64,7 +64,16 @@ export async function AppChrome({ children }: { children: React.ReactNode }) {
               ) : null}
             </header>
             <main className="safe-pb mx-auto w-full max-w-lg flex-1 px-4 pb-8 pt-2 sm:px-6 lg:mx-0 lg:max-w-3xl lg:px-8 lg:pb-10">
-              <AppOfflineShell>{children}</AppOfflineShell>
+              {active ? (
+                <AppOfflineShell
+                  userId={active.userId}
+                  budgetId={active.budget.id}
+                >
+                  {children}
+                </AppOfflineShell>
+              ) : (
+                children
+              )}
             </main>
           </div>
         </div>

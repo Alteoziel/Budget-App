@@ -7,41 +7,10 @@ import {
   sitePassword,
   siteSessionCookieOptions,
 } from "@/lib/siteAuth";
+import { consumeLoginAttempt } from "@/lib/loginRateLimit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-/** Simple per-IP sliding window for login brute-force protection. */
-const LOGIN_WINDOW_MS = 60_000;
-const LOGIN_MAX_ATTEMPTS = 5;
-const loginBuckets = new Map<string, number[]>();
-
-function clientIp(req: NextRequest): string {
-  const forwarded = req.headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0]?.trim() || "unknown";
-  return req.headers.get("x-real-ip")?.trim() || "unknown";
-}
-
-function consumeLoginAttempt(ip: string): boolean {
-  const now = Date.now();
-  const cutoff = now - LOGIN_WINDOW_MS;
-  const prev = (loginBuckets.get(ip) || []).filter((t) => t >= cutoff);
-  if (prev.length >= LOGIN_MAX_ATTEMPTS) {
-    loginBuckets.set(ip, prev);
-    return false;
-  }
-  prev.push(now);
-  loginBuckets.set(ip, prev);
-  // Bound map growth
-  if (loginBuckets.size > 10_000) {
-    for (const [key, stamps] of loginBuckets) {
-      const kept = stamps.filter((t) => t >= cutoff);
-      if (!kept.length) loginBuckets.delete(key);
-      else loginBuckets.set(key, kept);
-    }
-  }
-  return true;
-}
 
 export async function POST(req: NextRequest) {
   if (!siteGateEnabled()) {
@@ -55,8 +24,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const ip = clientIp(req);
-  if (!consumeLoginAttempt(ip)) {
+  if (!(await consumeLoginAttempt(req))) {
     return NextResponse.json(
       {
         error: "rate_limited",
@@ -71,6 +39,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "misconfigured" }, { status: 500 });
   }
 
+  const declaredLength = Number(req.headers.get("content-length") || "0");
+  if (Number.isFinite(declaredLength) && declaredLength > 4096) {
+    return NextResponse.json({ error: "payload_too_large" }, { status: 413 });
+  }
+
   let body: { password?: string } = {};
   try {
     body = (await req.json()) as { password?: string };
@@ -81,7 +54,10 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const provided = typeof body.password === "string" ? body.password : "";
+  const provided =
+    typeof body.password === "string" && body.password.length <= 1024
+      ? body.password
+      : "";
   if (!provided || !(await passwordsMatch(provided, expected))) {
     return NextResponse.json(
       { error: "unauthorized", message: "Incorrect password." },

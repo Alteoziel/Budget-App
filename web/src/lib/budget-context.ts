@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
+import { hasRecentPrimarySignIn } from "@/lib/auth/reauth";
 import { createClient } from "@/lib/supabase/server";
 import type { Budget, BudgetRole } from "@/lib/types";
 
@@ -140,6 +141,13 @@ export const requireBudget = cache(async (minRole: BudgetRole = "viewer") => {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
+  if (!hasRecentPrimarySignIn(user.last_sign_in_at)) {
+    await supabase.auth.signOut();
+    redirect(
+      "/login?error=" +
+        encodeURIComponent("Your 14-day session expired. Sign in again to continue."),
+    );
+  }
 
   const active = await resolveActiveBudget();
   if (!active) redirect("/settings?error=" + encodeURIComponent("No budget available."));

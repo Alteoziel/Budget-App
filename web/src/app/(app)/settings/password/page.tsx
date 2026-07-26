@@ -2,9 +2,14 @@ import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
 import { PasswordResetForm } from "@/components/PasswordResetForm";
 import { hasPasswordResetGrant } from "@/lib/password-reset";
+import { createClient } from "@/lib/supabase/server";
 
 export default async function SettingsPasswordPage() {
-  const allowed = await hasPasswordResetGrant();
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const allowed = Boolean(user && (await hasPasswordResetGrant(user.id)));
 
   return (
     <AppShell

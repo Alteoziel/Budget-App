@@ -26,7 +26,7 @@ export function parsePositiveInt(value: unknown): number | null {
 export function parseCommitSha(sha: string | null | undefined): string | null {
   if (!sha || typeof sha !== "string") return null;
   const trimmed = sha.trim();
-  if (!/^[0-9a-f]{7,40}$/i.test(trimmed)) return null;
+  if (!/^[0-9a-f]{40}$/i.test(trimmed)) return null;
   return trimmed;
 }
 

@@ -2,18 +2,32 @@ import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/admin";
 import { syncPlaidItem } from "@/lib/plaid/sync";
 import { plaidConfigured } from "@/lib/plaid/client";
+import { verifyPlaidWebhook } from "@/lib/plaid/webhook-verify";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
-/** Optional: Plaid can notify when transactions are ready. Auth is open but scoped to item_id lookups. */
+/** Plaid notifies when transactions are ready; verify its signed JWT first. */
 export async function POST(req: Request) {
   if (!plaidConfigured()) {
     return NextResponse.json({ ok: true, skipped: true });
   }
 
+  const rawBody = await req.text();
+  if (rawBody.length > 256_000) {
+    return NextResponse.json({ error: "Payload too large" }, { status: 413 });
+  }
+  const verified = await verifyPlaidWebhook(
+    rawBody,
+    req.headers.get("plaid-verification"),
+  );
+  if (!verified) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   let body: { webhook_type?: string; webhook_code?: string; item_id?: string };
   try {
-    body = (await req.json()) as typeof body;
+    body = JSON.parse(rawBody) as typeof body;
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
@@ -45,9 +59,10 @@ export async function POST(req: Request) {
       updated: result.updated,
       errors: result.errors.length ? result.errors.join("\n").slice(0, 4000) : null,
     });
-    return NextResponse.json({ ok: true, ...result });
+    return NextResponse.json({ ok: true });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Webhook sync failed";
-    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+    console.error("[plaid-webhook] sync failed", { message });
+    return NextResponse.json({ ok: false }, { status: 500 });
   }
 }

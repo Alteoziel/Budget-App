@@ -17,6 +17,7 @@ import {
   saveOfflineSnapshot,
 } from "@/lib/offline/db";
 import type { OfflineOutboxItem, OfflineSnapshot } from "@/lib/offline/types";
+import { REAUTH_INTERVAL_MS } from "@/lib/auth/reauth";
 
 type OfflineContextValue = {
   online: boolean;
@@ -48,7 +49,15 @@ function getOnlineServerSnapshot() {
   return true;
 }
 
-export function OfflineProvider({ children }: { children: React.ReactNode }) {
+export function OfflineProvider({
+  userId,
+  budgetId,
+  children,
+}: {
+  userId: string;
+  budgetId: string;
+  children: React.ReactNode;
+}) {
   const online = useSyncExternalStore(
     subscribeOnline,
     getOnlineSnapshot,
@@ -59,16 +68,31 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
 
   const refreshOutboxCount = useCallback(async () => {
     try {
-      const items = await listOutbox();
+      const items = await listOutbox(userId, budgetId);
       setOutboxCount(items.length);
     } catch {
       setOutboxCount(0);
     }
-  }, []);
+  }, [budgetId, userId]);
+
+  const readCurrentSnapshot = useCallback(async () => {
+    const local = await readOfflineSnapshot(userId, budgetId);
+    if (
+      !local ||
+      local.ownerUserId !== userId ||
+      local.budget.id !== budgetId ||
+      !Number.isFinite(Date.parse(local.reauthExpiresAt)) ||
+      Date.now() >= Date.parse(local.reauthExpiresAt) ||
+      Date.now() - Date.parse(local.savedAt) >= REAUTH_INTERVAL_MS
+    ) {
+      return null;
+    }
+    return local;
+  }, [budgetId, userId]);
 
   const refreshSnapshot = useCallback(async () => {
     if (!navigator.onLine) {
-      const local = await readOfflineSnapshot();
+      const local = await readCurrentSnapshot();
       setSnapshot(local);
       return;
     }
@@ -78,7 +102,7 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
         cache: "no-store",
       });
       if (!response.ok) {
-        const local = await readOfflineSnapshot();
+        const local = await readCurrentSnapshot();
         setSnapshot(local);
         return;
       }
@@ -86,14 +110,14 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
       await saveOfflineSnapshot(data);
       setSnapshot(data);
     } catch {
-      const local = await readOfflineSnapshot();
+      const local = await readCurrentSnapshot();
       setSnapshot(local);
     }
-  }, []);
+  }, [readCurrentSnapshot]);
 
   const flushOutbox = useCallback(async () => {
     if (!navigator.onLine) return { applied: 0, failed: 0 };
-    const items = await listOutbox();
+    const items = await listOutbox(userId, budgetId);
     if (!items.length) return { applied: 0, failed: 0 };
 
     const response = await fetch("/api/offline/sync", {
@@ -120,12 +144,17 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
       applied: result.applied?.length ?? 0,
       failed: result.failed?.length ?? 0,
     };
-  }, [refreshOutboxCount, refreshSnapshot]);
+  }, [budgetId, refreshOutboxCount, refreshSnapshot, userId]);
 
   const queueTransaction = useCallback(
     async (payload: OfflineOutboxItem["payload"]) => {
       try {
-        await enqueueOutboxItem({ kind: "create_transaction", payload });
+        await enqueueOutboxItem({
+          ownerUserId: userId,
+          budgetId,
+          kind: "create_transaction",
+          payload,
+        });
         await refreshOutboxCount();
         return { ok: true as const };
       } catch {
@@ -135,14 +164,14 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
         };
       }
     },
-    [refreshOutboxCount],
+    [budgetId, refreshOutboxCount, userId],
   );
 
   useEffect(() => {
     let cancelled = false;
     const boot = window.setTimeout(() => {
       void (async () => {
-        const local = await readOfflineSnapshot();
+        const local = await readCurrentSnapshot();
         if (cancelled) return;
         setSnapshot(local);
         await refreshOutboxCount();
@@ -160,7 +189,12 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
       cancelled = true;
       window.clearTimeout(boot);
     };
-  }, [flushOutbox, refreshOutboxCount, refreshSnapshot]);
+  }, [
+    flushOutbox,
+    readCurrentSnapshot,
+    refreshOutboxCount,
+    refreshSnapshot,
+  ]);
 
   useEffect(() => {
     if (!online) return;
