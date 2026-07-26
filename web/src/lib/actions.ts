@@ -2,7 +2,7 @@
 
 import { createHash, randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
+import { redirect, unstable_rethrow } from "next/navigation";
 import { z } from "zod";
 import {
   budgetPagePath,
@@ -3160,56 +3160,89 @@ export async function leaveBudgetAction() {
   redirect("/settings");
 }
 
+function bankSyncConfigErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : "Bank sync failed.";
+  if (/SUPABASE_SECRET_KEY|SUPABASE_SERVICE_ROLE_KEY/i.test(message)) {
+    return (
+      "Bank sync isn’t fully configured: missing SUPABASE_SECRET_KEY in Doppler. " +
+      "Add a Supabase secret key, redeploy, then try again."
+    );
+  }
+  if (/BANK_TOKEN_ENCRYPTION_KEY/i.test(message)) {
+    return (
+      "Bank sync isn’t fully configured: missing BANK_TOKEN_ENCRYPTION_KEY in Doppler. " +
+      "Add a dedicated encryption secret (don’t reuse CRON_SECRET), redeploy, then reconnect the bank."
+    );
+  }
+  if (/PLAID_CLIENT_ID|PLAID_SECRET/i.test(message)) {
+    return (
+      "Bank sync isn’t fully configured: missing PLAID_CLIENT_ID or PLAID_SECRET in Doppler."
+    );
+  }
+  if (/Invalid encrypted secret|auth tag|authenticate data|Unsupported state/i.test(message)) {
+    return (
+      "Could not decrypt the saved bank connection. The encryption key may have changed — " +
+      "disconnect this bank in Settings and connect it again."
+    );
+  }
+  return message.slice(0, 240);
+}
+
 export async function disconnectPlaidItemAction(formData: FormData) {
   const { supabase, budget } = await requireBudget("admin");
   const itemId = String(formData.get("item_id") ?? "");
   if (!itemId) redirectWithError("/settings", "Bank connection required.");
 
-  // Token ciphertext is not selectable via the user JWT; use service role after authz.
-  const { createServiceClient } = await import("@/lib/supabase/admin");
-  const admin = createServiceClient();
-  const { data: item } = await admin
-    .from("plaid_items")
-    .select("id,access_token_encrypted,status")
-    .eq("id", itemId)
-    .eq("budget_id", budget.id)
-    .maybeSingle();
+  try {
+    // Token ciphertext is not selectable via the user JWT; use service role after authz.
+    const { createServiceClient } = await import("@/lib/supabase/admin");
+    const admin = createServiceClient();
+    const { data: item } = await admin
+      .from("plaid_items")
+      .select("id,access_token_encrypted,status")
+      .eq("id", itemId)
+      .eq("budget_id", budget.id)
+      .maybeSingle();
 
-  if (item?.access_token_encrypted && item.status !== "disconnected") {
-    try {
-      const { getPlaidClient, plaidConfigured } = await import("@/lib/plaid/client");
-      const { decryptSecret } = await import("@/lib/crypto/secrets");
-      if (plaidConfigured()) {
-        const client = getPlaidClient();
-        await client.itemRemove({
-          access_token: decryptSecret(item.access_token_encrypted),
-        });
+    if (item?.access_token_encrypted && item.status !== "disconnected") {
+      try {
+        const { getPlaidClient, plaidConfigured } = await import("@/lib/plaid/client");
+        const { decryptSecret } = await import("@/lib/crypto/secrets");
+        if (plaidConfigured()) {
+          const client = getPlaidClient();
+          await client.itemRemove({
+            access_token: decryptSecret(item.access_token_encrypted),
+          });
+        }
+      } catch {
+        // Still disconnect locally if Plaid itemRemove fails (already revoked, etc.).
       }
-    } catch {
-      // Still disconnect locally if Plaid itemRemove fails (already revoked, etc.).
     }
+
+    await supabase
+      .from("plaid_accounts")
+      .delete()
+      .eq("plaid_item_id", itemId)
+      .eq("budget_id", budget.id);
+
+    const { error } = await supabase
+      .from("plaid_items")
+      .update({
+        status: "disconnected",
+        updated_at: new Date().toISOString(),
+        last_error: null,
+      })
+      .eq("id", itemId)
+      .eq("budget_id", budget.id);
+
+    if (error) redirectWithError("/settings", "Could not disconnect bank.");
+    revalidatePath("/settings");
+    revalidatePath("/accounts");
+    redirect("/settings");
+  } catch (error) {
+    unstable_rethrow(error);
+    redirectWithError("/settings", bankSyncConfigErrorMessage(error));
   }
-
-  await supabase
-    .from("plaid_accounts")
-    .delete()
-    .eq("plaid_item_id", itemId)
-    .eq("budget_id", budget.id);
-
-  const { error } = await supabase
-    .from("plaid_items")
-    .update({
-      status: "disconnected",
-      updated_at: new Date().toISOString(),
-      last_error: null,
-    })
-    .eq("id", itemId)
-    .eq("budget_id", budget.id);
-
-  if (error) redirectWithError("/settings", "Could not disconnect bank.");
-  revalidatePath("/settings");
-  revalidatePath("/accounts");
-  redirect("/settings");
 }
 
 export async function syncPlaidNowAction(formData: FormData) {
@@ -3217,38 +3250,46 @@ export async function syncPlaidNowAction(formData: FormData) {
   const itemId = String(formData.get("item_id") ?? "");
   if (!itemId) redirectWithError("/settings", "Bank connection required.");
 
-  const { createServiceClient } = await import("@/lib/supabase/admin");
-  const admin = createServiceClient();
-  const { data: item, error } = await admin
-    .from("plaid_items")
-    .select("id,budget_id,access_token_encrypted,sync_cursor,created_by,status")
-    .eq("id", itemId)
-    .eq("budget_id", budget.id)
-    .maybeSingle();
+  try {
+    const { createServiceClient } = await import("@/lib/supabase/admin");
+    const admin = createServiceClient();
+    const { data: item, error } = await admin
+      .from("plaid_items")
+      .select("id,budget_id,access_token_encrypted,sync_cursor,created_by,status")
+      .eq("id", itemId)
+      .eq("budget_id", budget.id)
+      .maybeSingle();
 
-  if (error || !item || item.status === "disconnected") {
-    redirectWithError("/settings", "Bank connection not found.");
+    if (error || !item || item.status === "disconnected") {
+      redirectWithError("/settings", "Bank connection not found.");
+    }
+
+    const { syncPlaidItem } = await import("@/lib/plaid/sync");
+    const started = new Date().toISOString();
+    const result = await syncPlaidItem(admin, item!);
+    await admin.from("sync_runs").insert({
+      budget_id: budget.id,
+      plaid_item_id: item!.id,
+      source: "manual",
+      started_at: started,
+      finished_at: new Date().toISOString(),
+      inserted: result.inserted,
+      updated: result.updated,
+      errors: result.errors.length ? result.errors.join("\n").slice(0, 4000) : null,
+    });
+
+    revalidatePath("/settings");
+    revalidatePath("/accounts");
+    if (result.errors.length) {
+      redirectWithError(
+        "/settings",
+        bankSyncConfigErrorMessage(new Error(result.errors[0] || "Sync finished with errors.")),
+      );
+    }
+    redirect("/settings");
+  } catch (error) {
+    unstable_rethrow(error);
+    redirectWithError("/settings", bankSyncConfigErrorMessage(error));
   }
-
-  const { syncPlaidItem } = await import("@/lib/plaid/sync");
-  const started = new Date().toISOString();
-  const result = await syncPlaidItem(admin, item!);
-  await admin.from("sync_runs").insert({
-    budget_id: budget.id,
-    plaid_item_id: item!.id,
-    source: "manual",
-    started_at: started,
-    finished_at: new Date().toISOString(),
-    inserted: result.inserted,
-    updated: result.updated,
-    errors: result.errors.length ? result.errors.join("\n").slice(0, 4000) : null,
-  });
-
-  revalidatePath("/settings");
-  revalidatePath("/accounts");
-  if (result.errors.length) {
-    redirectWithError("/settings", result.errors[0] || "Sync finished with errors.");
-  }
-  redirect("/settings");
 }
 

@@ -29,13 +29,46 @@ type ItemRow = {
   created_by: string;
 };
 
+async function markPlaidItemSyncError(
+  supabase: SupabaseClient,
+  item: ItemRow,
+  message: string,
+) {
+  await supabase
+    .from("plaid_items")
+    .update({
+      last_error: message.slice(0, 1000),
+      status: "error",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", item.id)
+    .eq("budget_id", item.budget_id);
+}
+
 export async function syncPlaidItem(
   supabase: SupabaseClient,
   item: ItemRow,
 ): Promise<SyncResult> {
   const result: SyncResult = { inserted: 0, updated: 0, removed: 0, errors: [] };
-  const accessToken = decryptSecret(item.access_token_encrypted);
-  const client = getPlaidClient();
+
+  // Decrypt / client setup must stay inside try/catch — missing Doppler secrets
+  // or a rotated BANK_TOKEN_ENCRYPTION_KEY used to throw out of Sync now into
+  // the authenticated error boundary ("Couldn't load / Server error").
+  let accessToken: string;
+  let client: ReturnType<typeof getPlaidClient>;
+  try {
+    accessToken = decryptSecret(item.access_token_encrypted);
+    client = getPlaidClient();
+  } catch (e) {
+    const message = plaidErrorMessage(e, "Plaid sync failed");
+    result.errors.push(message);
+    try {
+      await markPlaidItemSyncError(supabase, item, message);
+    } catch {
+      // Best-effort status write; still return the sync error to the caller.
+    }
+    return result;
+  }
 
   const { data: maps, error: mapErr } = await supabase
     .from("plaid_accounts")
@@ -109,15 +142,11 @@ export async function syncPlaidItem(
   } catch (e) {
     const message = plaidErrorMessage(e, "Plaid sync failed");
     result.errors.push(message);
-    await supabase
-      .from("plaid_items")
-      .update({
-        last_error: message.slice(0, 1000),
-        status: "error",
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", item.id)
-      .eq("budget_id", item.budget_id);
+    try {
+      await markPlaidItemSyncError(supabase, item, message);
+    } catch {
+      // Best-effort status write.
+    }
   }
 
   return result;
