@@ -64,6 +64,7 @@ Preview / production URLs come from Vercel after deploy.
 - Keys: [Plaid Dashboard](https://dashboard.plaid.com) → Team Settings → Keys
 - Start with `PLAID_ENV=sandbox` (Link test user `user_good` / `pass_good`)
 - Settings → **Connect bank** opens Plaid Link; categories left blank for you to assign
+- Pending bank authorizations are imported as uncleared; Sync now does a full refresh
 - Run migration `supabase/migrations/20260724150000_plaid_bank_sync.sql`
 - Disconnect / Sync now are available per connected item on Settings
 

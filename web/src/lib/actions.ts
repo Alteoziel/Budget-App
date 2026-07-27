@@ -3266,7 +3266,9 @@ export async function syncPlaidNowAction(formData: FormData) {
 
     const { syncPlaidItem } = await import("@/lib/plaid/sync");
     const started = new Date().toISOString();
-    const result = await syncPlaidItem(admin, item!);
+    // Full refresh: recover txns that were previously skipped (pending) while
+    // the incremental cursor had already advanced past them.
+    const result = await syncPlaidItem(admin, item!, { resetCursor: true });
     await admin.from("sync_runs").insert({
       budget_id: budget.id,
       plaid_item_id: item!.id,

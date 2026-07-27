@@ -51,7 +51,43 @@ function mockSupabase(options?: {
 
 async function main() {
   const { encryptSecret } = await import("@/lib/crypto/secrets");
-  const { syncPlaidItem } = await import("@/lib/plaid/sync");
+  const {
+    syncPlaidItem,
+    plaidExternalId,
+    plaidTransactionImportFields,
+  } = await import("@/lib/plaid/sync");
+
+  assert.equal(plaidExternalId("txn_abc"), "plaid:txn_abc");
+
+  // Pending authorizations must be importable (uncleared), not dropped.
+  const pendingFields = plaidTransactionImportFields({
+    transaction_id: "pending-1",
+    pending: true,
+    pending_transaction_id: null,
+    amount: 12.34,
+    date: "2026-07-27",
+    merchant_name: "Coffee Shop",
+    name: "COFFEE SHOP",
+  });
+  assert.equal(pendingFields.cleared, false);
+  assert.equal(pendingFields.amountCents, -1234);
+  assert.equal(pendingFields.externalId, "plaid:pending-1");
+  assert.equal(pendingFields.pendingExternalId, null);
+  assert.equal(pendingFields.payee, "Coffee Shop");
+
+  // Posted replacement links back to the pending id so we can upgrade in place.
+  const postedFields = plaidTransactionImportFields({
+    transaction_id: "posted-1",
+    pending: false,
+    pending_transaction_id: "pending-1",
+    amount: 12.34,
+    date: "2026-07-28",
+    merchant_name: null,
+    name: "COFFEE SHOP",
+  });
+  assert.equal(postedFields.cleared, true);
+  assert.equal(postedFields.externalId, "plaid:posted-1");
+  assert.equal(postedFields.pendingExternalId, "plaid:pending-1");
 
   const goodCipher = encryptSecret("access-sandbox-test-token");
 
