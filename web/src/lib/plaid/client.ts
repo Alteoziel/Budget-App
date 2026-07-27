@@ -86,3 +86,14 @@ export function plaidErrorMessage(error: unknown, fallback = "Plaid request fail
   if (error instanceof Error && error.message) return error.message;
   return fallback;
 }
+
+/** Plaid error_code from SDK / Axios errors, if present. */
+export function plaidErrorCode(error: unknown): string | null {
+  if (error && typeof error === "object" && "response" in error) {
+    const code = (
+      error as { response?: { data?: { error_code?: string } } }
+    ).response?.data?.error_code;
+    return code ?? null;
+  }
+  return null;
+}

@@ -4,6 +4,7 @@ import {
   getPlaidClient,
   mapPlaidAccountType,
   plaidAmountToCents,
+  plaidErrorCode,
   plaidErrorMessage,
 } from "@/lib/plaid/client";
 import { decryptSecret } from "@/lib/crypto/secrets";
@@ -19,6 +20,20 @@ export type SyncResult = {
   updated: number;
   removed: number;
   errors: string[];
+  /** Plaid returned txns for accounts we have no local mapping for. */
+  skippedUnmapped: number;
+  /** Pending authorizations stored as uncleared. */
+  pendingImported: number;
+  /** Raw added/modified counts from Plaid before local filters. */
+  plaidAdded: number;
+  plaidModified: number;
+};
+
+export type ManualSyncResult = SyncResult & {
+  accountsLinked: number;
+  refreshRequested: boolean;
+  refreshNote: string | null;
+  plaidLastSuccessfulUpdate: string | null;
 };
 
 type ItemRow = {
@@ -54,12 +69,37 @@ export type SyncPlaidItemOptions = {
   resetCursor?: boolean;
 };
 
+function emptySyncResult(): SyncResult {
+  return {
+    inserted: 0,
+    updated: 0,
+    removed: 0,
+    errors: [],
+    skippedUnmapped: 0,
+    pendingImported: 0,
+    plaidAdded: 0,
+    plaidModified: 0,
+  };
+}
+
+function mergeSyncResults(into: SyncResult, from: SyncResult): SyncResult {
+  into.inserted += from.inserted;
+  into.updated += from.updated;
+  into.removed += from.removed;
+  into.skippedUnmapped += from.skippedUnmapped;
+  into.pendingImported += from.pendingImported;
+  into.plaidAdded += from.plaidAdded;
+  into.plaidModified += from.plaidModified;
+  into.errors.push(...from.errors);
+  return into;
+}
+
 export async function syncPlaidItem(
   supabase: SupabaseClient,
   item: ItemRow,
   options: SyncPlaidItemOptions = {},
 ): Promise<SyncResult> {
-  const result: SyncResult = { inserted: 0, updated: 0, removed: 0, errors: [] };
+  const result = emptySyncResult();
 
   // Decrypt / client setup must stay inside try/catch — missing Doppler secrets
   // or a rotated BANK_TOKEN_ENCRYPTION_KEY used to throw out of Sync now into
@@ -108,6 +148,9 @@ export async function syncPlaidItem(
       });
       const data = response.data;
 
+      result.plaidAdded += data.added.length;
+      result.plaidModified += data.modified.length;
+
       for (const txn of data.added) {
         const counts = await upsertPlaidTransaction(supabase, {
           budgetId: item.budget_id,
@@ -118,6 +161,8 @@ export async function syncPlaidItem(
         });
         result.inserted += counts.inserted;
         result.updated += counts.updated;
+        result.skippedUnmapped += counts.skippedUnmapped;
+        result.pendingImported += counts.pendingImported;
       }
       for (const txn of data.modified) {
         const counts = await upsertPlaidTransaction(supabase, {
@@ -129,6 +174,8 @@ export async function syncPlaidItem(
         });
         result.inserted += counts.inserted;
         result.updated += counts.updated;
+        result.skippedUnmapped += counts.skippedUnmapped;
+        result.pendingImported += counts.pendingImported;
       }
       for (const txn of data.removed) {
         result.removed += await removePlaidTransaction(supabase, item.budget_id, txn);
@@ -198,12 +245,21 @@ async function upsertPlaidTransaction(
     payeeMemory: PayeeCategoryMemory;
     txn: PlaidTxn;
   },
-): Promise<{ inserted: number; updated: number }> {
+): Promise<{
+  inserted: number;
+  updated: number;
+  skippedUnmapped: number;
+  pendingImported: number;
+}> {
   const accountId = args.accountByPlaid.get(args.txn.account_id);
-  if (!accountId) return { inserted: 0, updated: 0 };
+  if (!accountId) {
+    return { inserted: 0, updated: 0, skippedUnmapped: 1, pendingImported: 0 };
+  }
 
   const fields = plaidTransactionImportFields(args.txn);
-  if (fields.amountCents === 0) return { inserted: 0, updated: 0 };
+  if (fields.amountCents === 0) {
+    return { inserted: 0, updated: 0, skippedUnmapped: 0, pendingImported: 0 };
+  }
 
   // Pending authorizations are imported as uncleared so recent bank activity
   // shows up immediately. When they post, Plaid usually sends a new
@@ -252,7 +308,9 @@ async function upsertPlaidTransaction(
       existing.payee !== row.payee ||
       existing.cleared !== fields.cleared ||
       existing.external_id !== fields.externalId;
-    if (!changed) return { inserted: 0, updated: 0 };
+    if (!changed) {
+      return { inserted: 0, updated: 0, skippedUnmapped: 0, pendingImported: 0 };
+    }
     const { error } = await supabase
       .from("transactions")
       .update({
@@ -264,7 +322,7 @@ async function upsertPlaidTransaction(
       })
       .eq("id", existing.id);
     if (error) throw error;
-    return { inserted: 0, updated: 1 };
+    return { inserted: 0, updated: 1, skippedUnmapped: 0, pendingImported: 0 };
   }
 
   const { data: inserted, error } = await supabase
@@ -274,7 +332,7 @@ async function upsertPlaidTransaction(
     .single();
   if (error) {
     if (error.message.toLowerCase().includes("duplicate")) {
-      return { inserted: 0, updated: 0 };
+      return { inserted: 0, updated: 0, skippedUnmapped: 0, pendingImported: 0 };
     }
     throw error;
   }
@@ -293,7 +351,12 @@ async function upsertPlaidTransaction(
     }
   }
 
-  return { inserted: 1, updated: 0 };
+  return {
+    inserted: 1,
+    updated: 0,
+    skippedUnmapped: 0,
+    pendingImported: args.txn.pending ? 1 : 0,
+  };
 }
 
 async function removePlaidTransaction(
@@ -310,6 +373,154 @@ async function removePlaidTransaction(
     .select("id");
   if (error) throw error;
   return data?.length ?? 0;
+}
+
+/**
+ * Manual "Sync now": remap accounts, ask Plaid to refresh from the bank when
+ * available, then full-sync. Does not require disconnecting / re-linking.
+ */
+export async function manualSyncPlaidItem(
+  supabase: SupabaseClient,
+  item: ItemRow & { institution_name?: string | null },
+): Promise<ManualSyncResult> {
+  const result: ManualSyncResult = {
+    ...emptySyncResult(),
+    accountsLinked: 0,
+    refreshRequested: false,
+    refreshNote: null,
+    plaidLastSuccessfulUpdate: null,
+  };
+
+  let accessToken: string;
+  let client: ReturnType<typeof getPlaidClient>;
+  try {
+    accessToken = decryptSecret(item.access_token_encrypted);
+    client = getPlaidClient();
+  } catch (e) {
+    const message = plaidErrorMessage(e, "Plaid sync failed");
+    result.errors.push(message);
+    try {
+      await markPlaidItemSyncError(supabase, item, message);
+    } catch {
+      // Best-effort status write.
+    }
+    return result;
+  }
+
+  try {
+    result.accountsLinked = await ensureLocalAccountsForItem(supabase, {
+      budgetId: item.budget_id,
+      userId: item.created_by,
+      itemRowId: item.id,
+      accessToken,
+      institutionName: item.institution_name || "Linked bank",
+    });
+  } catch (e) {
+    // Still attempt sync with whatever accounts are already mapped.
+    result.refreshNote = plaidErrorMessage(e, "Could not refresh linked accounts.");
+  }
+
+  try {
+    const statusRes = await client.itemGet({ access_token: accessToken });
+    result.plaidLastSuccessfulUpdate =
+      statusRes.data.item.status?.transactions?.last_successful_update ?? null;
+  } catch {
+    // Diagnostic only.
+  }
+
+  try {
+    await client.transactionsRefresh({ access_token: accessToken });
+    result.refreshRequested = true;
+  } catch (e) {
+    const code = plaidErrorCode(e);
+    // Transactions Refresh is an optional Plaid add-on; missing access is fine.
+    if (
+      code &&
+      /PRODUCT_NOT_ENABLED|INVALID_PRODUCT|ADDITIONAL_CONSENT_REQUIRED|PRODUCTS_NOT_SUPPORTED/i.test(
+        code,
+      )
+    ) {
+      result.refreshNote =
+        "On-demand bank refresh isn’t enabled on this Plaid account; synced whatever Plaid already has.";
+    } else if (code) {
+      result.refreshNote = plaidErrorMessage(e, "Could not request a bank refresh.");
+    }
+  }
+
+  // Full replay recovers pending txns previously skipped while the cursor advanced.
+  const first = await syncPlaidItem(supabase, item, { resetCursor: true });
+  mergeSyncResults(result, first);
+
+  // If Plaid accepted a refresh, give it a moment and pull incremental updates.
+  if (result.refreshRequested && result.errors.length === 0) {
+    await sleep(4000);
+    const { data: refreshedItem } = await supabase
+      .from("plaid_items")
+      .select("id,budget_id,access_token_encrypted,sync_cursor,created_by")
+      .eq("id", item.id)
+      .eq("budget_id", item.budget_id)
+      .maybeSingle();
+    if (refreshedItem) {
+      const second = await syncPlaidItem(supabase, refreshedItem);
+      mergeSyncResults(result, second);
+    }
+    try {
+      const statusRes = await client.itemGet({ access_token: accessToken });
+      result.plaidLastSuccessfulUpdate =
+        statusRes.data.item.status?.transactions?.last_successful_update ?? null;
+    } catch {
+      // Diagnostic only.
+    }
+  }
+
+  return result;
+}
+
+/** User-facing Settings notice after Sync now. */
+export function formatManualSyncNotice(result: ManualSyncResult): string {
+  if (result.errors.length) {
+    return result.errors[0] || "Sync finished with errors.";
+  }
+
+  const parts: string[] = [];
+  if (result.inserted > 0) {
+    parts.push(
+      `Imported ${result.inserted} transaction${result.inserted === 1 ? "" : "s"}` +
+        (result.pendingImported
+          ? ` (${result.pendingImported} pending)`
+          : ""),
+    );
+  } else if (result.updated > 0) {
+    parts.push(
+      `Updated ${result.updated} existing transaction${result.updated === 1 ? "" : "s"}; no new ones.`,
+    );
+  } else {
+    parts.push("No new transactions from Plaid.");
+  }
+
+  if (result.skippedUnmapped > 0) {
+    parts.push(
+      `${result.skippedUnmapped} were skipped because their bank account isn’t linked in this budget.`,
+    );
+  }
+
+  if (result.plaidLastSuccessfulUpdate) {
+    parts.push(
+      `Plaid last received data from your bank ${new Date(result.plaidLastSuccessfulUpdate).toLocaleString()}.`,
+    );
+  }
+
+  if (result.inserted === 0 && result.skippedUnmapped === 0) {
+    parts.push(
+      "You don’t need to disconnect — reconnecting won’t pull charges Plaid doesn’t have yet. Try Sync now again after they appear/post at your bank.",
+    );
+  }
+
+  if (result.refreshNote) {
+    parts.push(result.refreshNote);
+  }
+
+  return parts.join(" ");
 }
 
 export async function ensureLocalAccountsForItem(
