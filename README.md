@@ -23,6 +23,7 @@ PR quality gates from the governance stack stay in place.
 - Accounts + transaction register
 - Insights charts + rule-based trend tips
 - YNAB register / Reflect **CSV import**
+- Offline PWA: service worker caches app shell; cold starts paint from cache (stale-while-revalidate) with a dark splash so dark mode doesn’t flash white
 - Plaid bank sync (Link + transactions sync) + daily Vercel Cron
 - Supabase Auth + budget-scoped RLS
 - Passkey (WebAuthn) or email/password sign-in (either works)
