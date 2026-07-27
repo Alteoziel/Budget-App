@@ -423,7 +423,7 @@ export async function manualSyncPlaidItem(
   try {
     const statusRes = await client.itemGet({ access_token: accessToken });
     result.plaidLastSuccessfulUpdate =
-      statusRes.data.item.status?.transactions?.last_successful_update ?? null;
+      statusRes.data.status?.transactions?.last_successful_update ?? null;
   } catch {
     // Diagnostic only.
   }
@@ -467,7 +467,7 @@ export async function manualSyncPlaidItem(
     try {
       const statusRes = await client.itemGet({ access_token: accessToken });
       result.plaidLastSuccessfulUpdate =
-        statusRes.data.item.status?.transactions?.last_successful_update ?? null;
+        statusRes.data.status?.transactions?.last_successful_update ?? null;
     } catch {
       // Diagnostic only.
     }
