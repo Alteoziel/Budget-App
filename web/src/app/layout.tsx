@@ -51,9 +51,60 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
-// Runs before paint: set class + background + color-scheme so dark mode never
-// flashes browser-default white while CSS is still loading.
-const themeScript = `(function(){try{var p=localStorage.getItem("alte-theme");var d=p==="dark"||((!p||p==="system")&&window.matchMedia("(prefers-color-scheme: dark)").matches);var r=document.documentElement;if(d)r.classList.add("dark");r.style.colorScheme=d?"dark":"light";r.style.backgroundColor=d?"#080c0b":"#e9e3d6";var m=document.querySelector('meta[name="theme-color"]');if(!m){m=document.createElement("meta");m.setAttribute("name","theme-color");document.head.appendChild(m);}m.setAttribute("content",d?"#080c0b":"#e9e3d6");}catch(e){}})();`;
+// Blocking CSS paints before JS/CSS bundles — kills white FOUC on cold start.
+const themeBootStyle = `html,body{background-color:#080c0b;color-scheme:dark}
+@media (prefers-color-scheme:light){html,body{background-color:#e9e3d6;color-scheme:light}}`;
+
+// Runs immediately after: honor saved theme even when it differs from system.
+const themeScript = `(function(){try{var p=localStorage.getItem("alte-theme");var d=p==="dark"||((!p||p==="system")&&window.matchMedia("(prefers-color-scheme: dark)").matches);var r=document.documentElement;r.classList.toggle("dark",d);r.style.colorScheme=d?"dark":"light";r.style.backgroundColor=d?"#080c0b":"#e9e3d6";document.body&&(document.body.style.backgroundColor=d?"#080c0b":"#e9e3d6");var m=document.querySelector('meta[name="theme-color"]');if(!m){m=document.createElement("meta");m.setAttribute("name","theme-color");document.head.appendChild(m);}m.setAttribute("content",d?"#080c0b":"#e9e3d6");}catch(e){}})();`;
+
+const appleSplashes: Array<{ href: string; media: string }> = [
+  {
+    href: "/splash/apple-splash-2048x2732.png",
+    media:
+      "(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)",
+  },
+  {
+    href: "/splash/apple-splash-1668x2388.png",
+    media:
+      "(device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)",
+  },
+  {
+    href: "/splash/apple-splash-1290x2796.png",
+    media:
+      "(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)",
+  },
+  {
+    href: "/splash/apple-splash-1179x2556.png",
+    media:
+      "(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)",
+  },
+  {
+    href: "/splash/apple-splash-1284x2778.png",
+    media:
+      "(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)",
+  },
+  {
+    href: "/splash/apple-splash-1170x2532.png",
+    media:
+      "(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)",
+  },
+  {
+    href: "/splash/apple-splash-1242x2688.png",
+    media:
+      "(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)",
+  },
+  {
+    href: "/splash/apple-splash-1125x2436.png",
+    media:
+      "(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)",
+  },
+  {
+    href: "/splash/apple-splash-750x1334.png",
+    media:
+      "(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)",
+  },
+];
 
 export default async function RootLayout({
   children,
@@ -64,11 +115,23 @@ export default async function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        <style
+          nonce={nonce}
+          dangerouslySetInnerHTML={{ __html: themeBootStyle }}
+        />
         <script
           nonce={nonce}
           dangerouslySetInnerHTML={{ __html: themeScript }}
         />
         <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+        {appleSplashes.map((splash) => (
+          <link
+            key={splash.href}
+            rel="apple-touch-startup-image"
+            href={splash.href}
+            media={splash.media}
+          />
+        ))}
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta
           name="apple-mobile-web-app-status-bar-style"

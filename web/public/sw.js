@@ -1,5 +1,5 @@
 /* Alte' Budgeting service worker — offline shell + last-visited pages. */
-const VERSION = "v7";
+const VERSION = "v8";
 const STATIC_CACHE = `alte-static-${VERSION}`;
 const PAGE_CACHE = `alte-pages-${VERSION}`;
 const PRIVATE_CACHE_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
@@ -87,10 +87,14 @@ function isStaticAsset(url) {
   return (
     url.pathname.startsWith("/_next/static/") ||
     url.pathname.startsWith("/icons/") ||
-    url.pathname === "/manifest.webmanifest" ||
+    url.pathname.startsWith("/splash/") ||
     url.pathname === "/sw.js" ||
     url.pathname === "/offline.html"
   );
+}
+
+function isManifest(url) {
+  return url.pathname === "/manifest.webmanifest";
 }
 
 function isNavigation(request) {
@@ -107,15 +111,22 @@ async function freshCachedPage(cache, request) {
   const cached = await cache.match(request);
   if (!cached) return null;
   const cachedAt = Number(cached.headers.get("x-alte-cached-at") || "0");
-  const reauthExpiresAt = Number(
-    cached.headers.get("x-alte-reauth-expires") || "0",
-  );
+  const reauthRaw = cached.headers.get("x-alte-reauth-expires");
+  const reauthExpiresAt = reauthRaw == null ? null : Number(reauthRaw);
+  if (!Number.isFinite(cachedAt) || cachedAt <= 0) {
+    await cache.delete(request);
+    return null;
+  }
+  if (Date.now() - cachedAt >= PRIVATE_CACHE_MAX_AGE_MS) {
+    await cache.delete(request);
+    return null;
+  }
+  // Only enforce reauth expiry when the header was explicitly stamped.
   if (
-    !Number.isFinite(cachedAt) ||
-    cachedAt <= 0 ||
-    !Number.isFinite(reauthExpiresAt) ||
-    reauthExpiresAt <= Date.now() ||
-    Date.now() - cachedAt >= PRIVATE_CACHE_MAX_AGE_MS
+    reauthExpiresAt != null &&
+    Number.isFinite(reauthExpiresAt) &&
+    reauthExpiresAt > 0 &&
+    reauthExpiresAt <= Date.now()
   ) {
     await cache.delete(request);
     return null;
@@ -123,48 +134,84 @@ async function freshCachedPage(cache, request) {
   return cached;
 }
 
-async function networkFirstPage(request) {
+async function putPageCache(cache, request, response) {
+  const url = new URL(request.url);
+  if (
+    !APP_SHELL_PATHS.some(
+      (path) => url.pathname === path || url.pathname.startsWith(`${path}/`),
+    )
+  ) {
+    return;
+  }
+  const headers = new Headers(response.headers);
+  const now = Date.now();
+  headers.set("x-alte-cached-at", String(now));
+  headers.set("x-alte-reauth-expires", String(now + PRIVATE_CACHE_MAX_AGE_MS));
+  const cachedResponse = new Response(response.clone().body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+  await cache.put(request, cachedResponse);
+}
+
+/**
+ * Paint a warm cache immediately on cold start, then refresh in the background.
+ * Network-first left a white gap while waiting for HTML after the OS splash.
+ */
+async function staleWhileRevalidatePage(request) {
   const requestUrl = new URL(request.url);
   if (requestUrl.pathname === "/login") {
     await purgePrivateData();
   }
   const cache = await caches.open(PAGE_CACHE);
+  const cached = await freshCachedPage(cache, request);
+
+  const networkPromise = fetch(request)
+    .then(async (response) => {
+      if (response && response.ok) {
+        await putPageCache(cache, request, response);
+      }
+      return response;
+    })
+    .catch(() => null);
+
+  if (cached) {
+    void networkPromise;
+    return cached;
+  }
+
+  const network = await networkPromise;
+  if (network) return network;
+
+  const url = new URL(request.url);
+  const bare = await freshCachedPage(cache, url.pathname);
+  if (bare) return bare;
+
+  const offline = await caches.match("/offline.html");
+  return (
+    offline ||
+    new Response("Offline", {
+      status: 503,
+      headers: { "Content-Type": "text/plain" },
+    })
+  );
+}
+
+async function networkFirstManifest(request) {
   try {
     const response = await fetch(request);
     if (response && response.ok) {
-      const url = new URL(request.url);
-      // Cache authenticated app pages so they reopen offline.
-      if (
-        APP_SHELL_PATHS.some(
-          (path) => url.pathname === path || url.pathname.startsWith(`${path}/`),
-        )
-      ) {
-        const headers = new Headers(response.headers);
-        headers.set("x-alte-cached-at", String(Date.now()));
-        const cachedResponse = new Response(response.clone().body, {
-          status: response.status,
-          statusText: response.statusText,
-          headers,
-        });
-        await cache.put(request, cachedResponse);
-      }
+      const cache = await caches.open(STATIC_CACHE);
+      await cache.put(request, response.clone());
     }
     return response;
   } catch {
-    const cached = await freshCachedPage(cache, request);
-    if (cached) return cached;
-
-    // Try a bare path match (ignore search params).
-    const url = new URL(request.url);
-    const bare = await freshCachedPage(cache, url.pathname);
-    if (bare) return bare;
-
-    const offline = await caches.match("/offline.html");
     return (
-      offline ||
-      new Response("Offline", {
-        status: 503,
-        headers: { "Content-Type": "text/plain" },
+      (await caches.match(request)) ||
+      new Response("{}", {
+        status: 504,
+        headers: { "Content-Type": "application/manifest+json" },
       })
     );
   }
@@ -206,12 +253,18 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // Always prefer a fresh splash/theme color over a cached light manifest.
+  if (isManifest(url)) {
+    event.respondWith(networkFirstManifest(request));
+    return;
+  }
+
   if (isStaticAsset(url)) {
     event.respondWith(cacheFirstStatic(request));
     return;
   }
 
   if (isNavigation(request)) {
-    event.respondWith(networkFirstPage(request));
+    event.respondWith(staleWhileRevalidatePage(request));
   }
 });
