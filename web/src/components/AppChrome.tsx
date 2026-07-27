@@ -47,6 +47,10 @@ export async function AppChrome({ children }: { children: React.ReactNode }) {
         bottom. `position: fixed` was leaving a gap under the tabs after long
         server actions (Sync now) when the mobile visual viewport resettled.
       */}
+      {/*
+        Solid --page-bg under the glow is applied via globals.css `.bg-app-glow`
+        so Safari doesn’t flash white when this full-viewport layer streams in.
+      */}
       <div className="flex h-dvh max-h-dvh flex-col overflow-hidden bg-app-glow">
         <div className="mx-auto flex min-h-0 w-full max-w-6xl flex-1">
           <DesktopSideNav />

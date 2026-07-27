@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import { Fraunces, Nunito_Sans } from "next/font/google";
 import { RegisterServiceWorker } from "@/components/RegisterServiceWorker";
+import { ThemeInit } from "@/components/ThemeInit";
 import "./globals.css";
 
 const display = Fraunces({
@@ -53,10 +54,15 @@ export const viewport: Viewport = {
 
 // Blocking CSS paints before JS/CSS bundles — kills white FOUC on cold start.
 const themeBootStyle = `html,body{background-color:#080c0b;color-scheme:dark}
-@media (prefers-color-scheme:light){html,body{background-color:#e9e3d6;color-scheme:light}}`;
+@media (prefers-color-scheme:light){html:not(.dark),html:not(.dark) body{background-color:#e9e3d6;color-scheme:light}}
+html.dark,html.dark body{background-color:#080c0b!important;color-scheme:dark}
+html.light,html.light body{background-color:#e9e3d6!important;color-scheme:light}`;
 
-// Runs immediately after: honor saved theme even when it differs from system.
-const themeScript = `(function(){try{var p=localStorage.getItem("alte-theme");var d=p==="dark"||((!p||p==="system")&&window.matchMedia("(prefers-color-scheme: dark)").matches);var r=document.documentElement;r.classList.toggle("dark",d);r.style.colorScheme=d?"dark":"light";r.style.backgroundColor=d?"#080c0b":"#e9e3d6";document.body&&(document.body.style.backgroundColor=d?"#080c0b":"#e9e3d6");var m=document.querySelector('meta[name="theme-color"]');if(!m){m=document.createElement("meta");m.setAttribute("name","theme-color");document.head.appendChild(m);}m.setAttribute("content",d?"#080c0b":"#e9e3d6");}catch(e){}})();`;
+// Runs in <head>: honor saved theme even when it differs from system.
+const themeScript = `(function(){try{var p=localStorage.getItem("alte-theme");var d=p==="dark"||((!p||p==="system")&&window.matchMedia("(prefers-color-scheme: dark)").matches);var r=document.documentElement;var bg=d?"#080c0b":"#e9e3d6";r.classList.toggle("dark",d);r.classList.toggle("light",!d);r.style.colorScheme=d?"dark":"light";r.style.backgroundColor=bg;var m=document.querySelector('meta[name="theme-color"]');if(!m){m=document.createElement("meta");m.setAttribute("name","theme-color");document.head.appendChild(m);}m.setAttribute("content",bg);}catch(e){}})();`;
+
+// Body exists here — paint it before React hydrates / data streams.
+const bodyThemeScript = `(function(){try{var d=document.documentElement.classList.contains("dark");document.body.style.backgroundColor=d?"#080c0b":"#e9e3d6";}catch(e){}})();`;
 
 const appleSplashes: Array<{ href: string; media: string }> = [
   {
@@ -140,7 +146,12 @@ export default async function RootLayout({
         <meta name="apple-mobile-web-app-title" content="Alte' Budgeting" />
       </head>
       <body className={`${display.variable} ${sans.variable} font-sans antialiased`}>
+        <script
+          nonce={nonce}
+          dangerouslySetInnerHTML={{ __html: bodyThemeScript }}
+        />
         {children}
+        <ThemeInit />
         <RegisterServiceWorker />
       </body>
     </html>

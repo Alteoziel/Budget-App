@@ -144,6 +144,43 @@
   --hero-alert-line: rgba(231, 160, 132, 0.5);
 }
 
+/*
+ * System-dark wash without waiting on the JS `.dark` class. Stops cream/white
+ * page chrome from painting for a frame while the shell streams in. Explicit
+ * `.light` / `.dark` still win for saved theme overrides.
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    color-scheme: dark;
+    --app-glow: radial-gradient(
+        1200px 600px at 10% -10%,
+        rgba(90, 154, 117, 0.16),
+        transparent 55%
+      ),
+      radial-gradient(900px 500px at 100% 0%, rgba(196, 92, 58, 0.09), transparent 50%),
+      linear-gradient(165deg, #080c0b 0%, #0b110f 45%, #0a0d0c 100%);
+    --page-bg: #080c0b;
+    --shadow-soft: 0 10px 30px rgba(0, 0, 0, 0.55);
+    --shadow-card: 0 0 0 1px rgba(0, 0, 0, 0.5), 0 12px 28px rgba(0, 0, 0, 0.5);
+    --card-line: rgba(196, 214, 205, 0.28);
+  }
+}
+
+.light {
+  color-scheme: light;
+  --app-glow: radial-gradient(
+      1200px 600px at 10% -10%,
+      rgba(63, 122, 92, 0.26),
+      transparent 55%
+    ),
+    radial-gradient(900px 500px at 100% 0%, rgba(196, 92, 58, 0.12), transparent 50%),
+    linear-gradient(165deg, #e9e3d6 0%, #dde8de 45%, #e6ddd0 100%);
+  --page-bg: #e9e3d6;
+  --shadow-soft: 0 8px 24px rgba(15, 26, 23, 0.1);
+  --shadow-card: 0 1px 2px rgba(15, 26, 23, 0.06), 0 10px 24px rgba(15, 26, 23, 0.08);
+  --card-line: rgba(21, 36, 31, 0.14);
+}
+
 html,
 body {
   min-height: 100%;
@@ -160,6 +197,15 @@ html {
 body {
   color: rgb(var(--c-ink-900));
   background: var(--page-bg);
+}
+
+/*
+ * Tailwind's bg-app-glow only sets background-image. Without a solid color
+ * underneath, iOS Safari often flashes white for a frame when the full-viewport
+ * shell first paints (right before page data streams in).
+ */
+.bg-app-glow {
+  background-color: var(--page-bg);
 }
 
 /* Inputs are explicitly bg-white in markup; keep them readable when dark. */
