@@ -28,7 +28,6 @@ import {
 } from "@/lib/passkey-gate";
 import {
   clearPasswordResetGrant,
-  createLoginApprovalState,
   createRecoveryState,
   hasPasswordResetGrant,
 } from "@/lib/password-reset";
@@ -123,14 +122,12 @@ async function countUserPasskeys(
 }
 
 /**
- * After password auth: offer passkey setup, or (if a passkey already exists)
- * revoke the session and email a one-time approval link instead.
+ * After password auth: optionally offer passkey enrollment, otherwise continue.
+ * Password and passkey are both valid sign-in methods with no email step.
  */
 async function finishPasswordAuth(options: {
   supabase: Awaited<ReturnType<typeof createClient>>;
-  email: string;
   next: string;
-  errorExtra?: string;
 }): Promise<never> {
   const passkeys = await countUserPasskeys(options.supabase);
   const gate = resolvePasswordLoginGate({
@@ -138,63 +135,6 @@ async function finishPasswordAuth(options: {
     passkeyCheckOk: passkeys.ok,
     next: options.next,
   });
-
-  if (gate.kind === "email_approval") {
-    const {
-      data: { user },
-    } = await options.supabase.auth.getUser();
-
-    if (!siteOrigin()) {
-      await options.supabase.auth.signOut();
-      redirectWithError(
-        "/login",
-        "Site URL is not configured, so we can’t email a login approval link.",
-        options.errorExtra,
-      );
-    }
-    if (!user) {
-      await options.supabase.auth.signOut();
-      redirectWithError(
-        "/login",
-        "Could not verify the signed-in user.",
-        options.errorExtra,
-      );
-    }
-
-    let approvalState: string;
-    try {
-      approvalState = createLoginApprovalState(user.id);
-    } catch {
-      await options.supabase.auth.signOut();
-      redirectWithError(
-        "/login",
-        "Server security secret is not configured, so password fallback can’t be approved by email.",
-        options.errorExtra,
-      );
-    }
-
-    // Drop the password session immediately — email possession must finish login.
-    await options.supabase.auth.signOut();
-
-    const { error: otpError } = await options.supabase.auth.signInWithOtp({
-      email: options.email,
-      options: {
-        shouldCreateUser: false,
-        emailRedirectTo: absoluteUrl(
-          `/auth/callback?next=${encodeURIComponent(options.next)}&login_approval_state=${encodeURIComponent(approvalState)}`,
-        ),
-      },
-    });
-    if (otpError) {
-      redirectWithError("/login", otpError.message, options.errorExtra);
-    }
-
-    redirect(
-      `/login?notice=${encodeURIComponent(
-        "This account uses a passkey. Check your email and open the link to approve this password sign-in.",
-      )}${options.errorExtra ?? ""}`,
-    );
-  }
 
   if (gate.kind === "passkey_setup") {
     redirect(
@@ -215,7 +155,7 @@ export async function signInAction(formData: FormData) {
   if (error) {
     redirectWithError("/login", error.message);
   }
-  await finishPasswordAuth({ supabase, email, next });
+  await finishPasswordAuth({ supabase, next });
 }
 
 export async function signUpAction(formData: FormData) {
@@ -243,12 +183,7 @@ export async function signUpAction(formData: FormData) {
       )}&mode=signup`,
     );
   }
-  await finishPasswordAuth({
-    supabase,
-    email,
-    next,
-    errorExtra: "&mode=signup",
-  });
+  await finishPasswordAuth({ supabase, next });
 }
 
 export async function signOutAction() {
@@ -2839,11 +2774,14 @@ export async function createBudgetAction(formData: FormData) {
     redirectWithError("/settings", "Could not create budget.");
   }
   const newBudgetId = created.data!.id;
-  await supabase.from("budget_members").insert({
+  const membership = await supabase.from("budget_members").insert({
     budget_id: newBudgetId,
     user_id: user.id,
     role: "owner",
   });
+  if (membership.error) {
+    redirectWithError("/settings", "Could not create budget.");
+  }
   await setActiveBudgetId(newBudgetId);
   await supabase.from("profiles").update({ current_budget_id: newBudgetId }).eq("id", user.id);
   revalidatePath("/", "layout");

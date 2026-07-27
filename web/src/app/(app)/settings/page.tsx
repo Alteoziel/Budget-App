@@ -166,7 +166,7 @@ export default async function SettingsPage({
 
         <SettingsCard
           title="Passkeys"
-          description="Biometric sign-in for this account. Password fallback requires email approval once a passkey exists."
+          description="Biometric sign-in for this account. You can also sign in with email and password anytime."
         >
           <PasskeySettings
             initialPasskeys={initialPasskeys}

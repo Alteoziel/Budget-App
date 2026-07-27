@@ -25,7 +25,7 @@ PR quality gates from the governance stack stay in place.
 - YNAB register / Reflect **CSV import**
 - Plaid bank sync (Link + transactions sync) + daily Vercel Cron
 - Supabase Auth + budget-scoped RLS
-- Passkey (WebAuthn) sign-in; password fallback requires email approval once a passkey is enrolled
+- Passkey (WebAuthn) or email/password sign-in (either works)
 - Installable PWA shell
 
 ## Quickstart — Alte' Budgeting (cloud only)

@@ -52,7 +52,7 @@ payload, URL, cookie, browser state value, and unsigned JWT claim.
 
 | Endpoint | Method | Explicit permission boundary |
 |---|---|---|
-| `/auth/callback` | GET | One-time Supabase code/OTP; signed recovery state for password grants; passkey accounts require signed `login_approval_state` for email/password fallback (bare magic links are rejected) |
+| `/auth/callback` | GET | One-time Supabase code/OTP; signed recovery state for password grants |
 | `/api/cron/plaid-sync` | GET/POST | Timing-safe `CRON_SECRET` bearer |
 | `/api/plaid/webhook` | POST | Plaid ES256 JWT + 5-minute age + raw-body SHA-256 |
 | `/api/plaid/link-token` | POST | Fresh Supabase user + active-budget admin |

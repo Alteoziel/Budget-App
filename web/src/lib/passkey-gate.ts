@@ -1,12 +1,13 @@
 /**
  * Decide what happens after a successful email/password authentication.
  *
- * - Has passkeys → password is a fallback: require email approval (no session yet).
- * - No passkeys → offer passkey enrollment.
- * - Passkey API unavailable → continue to the app (feature not enabled yet).
+ * Passkey and password are both first-class sign-in methods. Password never
+ * requires an extra email confirmation step, whether or not a passkey exists.
+ *
+ * - No passkeys → offer passkey enrollment (optional).
+ * - Has passkeys, or passkey API unavailable → continue to the app.
  */
 export type PasswordLoginGate =
-  | { kind: "email_approval" }
   | { kind: "passkey_setup"; next: string }
   | { kind: "continue"; next: string };
 
@@ -15,9 +16,6 @@ export function resolvePasswordLoginGate(options: {
   passkeyCheckOk: boolean;
   next: string;
 }): PasswordLoginGate {
-  if (options.passkeyCheckOk && (options.passkeyCount ?? 0) > 0) {
-    return { kind: "email_approval" };
-  }
   if (options.passkeyCheckOk && (options.passkeyCount ?? 0) === 0) {
     return { kind: "passkey_setup", next: options.next };
   }
