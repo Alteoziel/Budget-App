@@ -23,7 +23,8 @@ export const metadata: Metadata = {
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
-    statusBarStyle: "default",
+    // Match the app wash so iOS doesn't force a white status bar on launch.
+    statusBarStyle: "black-translucent",
     title: "Alte' Budgeting",
   },
   icons: {
@@ -40,8 +41,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#3f7a5c" },
-    { media: "(prefers-color-scheme: dark)", color: "#15241f" },
+    { media: "(prefers-color-scheme: light)", color: "#e9e3d6" },
+    { media: "(prefers-color-scheme: dark)", color: "#080c0b" },
   ],
   width: "device-width",
   initialScale: 1,
@@ -50,8 +51,9 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
-// Runs before paint so a saved dark preference never flashes light first.
-const themeScript = `(function(){try{var p=localStorage.getItem("alte-theme");var d=p==="dark"||((!p||p==="system")&&window.matchMedia("(prefers-color-scheme: dark)").matches);if(d)document.documentElement.classList.add("dark");}catch(e){}})();`;
+// Runs before paint: set class + background + color-scheme so dark mode never
+// flashes browser-default white while CSS is still loading.
+const themeScript = `(function(){try{var p=localStorage.getItem("alte-theme");var d=p==="dark"||((!p||p==="system")&&window.matchMedia("(prefers-color-scheme: dark)").matches);var r=document.documentElement;if(d)r.classList.add("dark");r.style.colorScheme=d?"dark":"light";r.style.backgroundColor=d?"#080c0b":"#e9e3d6";var m=document.querySelector('meta[name="theme-color"]');if(!m){m=document.createElement("meta");m.setAttribute("name","theme-color");document.head.appendChild(m);}m.setAttribute("content",d?"#080c0b":"#e9e3d6");}catch(e){}})();`;
 
 export default async function RootLayout({
   children,
@@ -68,7 +70,10 @@ export default async function RootLayout({
         />
         <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta
+          name="apple-mobile-web-app-status-bar-style"
+          content="black-translucent"
+        />
         <meta name="apple-mobile-web-app-title" content="Alte' Budgeting" />
       </head>
       <body className={`${display.variable} ${sans.variable} font-sans antialiased`}>
