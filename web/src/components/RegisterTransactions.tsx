@@ -446,6 +446,11 @@ export function RegisterTransactions({
                         <div className="min-w-0">
                           <p className="font-semibold text-ink-900">
                             {txn.payee || "Untitled"}
+                            {!txn.cleared ? (
+                              <span className="ml-2 align-middle text-[10px] font-bold uppercase tracking-wide text-ink-500">
+                                Pending
+                              </span>
+                            ) : null}
                           </p>
                           <p className="text-xs text-ink-600">
                             {txn.occurred_on}

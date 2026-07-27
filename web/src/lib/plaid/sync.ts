@@ -45,9 +45,19 @@ async function markPlaidItemSyncError(
     .eq("budget_id", item.budget_id);
 }
 
+export type SyncPlaidItemOptions = {
+  /**
+   * Start from an empty cursor so Plaid re-sends the full available window.
+   * Used by manual "Sync now" to recover transactions previously skipped
+   * (e.g. pending authorizations that advanced the cursor without being stored).
+   */
+  resetCursor?: boolean;
+};
+
 export async function syncPlaidItem(
   supabase: SupabaseClient,
   item: ItemRow,
+  options: SyncPlaidItemOptions = {},
 ): Promise<SyncResult> {
   const result: SyncResult = { inserted: 0, updated: 0, removed: 0, errors: [] };
 
@@ -87,7 +97,7 @@ export async function syncPlaidItem(
   // Learn categories from prior payee assignments once per sync pass.
   const payeeMemory = await loadPayeeCategoryMemory(supabase, item.budget_id);
 
-  let cursor = item.sync_cursor ?? undefined;
+  let cursor = options.resetCursor ? undefined : (item.sync_cursor ?? undefined);
   let hasMore = true;
 
   try {
@@ -152,6 +162,33 @@ export async function syncPlaidItem(
   return result;
 }
 
+/** Stable external_id for a Plaid transaction_id. */
+export function plaidExternalId(transactionId: string): string {
+  return `plaid:${transactionId}`;
+}
+
+/** Fields we persist from a Plaid transaction (pending included as uncleared). */
+export function plaidTransactionImportFields(txn: {
+  transaction_id: string;
+  pending: boolean;
+  pending_transaction_id?: string | null;
+  amount: number;
+  date: string;
+  merchant_name?: string | null;
+  name?: string | null;
+}) {
+  return {
+    externalId: plaidExternalId(txn.transaction_id),
+    pendingExternalId: txn.pending_transaction_id
+      ? plaidExternalId(txn.pending_transaction_id)
+      : null,
+    amountCents: plaidAmountToCents(txn.amount),
+    cleared: !txn.pending,
+    occurredOn: txn.date,
+    payee: (txn.merchant_name || txn.name || "Bank transaction").slice(0, 200),
+  };
+}
+
 async function upsertPlaidTransaction(
   supabase: SupabaseClient,
   args: {
@@ -164,18 +201,15 @@ async function upsertPlaidTransaction(
 ): Promise<{ inserted: number; updated: number }> {
   const accountId = args.accountByPlaid.get(args.txn.account_id);
   if (!accountId) return { inserted: 0, updated: 0 };
-  if (args.txn.pending) return { inserted: 0, updated: 0 };
 
-  const amountCents = plaidAmountToCents(args.txn.amount);
-  if (amountCents === 0) return { inserted: 0, updated: 0 };
+  const fields = plaidTransactionImportFields(args.txn);
+  if (fields.amountCents === 0) return { inserted: 0, updated: 0 };
 
-  const externalId = `plaid:${args.txn.transaction_id}`;
-  const payee = (args.txn.merchant_name || args.txn.name || "Bank transaction").slice(
-    0,
-    200,
-  );
+  // Pending authorizations are imported as uncleared so recent bank activity
+  // shows up immediately. When they post, Plaid usually sends a new
+  // transaction_id plus pending_transaction_id pointing at the old one.
   const suggestedCategoryId = resolveCategoryFromPayeeMemory(
-    payee,
+    fields.payee,
     args.payeeMemory,
   );
   const row = {
@@ -183,26 +217,41 @@ async function upsertPlaidTransaction(
     budget_id: args.budgetId,
     account_id: accountId,
     category_id: suggestedCategoryId,
-    occurred_on: args.txn.date,
-    payee,
+    occurred_on: fields.occurredOn,
+    payee: fields.payee,
     memo: "",
-    amount_cents: amountCents,
-    cleared: true,
-    external_id: externalId,
+    amount_cents: fields.amountCents,
+    cleared: fields.cleared,
+    external_id: fields.externalId,
   };
 
-  const { data: existing } = await supabase
+  const { data: existingById } = await supabase
     .from("transactions")
-    .select("id,amount_cents,occurred_on,payee")
+    .select("id,amount_cents,occurred_on,payee,cleared,external_id,category_id")
     .eq("budget_id", args.budgetId)
-    .eq("external_id", externalId)
+    .eq("external_id", fields.externalId)
     .maybeSingle();
+
+  let existing = existingById;
+  // Posted txn replacing a previously imported pending authorization: keep the
+  // same row (and any category the user already assigned) by rewriting external_id.
+  if (!existing?.id && fields.pendingExternalId) {
+    const { data: existingPending } = await supabase
+      .from("transactions")
+      .select("id,amount_cents,occurred_on,payee,cleared,external_id,category_id")
+      .eq("budget_id", args.budgetId)
+      .eq("external_id", fields.pendingExternalId)
+      .maybeSingle();
+    existing = existingPending;
+  }
 
   if (existing?.id) {
     const changed =
       existing.amount_cents !== row.amount_cents ||
       existing.occurred_on !== row.occurred_on ||
-      existing.payee !== row.payee;
+      existing.payee !== row.payee ||
+      existing.cleared !== fields.cleared ||
+      existing.external_id !== fields.externalId;
     if (!changed) return { inserted: 0, updated: 0 };
     const { error } = await supabase
       .from("transactions")
@@ -210,7 +259,8 @@ async function upsertPlaidTransaction(
         amount_cents: row.amount_cents,
         occurred_on: row.occurred_on,
         payee: row.payee,
-        cleared: true,
+        cleared: fields.cleared,
+        external_id: fields.externalId,
       })
       .eq("id", existing.id);
     if (error) throw error;
@@ -235,8 +285,8 @@ async function upsertPlaidTransaction(
         budgetId: args.budgetId,
         accountId,
         bankTransactionId: inserted.id,
-        amountCents,
-        occurredOn: args.txn.date,
+        amountCents: fields.amountCents,
+        occurredOn: fields.occurredOn,
       });
     } catch {
       // Matching is best-effort; sync should still succeed.
@@ -256,7 +306,7 @@ async function removePlaidTransaction(
     .from("transactions")
     .delete()
     .eq("budget_id", budgetId)
-    .eq("external_id", `plaid:${txn.transaction_id}`)
+    .eq("external_id", plaidExternalId(txn.transaction_id))
     .select("id");
   if (error) throw error;
   return data?.length ?? 0;
