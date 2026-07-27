@@ -274,14 +274,8 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 }
 
 @layer utilities {
+  /* Reserved for rare screens that still need extra bottom clearance. */
   .safe-pb {
-    /* Bottom nav clearance on phones; desktop uses side nav so less padding */
-    padding-bottom: calc(5.75rem + env(safe-area-inset-bottom, 0px));
-  }
-
-  @media (min-width: 1024px) {
-    .safe-pb {
-      padding-bottom: 2rem;
-    }
+    padding-bottom: 2rem;
   }
 }
