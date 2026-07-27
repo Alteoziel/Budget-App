@@ -187,4 +187,20 @@ assert.equal(ranked[0]!.categoryId, "fun");
 assert.ok(ranked.findIndex((row) => row.categoryId === "flex") < ranked.findIndex((row) => row.categoryId === "priority"));
 assert.equal(ranked.at(-1)!.categoryId === "bills" || ranked.at(-1)!.categoryId === "soon" || ranked.at(-1)!.categoryId === "long", true);
 
+// Manual protect flag removes a category from Fix Now donors entirely.
+const protectedBuffer = donor({
+  categoryId: "protected",
+  availableCents: 99_000,
+  excludeFromOverspendCover: true,
+});
+const openBuffer = donor({
+  categoryId: "open",
+  availableCents: 1_000,
+});
+const withoutProtected = rankOverspendDonors([protectedBuffer, openBuffer], asOf);
+assert.deepEqual(
+  withoutProtected.map((row) => row.categoryId),
+  ["open"],
+);
+
 console.log("overspend-fix.test.ts: ok");

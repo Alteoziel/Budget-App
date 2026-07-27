@@ -66,7 +66,9 @@ export function OverspentFixer({
   const donorRows = useMemo(() => {
     const asOfIso = asOfIsoForMonth(month);
     return rankOverspendDonors(
-      rows.filter((row) => row.availableCents > 0),
+      rows.filter(
+        (row) => row.availableCents > 0 && !row.excludeFromOverspendCover,
+      ),
       asOfIso,
     );
   }, [rows, month]);

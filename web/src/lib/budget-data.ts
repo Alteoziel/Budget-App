@@ -35,6 +35,7 @@ function assertNoError(error: { message: string } | null, label: string) {
  * assign_mode look "deleted"/stuck even though they still exist in the DB.
  */
 const CATEGORY_COLUMN_SETS = [
+  "id,group_id,name,sort_order,hidden,budget_id,assign_percent,assign_mode,assign_fixed_cents,assign_priority,exclude_from_overspend_cover,goal_cents,goal_name,goal_frequency,goal_note,goal_due_on",
   "id,group_id,name,sort_order,hidden,budget_id,assign_percent,assign_mode,assign_fixed_cents,assign_priority,goal_cents,goal_name,goal_frequency,goal_note,goal_due_on",
   "id,group_id,name,sort_order,hidden,budget_id,assign_percent,assign_mode,assign_fixed_cents,goal_cents,goal_name,goal_frequency,goal_note,goal_due_on",
   "id,group_id,name,sort_order,hidden,budget_id,assign_percent,assign_mode,assign_fixed_cents,goal_cents,goal_name,goal_frequency,goal_note",
@@ -49,6 +50,7 @@ type CategoryRecord = Category & {
   assign_mode?: string | null;
   assign_fixed_cents?: number | null;
   assign_priority?: number | null;
+  exclude_from_overspend_cover?: boolean | null;
   goal_cents?: number | null;
   goal_name?: string | null;
   goal_frequency?: string | null;
@@ -80,7 +82,7 @@ async function selectCategoriesForBudget(
     }
     lastError = result.error as { message: string };
     if (
-      !/assign_percent|assign_mode|assign_fixed|assign_priority|goal_|column|schema cache/i.test(
+      !/assign_percent|assign_mode|assign_fixed|assign_priority|exclude_from_overspend|goal_|column|schema cache/i.test(
         lastError.message,
       )
     ) {
@@ -267,6 +269,7 @@ export const getBudgetRows = cache(async (month = currentBudgetMonth()): Promise
         assignMode: toAssignMode(category.assign_mode),
         assignFixedCents: Number(category.assign_fixed_cents ?? 0),
         assignPriority: Math.max(0, Math.floor(Number(category.assign_priority ?? 0))),
+        excludeFromOverspendCover: Boolean(category.exclude_from_overspend_cover),
         goalCents:
           category.goal_cents == null ? null : Number(category.goal_cents),
         goalName: category.goal_name ?? "",
@@ -499,6 +502,7 @@ export const getBudgetSnapshot = cache(async (as: string): Promise<BudgetSnapsho
         assignMode: toAssignMode(category.assign_mode),
         assignFixedCents: Number(category.assign_fixed_cents ?? 0),
         assignPriority: Math.max(0, Math.floor(Number(category.assign_priority ?? 0))),
+        excludeFromOverspendCover: Boolean(category.exclude_from_overspend_cover),
         goalCents: category.goal_cents == null ? null : Number(category.goal_cents),
         goalName: category.goal_name ?? "",
         goalFrequency: toGoalFrequency(category.goal_frequency),

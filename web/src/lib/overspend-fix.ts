@@ -38,6 +38,8 @@ export type OverspendDonorCandidate = {
   assignMode: AssignMode;
   assignFixedCents: number;
   assignPercent: number;
+  /** Manual opt-out from Fix Now funding sources. */
+  excludeFromOverspendCover?: boolean;
 };
 
 type TransferDonation = Pick<FixDonation, "categoryId" | "cents">;
@@ -221,7 +223,9 @@ export function rankOverspendDonors<T extends OverspendDonorCandidate>(
   donors: T[],
   asOfIso: string,
 ): T[] {
-  return [...donors].sort((a, b) => compareOverspendDonors(a, b, asOfIso));
+  return [...donors]
+    .filter((donor) => !donor.excludeFromOverspendCover)
+    .sort((a, b) => compareOverspendDonors(a, b, asOfIso));
 }
 
 /**
