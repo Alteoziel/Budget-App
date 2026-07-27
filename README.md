@@ -65,6 +65,7 @@ Preview / production URLs come from Vercel after deploy.
 - Start with `PLAID_ENV=sandbox` (Link test user `user_good` / `pass_good`)
 - Settings → **Connect bank** opens Plaid Link; categories left blank for you to assign
 - Pending bank authorizations are imported as uncleared; Sync now does a full refresh
+- Sync now remaps accounts and requests an on-demand Plaid bank refresh when available — disconnecting is not required to recover missing transactions
 - Run migration `supabase/migrations/20260724150000_plaid_bank_sync.sql`
 - Disconnect / Sync now are available per connected item on Settings
 

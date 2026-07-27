@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   mapPlaidAccountType,
   plaidAmountToCents,
+  plaidErrorCode,
   plaidErrorMessage,
 } from "@/lib/plaid/client";
 
@@ -18,5 +19,12 @@ assert.equal(
   "INVALID_API_KEYS: invalid",
 );
 assert.equal(plaidErrorMessage(new Error("boom")), "boom");
+assert.equal(
+  plaidErrorCode({
+    response: { data: { error_code: "PRODUCT_NOT_ENABLED" } },
+  }),
+  "PRODUCT_NOT_ENABLED",
+);
+assert.equal(plaidErrorCode(new Error("boom")), null);
 
 console.log("plaid/client.test.ts: ok");

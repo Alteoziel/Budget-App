@@ -3193,7 +3193,9 @@ export async function syncPlaidNowAction(formData: FormData) {
     const admin = createServiceClient();
     const { data: item, error } = await admin
       .from("plaid_items")
-      .select("id,budget_id,access_token_encrypted,sync_cursor,created_by,status")
+      .select(
+        "id,budget_id,access_token_encrypted,sync_cursor,created_by,status,institution_name",
+      )
       .eq("id", itemId)
       .eq("budget_id", budget.id)
       .maybeSingle();
@@ -3202,11 +3204,12 @@ export async function syncPlaidNowAction(formData: FormData) {
       redirectWithError("/settings", "Bank connection not found.");
     }
 
-    const { syncPlaidItem } = await import("@/lib/plaid/sync");
+    const { manualSyncPlaidItem, formatManualSyncNotice } = await import(
+      "@/lib/plaid/sync"
+    );
     const started = new Date().toISOString();
-    // Full refresh: recover txns that were previously skipped (pending) while
-    // the incremental cursor had already advanced past them.
-    const result = await syncPlaidItem(admin, item!, { resetCursor: true });
+    // Remap accounts + optional Plaid refresh + full sync. Do not disconnect.
+    const result = await manualSyncPlaidItem(admin, item!);
     await admin.from("sync_runs").insert({
       budget_id: budget.id,
       plaid_item_id: item!.id,
@@ -3220,13 +3223,16 @@ export async function syncPlaidNowAction(formData: FormData) {
 
     revalidatePath("/settings");
     revalidatePath("/accounts");
+    revalidatePath("/transactions");
     if (result.errors.length) {
       redirectWithError(
         "/settings",
         bankSyncConfigErrorMessage(new Error(result.errors[0] || "Sync finished with errors.")),
       );
     }
-    redirect("/settings");
+    redirect(
+      `/settings?notice=${encodeURIComponent(formatManualSyncNotice(result))}`,
+    );
   } catch (error) {
     unstable_rethrow(error);
     redirectWithError("/settings", bankSyncConfigErrorMessage(error));

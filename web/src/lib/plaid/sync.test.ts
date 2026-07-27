@@ -55,6 +55,7 @@ async function main() {
     syncPlaidItem,
     plaidExternalId,
     plaidTransactionImportFields,
+    formatManualSyncNotice,
   } = await import("@/lib/plaid/sync");
 
   assert.equal(plaidExternalId("txn_abc"), "plaid:txn_abc");
@@ -88,6 +89,40 @@ async function main() {
   assert.equal(postedFields.cleared, true);
   assert.equal(postedFields.externalId, "plaid:posted-1");
   assert.equal(postedFields.pendingExternalId, "plaid:pending-1");
+
+  const emptyNotice = formatManualSyncNotice({
+    inserted: 0,
+    updated: 0,
+    removed: 0,
+    errors: [],
+    skippedUnmapped: 0,
+    pendingImported: 0,
+    plaidAdded: 0,
+    plaidModified: 0,
+    accountsLinked: 1,
+    refreshRequested: false,
+    refreshNote: null,
+    plaidLastSuccessfulUpdate: "2026-07-27T12:00:00.000Z",
+  });
+  assert.match(emptyNotice, /No new transactions from Plaid/);
+  assert.match(emptyNotice, /don’t need to disconnect|do not need to disconnect/i);
+
+  const importedNotice = formatManualSyncNotice({
+    inserted: 8,
+    updated: 0,
+    removed: 0,
+    errors: [],
+    skippedUnmapped: 0,
+    pendingImported: 5,
+    plaidAdded: 8,
+    plaidModified: 0,
+    accountsLinked: 2,
+    refreshRequested: true,
+    refreshNote: null,
+    plaidLastSuccessfulUpdate: null,
+  });
+  assert.match(importedNotice, /Imported 8 transactions \(5 pending\)/);
+  assert.doesNotMatch(importedNotice, /don’t need to disconnect/);
 
   const goodCipher = encryptSecret("access-sandbox-test-token");
 
