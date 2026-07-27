@@ -1,11 +1,12 @@
 /* Alte' Budgeting service worker — offline shell + last-visited pages. */
-const VERSION = "v9";
+const VERSION = "v10";
 const STATIC_CACHE = `alte-static-${VERSION}`;
 const PAGE_CACHE = `alte-pages-${VERSION}`;
 const PRIVATE_CACHE_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
 
 const PRECACHE = [
   "/offline.html",
+  "/boot.html",
   "/manifest.webmanifest",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
@@ -36,6 +37,9 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
+      // Keep last-visited HTML across SW bumps so cold open stays a cache hit.
+      await migratePageCacheForward();
+
       const keys = await caches.keys();
       await Promise.all(
         keys
@@ -60,6 +64,27 @@ self.addEventListener("message", (event) => {
     event.waitUntil(purgePrivateData());
   }
 });
+
+async function migratePageCacheForward() {
+  const keys = await caches.keys();
+  const oldPageCaches = keys
+    .filter((key) => key.startsWith("alte-pages-") && key !== PAGE_CACHE)
+    .sort();
+  if (oldPageCaches.length === 0) return;
+
+  const next = await caches.open(PAGE_CACHE);
+  for (const oldKey of oldPageCaches) {
+    const prev = await caches.open(oldKey);
+    const requests = await prev.keys();
+    await Promise.all(
+      requests.map(async (request) => {
+        if (await next.match(request)) return;
+        const response = await prev.match(request);
+        if (response) await next.put(request, response);
+      }),
+    );
+  }
+}
 
 async function purgePrivateData() {
   const keys = await caches.keys();
@@ -89,7 +114,8 @@ function isStaticAsset(url) {
     url.pathname.startsWith("/icons/") ||
     url.pathname.startsWith("/splash/") ||
     url.pathname === "/sw.js" ||
-    url.pathname === "/offline.html"
+    url.pathname === "/offline.html" ||
+    url.pathname === "/boot.html"
   );
 }
 
@@ -105,6 +131,10 @@ function isNavigation(request) {
 
 function isOfflineSnapshot(url) {
   return url.pathname === "/api/offline/snapshot";
+}
+
+function isBootFetch(request) {
+  return request.headers.get("X-Alte-Boot") === "1";
 }
 
 async function freshCachedPage(cache, request) {
@@ -147,17 +177,53 @@ async function putPageCache(cache, request, response) {
   const now = Date.now();
   headers.set("x-alte-cached-at", String(now));
   headers.set("x-alte-reauth-expires", String(now + PRIVATE_CACHE_MAX_AGE_MS));
+  // Drop CSP from the cached copy? Keep it — needed when serving cached HTML.
   const cachedResponse = new Response(response.clone().body, {
     status: response.status,
     statusText: response.statusText,
     headers,
   });
   await cache.put(request, cachedResponse);
+  // Also store under pathname for bare matches (querystring variants).
+  if (url.search) {
+    await cache.put(url.pathname, cachedResponse.clone());
+  }
+}
+
+/**
+ * Instant dark document for cache-miss navigations. The page then fetches the
+ * real HTML (X-Alte-Boot) and location.replace()s so the WebView never sits on
+ * the default white background while the network is in flight (~0.5s).
+ */
+async function darkBootNavigationResponse() {
+  const cached = await caches.match("/boot.html");
+  if (cached) {
+    return new Response(await cached.blob(), {
+      status: 200,
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "no-store",
+        "X-Alte-Boot-Shell": "1",
+      },
+    });
+  }
+  return new Response(
+    `<!doctype html><html lang="en" class="dark"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/><meta name="theme-color" content="#080c0b"/><meta name="color-scheme" content="dark"/><title>Alte' Budgeting</title><style>html,body{margin:0;min-height:100%;background:#080c0b;color-scheme:dark}</style></head><body style="background:#080c0b"></body></html>`,
+    {
+      status: 200,
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "no-store",
+        "X-Alte-Boot-Shell": "1",
+      },
+    },
+  );
 }
 
 /**
  * Paint a warm cache immediately on cold start, then refresh in the background.
- * Network-first left a white gap while waiting for HTML after the OS splash.
+ * On cache miss, paint a dark boot shell immediately instead of waiting on the
+ * network (which leaves a white WKWebView gap after the OS splash).
  */
 async function staleWhileRevalidatePage(request) {
   const requestUrl = new URL(request.url);
@@ -166,6 +232,7 @@ async function staleWhileRevalidatePage(request) {
   }
   const cache = await caches.open(PAGE_CACHE);
   const cached = await freshCachedPage(cache, request);
+  const bootFetch = isBootFetch(request);
 
   const networkPromise = fetch(request)
     .then(async (response) => {
@@ -181,11 +248,34 @@ async function staleWhileRevalidatePage(request) {
     return cached;
   }
 
+  // Boot fetch must hit the network (and warm the page cache) — never recurse
+  // into another dark shell.
+  if (bootFetch) {
+    const network = await networkPromise;
+    if (network) return network;
+    const bare = await freshCachedPage(cache, requestUrl.pathname);
+    if (bare) return bare;
+    const offline = await caches.match("/offline.html");
+    return (
+      offline ||
+      new Response("Offline", {
+        status: 503,
+        headers: { "Content-Type": "text/plain" },
+      })
+    );
+  }
+
+  // Real navigation, cache miss: never block on the network behind a white
+  // WebView. Hand back the dark boot page; it will fetch + replace.
+  if (request.mode === "navigate") {
+    void networkPromise;
+    return darkBootNavigationResponse();
+  }
+
   const network = await networkPromise;
   if (network) return network;
 
-  const url = new URL(request.url);
-  const bare = await freshCachedPage(cache, url.pathname);
+  const bare = await freshCachedPage(cache, requestUrl.pathname);
   if (bare) return bare;
 
   const offline = await caches.match("/offline.html");
@@ -264,7 +354,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  if (isNavigation(request)) {
+  if (isNavigation(request) || isBootFetch(request)) {
     event.respondWith(staleWhileRevalidatePage(request));
   }
 });

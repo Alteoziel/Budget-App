@@ -6,16 +6,9 @@ export function RegisterServiceWorker() {
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
 
-    let refreshing = false;
-
-    const onControllerChange = () => {
-      if (refreshing) return;
-      refreshing = true;
-      // Pick up a new SW after install so offline assets stay current.
-      window.location.reload();
-    };
-
-    navigator.serviceWorker.addEventListener("controllerchange", onControllerChange);
+    // Intentionally do NOT reload on controllerchange. A forced reload on app
+    // open (when a new SW skipWaiting + claims) re-opens a white WKWebView gap
+    // for ~0.5s. New workers take effect on the next cold start / navigation.
 
     void navigator.serviceWorker
       .register("/sw.js", { scope: "/", updateViaCache: "none" })
@@ -35,7 +28,7 @@ export function RegisterServiceWorker() {
           });
         });
 
-        // Check for updates when the app is opened / focused.
+        // Check for updates when the app is opened / focused — without reload.
         void registration.update();
         const onFocus = () => {
           void registration.update();
@@ -48,13 +41,6 @@ export function RegisterServiceWorker() {
       .catch(() => {
         // Ignore registration failures in unsupported contexts.
       });
-
-    return () => {
-      navigator.serviceWorker.removeEventListener(
-        "controllerchange",
-        onControllerChange,
-      );
-    };
   }, []);
 
   return null;
