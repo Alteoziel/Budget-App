@@ -31,9 +31,17 @@ export type SyncResult = {
 
 export type ManualSyncResult = SyncResult & {
   accountsLinked: number;
+  plaidAccountCount: number;
+  accountLinkErrors: string[];
   refreshRequested: boolean;
   refreshNote: string | null;
   plaidLastSuccessfulUpdate: string | null;
+};
+
+export type EnsureAccountsResult = {
+  linked: number;
+  plaidAccountCount: number;
+  errors: string[];
 };
 
 type ItemRow = {
@@ -386,6 +394,8 @@ export async function manualSyncPlaidItem(
   const result: ManualSyncResult = {
     ...emptySyncResult(),
     accountsLinked: 0,
+    plaidAccountCount: 0,
+    accountLinkErrors: [],
     refreshRequested: false,
     refreshNote: null,
     plaidLastSuccessfulUpdate: null,
@@ -408,16 +418,21 @@ export async function manualSyncPlaidItem(
   }
 
   try {
-    result.accountsLinked = await ensureLocalAccountsForItem(supabase, {
+    const linked = await ensureLocalAccountsForItem(supabase, {
       budgetId: item.budget_id,
       userId: item.created_by,
       itemRowId: item.id,
       accessToken,
       institutionName: item.institution_name || "Linked bank",
     });
+    result.accountsLinked = linked.linked;
+    result.plaidAccountCount = linked.plaidAccountCount;
+    result.accountLinkErrors = linked.errors;
   } catch (e) {
     // Still attempt sync with whatever accounts are already mapped.
-    result.refreshNote = plaidErrorMessage(e, "Could not refresh linked accounts.");
+    result.accountLinkErrors.push(
+      plaidErrorMessage(e, "Could not refresh linked accounts."),
+    );
   }
 
   try {
@@ -473,13 +488,33 @@ export async function manualSyncPlaidItem(
     }
   }
 
+  // Account mapping failures are the usual reason Sync looks “successful” with
+  // large skippedUnmapped counts — surface them as sync errors.
+  if (result.skippedUnmapped > 0 && result.accountsLinked === 0) {
+    const detail =
+      result.accountLinkErrors[0] ||
+      (result.plaidAccountCount === 0
+        ? "Plaid returned no accounts for this connection."
+        : "Could not link any Plaid accounts into this budget.");
+    result.errors.push(detail);
+  } else if (result.accountLinkErrors.length && result.inserted === 0) {
+    result.errors.push(result.accountLinkErrors[0]!);
+  }
+
   return result;
 }
 
 /** User-facing Settings notice after Sync now. */
 export function formatManualSyncNotice(result: ManualSyncResult): string {
   if (result.errors.length) {
-    return result.errors[0] || "Sync finished with errors.";
+    const parts = [result.errors[0] || "Sync finished with errors."];
+    if (result.skippedUnmapped > 0) {
+      parts.push(
+        `${result.skippedUnmapped} transaction${result.skippedUnmapped === 1 ? "" : "s"} could not be imported until accounts are linked.`,
+      );
+    }
+    if (result.refreshNote) parts.push(result.refreshNote);
+    return parts.join(" ");
   }
 
   const parts: string[] = [];
@@ -496,6 +531,12 @@ export function formatManualSyncNotice(result: ManualSyncResult): string {
     );
   } else {
     parts.push("No new transactions from Plaid.");
+  }
+
+  if (result.accountsLinked > 0) {
+    parts.push(
+      `Linked ${result.accountsLinked} bank account${result.accountsLinked === 1 ? "" : "s"}.`,
+    );
   }
 
   if (result.skippedUnmapped > 0) {
@@ -523,6 +564,57 @@ export function formatManualSyncNotice(result: ManualSyncResult): string {
   return parts.join(" ");
 }
 
+/** Build the default local account name for a Plaid account. */
+export function plaidAccountDisplayName(
+  account: {
+    name?: string | null;
+    official_name?: string | null;
+    type?: string | null;
+    subtype?: string | null;
+    mask?: string | null;
+  },
+  institutionName: string,
+): string {
+  const raw =
+    account.name ||
+    account.official_name ||
+    `${institutionName} ${account.subtype || account.type || "account"}${
+      account.mask ? ` ·${account.mask}` : ""
+    }`;
+  return raw.slice(0, 80);
+}
+
+/**
+ * Prefer an existing unmapped local account when Plaid reconnects or mappings
+ * were deleted (unique account names would otherwise block re-create).
+ */
+export function pickReusableLocalAccount(
+  localAccounts: Array<{ id: string; name: string; account_type: string }>,
+  mappedAccountIds: Set<string>,
+  opts: { name: string; accountType: string; mask?: string | null },
+): string | null {
+  const wantName = opts.name.trim().toLowerCase();
+  const unmapped = localAccounts.filter((a) => !mappedAccountIds.has(a.id));
+
+  const exact = unmapped.find((a) => a.name.trim().toLowerCase() === wantName);
+  if (exact) return exact.id;
+
+  const mask = opts.mask?.replace(/\D/g, "");
+  if (mask) {
+    const byMask = unmapped.find((a) => a.name.includes(mask));
+    if (byMask) return byMask.id;
+  }
+
+  const sameType = unmapped.filter((a) => a.account_type === opts.accountType);
+  if (sameType.length === 1) return sameType[0]!.id;
+
+  // Last resort: already-mapped account with the exact same name (remap).
+  const mappedExact = localAccounts.find(
+    (a) => a.name.trim().toLowerCase() === wantName,
+  );
+  return mappedExact?.id ?? null;
+}
+
 export async function ensureLocalAccountsForItem(
   supabase: SupabaseClient,
   args: {
@@ -532,46 +624,88 @@ export async function ensureLocalAccountsForItem(
     accessToken: string;
     institutionName: string;
   },
-): Promise<number> {
+): Promise<EnsureAccountsResult> {
   const client = getPlaidClient();
   const accountsRes = await client.accountsGet({ access_token: args.accessToken });
-  let linked = 0;
+  const plaidAccounts = accountsRes.data.accounts ?? [];
+  const result: EnsureAccountsResult = {
+    linked: 0,
+    plaidAccountCount: plaidAccounts.length,
+    errors: [],
+  };
 
-  for (const account of accountsRes.data.accounts) {
-    const { data: existingMap } = await supabase
-      .from("plaid_accounts")
-      .select("id,account_id")
-      .eq("budget_id", args.budgetId)
-      .eq("plaid_account_id", account.account_id)
-      .maybeSingle();
+  if (plaidAccounts.length === 0) {
+    result.errors.push("Plaid returned no accounts for this connection.");
+    return result;
+  }
 
-    let accountId = existingMap?.account_id as string | undefined;
+  const { data: localAccounts, error: localErr } = await supabase
+    .from("accounts")
+    .select("id,name,account_type")
+    .eq("budget_id", args.budgetId);
+  if (localErr) {
+    result.errors.push(localErr.message);
+    return result;
+  }
+
+  const { data: existingMaps, error: mapErr } = await supabase
+    .from("plaid_accounts")
+    .select("id,plaid_account_id,account_id")
+    .eq("budget_id", args.budgetId);
+  if (mapErr) {
+    result.errors.push(mapErr.message);
+    return result;
+  }
+
+  const mapByPlaidId = new Map(
+    (existingMaps ?? []).map((m) => [
+      m.plaid_account_id as string,
+      m.account_id as string,
+    ]),
+  );
+  const mappedAccountIds = new Set(
+    (existingMaps ?? []).map((m) => m.account_id as string),
+  );
+  const locals = (localAccounts ?? []).map((a) => ({
+    id: a.id as string,
+    name: a.name as string,
+    account_type: a.account_type as string,
+  }));
+
+  const { data: maxSort } = await supabase
+    .from("accounts")
+    .select("sort_order")
+    .eq("budget_id", args.budgetId)
+    .order("sort_order", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  let nextSortOrder = Number(maxSort?.sort_order ?? -1) + 1;
+
+  for (const account of plaidAccounts) {
+    const accountType = mapPlaidAccountType(account.type, account.subtype);
+    const name = plaidAccountDisplayName(account, args.institutionName);
+    let accountId = mapByPlaidId.get(account.account_id);
+
     if (!accountId) {
-      const name =
-        account.name ||
-        account.official_name ||
-        `${args.institutionName} ${account.subtype || account.type}${
-          account.mask ? ` ·${account.mask}` : ""
-        }`;
+      accountId =
+        pickReusableLocalAccount(locals, mappedAccountIds, {
+          name,
+          accountType,
+          mask: account.mask,
+        }) ?? undefined;
+    }
 
-      const { data: maxSort } = await supabase
-        .from("accounts")
-        .select("sort_order")
-        .eq("budget_id", args.budgetId)
-        .order("sort_order", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      const nextSortOrder = Number(maxSort?.sort_order ?? -1) + 1;
+    if (!accountId) {
       const baseRow = {
         user_id: args.userId,
         budget_id: args.budgetId,
-        name: name.slice(0, 80),
-        account_type: mapPlaidAccountType(account.type, account.subtype),
+        name,
+        account_type: accountType,
         currency: (account.balances.iso_currency_code || "USD").toUpperCase(),
       };
 
       let created: { id: string } | null = null;
-      let error: { message: string } | null = null;
+      let error: { message: string; code?: string } | null = null;
       ({ data: created, error } = await supabase
         .from("accounts")
         .insert({
@@ -590,26 +724,46 @@ export async function ensureLocalAccountsForItem(
           .single());
       }
 
-      if (error || !created) {
-        const { data: retry } = await supabase
-          .from("accounts")
-          .insert({
-            ...baseRow,
-            name: `${name.slice(0, 60)} (${account.account_id.slice(-6)})`,
-            include_in_total: true,
-            sort_order: nextSortOrder,
-          })
-          .select("id")
-          .single();
-        accountId = retry?.id;
-      } else {
+      // Name already taken: reuse that local account instead of failing open.
+      if (error && /duplicate|unique/i.test(error.message)) {
+        const reused = pickReusableLocalAccount(locals, new Set(), {
+          name,
+          accountType,
+          mask: account.mask,
+        });
+        if (reused) {
+          accountId = reused;
+          error = null;
+        } else {
+          const suffixName = `${name.slice(0, 60)} (${account.account_id.slice(-6)})`;
+          ({ data: created, error } = await supabase
+            .from("accounts")
+            .insert({
+              ...baseRow,
+              name: suffixName,
+              include_in_total: true,
+              sort_order: nextSortOrder,
+            })
+            .select("id")
+            .single());
+        }
+      }
+
+      if (!accountId && created?.id) {
         accountId = created.id;
+        locals.push({ id: created.id, name: baseRow.name, account_type: accountType });
+        nextSortOrder += 1;
+      }
+
+      if (!accountId) {
+        result.errors.push(
+          `Could not create account “${name}”: ${error?.message || "unknown error"}`,
+        );
+        continue;
       }
     }
 
-    if (!accountId) continue;
-
-    await supabase.from("plaid_accounts").upsert(
+    const { error: upsertErr } = await supabase.from("plaid_accounts").upsert(
       {
         budget_id: args.budgetId,
         plaid_item_id: args.itemRowId,
@@ -618,10 +772,47 @@ export async function ensureLocalAccountsForItem(
       },
       { onConflict: "budget_id,plaid_account_id" },
     );
-    linked += 1;
+    if (upsertErr) {
+      // unique(account_id) can block if this local account is already mapped to
+      // a different Plaid account — clear the stale map and retry once.
+      if (/duplicate|unique/i.test(upsertErr.message)) {
+        await supabase
+          .from("plaid_accounts")
+          .delete()
+          .eq("budget_id", args.budgetId)
+          .eq("account_id", accountId)
+          .neq("plaid_account_id", account.account_id);
+        const { error: retryErr } = await supabase.from("plaid_accounts").upsert(
+          {
+            budget_id: args.budgetId,
+            plaid_item_id: args.itemRowId,
+            plaid_account_id: account.account_id,
+            account_id: accountId,
+          },
+          { onConflict: "budget_id,plaid_account_id" },
+        );
+        if (retryErr) {
+          result.errors.push(
+            `Could not link “${name}”: ${retryErr.message}`,
+          );
+          continue;
+        }
+      } else {
+        result.errors.push(`Could not link “${name}”: ${upsertErr.message}`);
+        continue;
+      }
+    }
+
+    mapByPlaidId.set(account.account_id, accountId);
+    mappedAccountIds.add(accountId);
+    result.linked += 1;
   }
 
-  return linked;
+  if (result.linked === 0 && result.errors.length === 0) {
+    result.errors.push("Could not link any Plaid accounts into this budget.");
+  }
+
+  return result;
 }
 
 export type SyncRunSource = "teller" | "plaid" | "cron" | "manual" | "catchup";

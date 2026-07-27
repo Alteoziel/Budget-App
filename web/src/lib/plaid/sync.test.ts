@@ -100,6 +100,8 @@ async function main() {
     plaidAdded: 0,
     plaidModified: 0,
     accountsLinked: 1,
+    plaidAccountCount: 1,
+    accountLinkErrors: [],
     refreshRequested: false,
     refreshNote: null,
     plaidLastSuccessfulUpdate: "2026-07-27T12:00:00.000Z",
@@ -117,12 +119,63 @@ async function main() {
     plaidAdded: 8,
     plaidModified: 0,
     accountsLinked: 2,
+    plaidAccountCount: 2,
+    accountLinkErrors: [],
     refreshRequested: true,
     refreshNote: null,
     plaidLastSuccessfulUpdate: null,
   });
   assert.match(importedNotice, /Imported 8 transactions \(5 pending\)/);
   assert.doesNotMatch(importedNotice, /don’t need to disconnect/);
+
+  const unmappedNotice = formatManualSyncNotice({
+    inserted: 0,
+    updated: 0,
+    removed: 0,
+    errors: ["Could not link any Plaid accounts into this budget."],
+    skippedUnmapped: 184,
+    pendingImported: 0,
+    plaidAdded: 184,
+    plaidModified: 0,
+    accountsLinked: 0,
+    plaidAccountCount: 2,
+    accountLinkErrors: ["Could not link any Plaid accounts into this budget."],
+    refreshRequested: false,
+    refreshNote: null,
+    plaidLastSuccessfulUpdate: null,
+  });
+  assert.match(unmappedNotice, /Could not link any Plaid accounts/);
+  assert.match(unmappedNotice, /184 transactions could not be imported/);
+
+  const { pickReusableLocalAccount, plaidAccountDisplayName } = await import(
+    "@/lib/plaid/sync"
+  );
+  assert.equal(
+    plaidAccountDisplayName(
+      { name: "Checking", mask: "1234", type: "depository", subtype: "checking" },
+      "Chase",
+    ),
+    "Checking",
+  );
+  assert.equal(
+    pickReusableLocalAccount(
+      [
+        { id: "a1", name: "Checking", account_type: "checking" },
+        { id: "a2", name: "Savings", account_type: "savings" },
+      ],
+      new Set(),
+      { name: "Checking", accountType: "checking", mask: "1234" },
+    ),
+    "a1",
+  );
+  assert.equal(
+    pickReusableLocalAccount(
+      [{ id: "a1", name: "Chase Checking ·1234", account_type: "checking" }],
+      new Set(),
+      { name: "Plaid Checking", accountType: "checking", mask: "1234" },
+    ),
+    "a1",
+  );
 
   const goodCipher = encryptSecret("access-sandbox-test-token");
 
