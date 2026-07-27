@@ -2,9 +2,12 @@ import assert from "node:assert/strict";
 import {
   allocateDonations,
   groupAllocationsByTarget,
+  overspendDonorSoftnessScore,
+  rankOverspendDonors,
   totalDonatedCents,
   totalShortfallCents,
   validateOverspendTransferPlan,
+  type OverspendDonorCandidate,
 } from "@/lib/overspend-fix";
 
 const targets = [
@@ -86,5 +89,102 @@ if (balancedPlan.ok) {
   assert.equal(balancedPlan.donatedByCategory.get("fun"), 1000);
   assert.equal(balancedPlan.allocatedBySource.get("fun"), 1000);
 }
+
+const asOf = "2026-07-01";
+
+function donor(
+  overrides: Partial<OverspendDonorCandidate> & { categoryId: string },
+): OverspendDonorCandidate {
+  return {
+    availableCents: 10_000,
+    activityCents: 0,
+    goalCents: null,
+    goalFrequency: "monthly",
+    goalDueOn: null,
+    assignPriority: 0,
+    assignMode: "percent",
+    assignFixedCents: 0,
+    assignPercent: 0,
+    ...overrides,
+  };
+}
+
+// Funded surplus ranks above an underfunded goal, even if the underfunded pile is larger.
+const fundedSurplus = donor({
+  categoryId: "fun",
+  availableCents: 8_000,
+  goalCents: 5_000,
+  activityCents: -2_000,
+});
+const underfunded = donor({
+  categoryId: "bills",
+  availableCents: 20_000,
+  goalCents: 40_000,
+  goalDueOn: "2026-07-15",
+  goalFrequency: "monthly",
+});
+assert.ok(
+  overspendDonorSoftnessScore(fundedSurplus, asOf) >
+    overspendDonorSoftnessScore(underfunded, asOf),
+);
+
+// Near-term due date is protected more than a distant one (same funding gap).
+const dueSoon = donor({
+  categoryId: "soon",
+  availableCents: 5_000,
+  goalCents: 12_000,
+  goalFrequency: "monthly",
+  goalDueOn: "2026-07-20",
+});
+const dueLater = donor({
+  categoryId: "later",
+  availableCents: 5_000,
+  goalCents: 12_000,
+  goalFrequency: "monthly",
+  goalDueOn: "2027-07-01",
+});
+assert.ok(
+  overspendDonorSoftnessScore(dueLater, asOf) >
+    overspendDonorSoftnessScore(dueSoon, asOf),
+);
+
+// Auto Priority categories are protected vs plain buffers.
+const buffer = donor({ categoryId: "buffer", availableCents: 9_000 });
+const priority = donor({
+  categoryId: "priority",
+  availableCents: 9_000,
+  assignPriority: 1,
+});
+assert.ok(
+  overspendDonorSoftnessScore(buffer, asOf) >
+    overspendDonorSoftnessScore(priority, asOf),
+);
+
+// Long-horizon, low-activity goals (savings-shaped) rank below no-goal buffers.
+const longHorizon = donor({
+  categoryId: "long",
+  availableCents: 50_000,
+  goalCents: 100_000,
+  goalFrequency: "yearly",
+  goalDueOn: "2027-12-31",
+  activityCents: 0,
+});
+const noGoal = donor({
+  categoryId: "flex",
+  availableCents: 12_000,
+  activityCents: -3_000,
+});
+assert.ok(
+  overspendDonorSoftnessScore(noGoal, asOf) >
+    overspendDonorSoftnessScore(longHorizon, asOf),
+);
+
+const ranked = rankOverspendDonors(
+  [underfunded, longHorizon, priority, fundedSurplus, noGoal, dueSoon],
+  asOf,
+);
+assert.equal(ranked[0]!.categoryId, "fun");
+assert.ok(ranked.findIndex((row) => row.categoryId === "flex") < ranked.findIndex((row) => row.categoryId === "priority"));
+assert.equal(ranked.at(-1)!.categoryId === "bills" || ranked.at(-1)!.categoryId === "soon" || ranked.at(-1)!.categoryId === "long", true);
 
 console.log("overspend-fix.test.ts: ok");

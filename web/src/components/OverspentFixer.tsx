@@ -9,6 +9,7 @@ import {
   READY_TO_ASSIGN_TARGET_ID,
   allocateDonations,
   groupAllocationsByTarget,
+  rankOverspendDonors,
   totalDonatedCents,
   totalShortfallCents,
   type FixDonation,
@@ -17,6 +18,12 @@ import {
 import type { BudgetRow } from "@/lib/types";
 
 export type FixerStage = "idle" | "banner" | "collect" | "review";
+
+function asOfIsoForMonth(month: string): string {
+  // Budget months are YYYY-MM; score due-date pressure from the 1st of that month.
+  if (/^\d{4}-\d{2}$/.test(month)) return `${month}-01`;
+  return month.slice(0, 10);
+}
 
 export function OverspentFixer({
   month,
@@ -56,13 +63,13 @@ export function OverspentFixer({
     return overspent;
   }, [rows, readyToAssignCents]);
 
-  const donorRows = useMemo(
-    () =>
-      rows
-        .filter((row) => row.availableCents > 0)
-        .sort((a, b) => b.availableCents - a.availableCents),
-    [rows],
-  );
+  const donorRows = useMemo(() => {
+    const asOfIso = asOfIsoForMonth(month);
+    return rankOverspendDonors(
+      rows.filter((row) => row.availableCents > 0),
+      asOfIso,
+    );
+  }, [rows, month]);
 
   const donations = useMemo<FixDonation[]>(() => {
     const list: FixDonation[] = [];
@@ -295,8 +302,9 @@ export function OverspentFixer({
           </div>
 
           <p className="mt-3 text-xs text-ink-600">
-            Tap a category to pull money out of it. What you pull goes back to Ready to
-            assign and then covers the overspent categories.
+            Tap a category to pull money out of it. Suggested first: leftovers after
+            goals and buffers — categories still funding toward a due date or Auto
+            Priority stay lower in the list.
           </p>
 
           {error ? (

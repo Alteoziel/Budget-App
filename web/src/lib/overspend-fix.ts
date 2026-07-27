@@ -1,5 +1,8 @@
 /** Shared logic for covering overspent categories from other categories. */
 
+import { requiredContributionCents } from "@/lib/goal-funding";
+import type { AssignMode, GoalFrequency } from "@/lib/types";
+
 /** Pseudo-target used when Ready to assign itself is negative. */
 export const READY_TO_ASSIGN_TARGET_ID = "__ready_to_assign__";
 
@@ -21,6 +24,20 @@ export type FixAllocation = {
   toCategoryId: string;
   toCategoryName: string;
   cents: number;
+};
+
+/** Fields used to rank which categories are safest to pull from. */
+export type OverspendDonorCandidate = {
+  categoryId: string;
+  availableCents: number;
+  activityCents: number;
+  goalCents: number | null;
+  goalFrequency: GoalFrequency;
+  goalDueOn: string | null;
+  assignPriority: number;
+  assignMode: AssignMode;
+  assignFixedCents: number;
+  assignPercent: number;
 };
 
 type TransferDonation = Pick<FixDonation, "categoryId" | "cents">;
@@ -105,6 +122,106 @@ export function totalShortfallCents(targets: FixTarget[]): number {
 
 export function totalDonatedCents(donations: FixDonation[]): number {
   return donations.reduce((sum, donation) => sum + Math.max(0, donation.cents), 0);
+}
+
+/**
+ * Higher = safer / better to pull from when covering overspending.
+ *
+ * Uses structural budget signals only (goals, due-date pressure, auto-assign
+ * priority/mode, spending activity vs available). Does not inspect category
+ * names or hardcoded lifestyle keywords.
+ */
+export function overspendDonorSoftnessScore(
+  donor: OverspendDonorCandidate,
+  asOfIso: string,
+): number {
+  const available = Math.max(0, Math.round(donor.availableCents));
+  if (available <= 0) return Number.NEGATIVE_INFINITY;
+
+  // Mild capacity preference — enough to break ties, not enough to outrank protection.
+  let score = Math.log10(available + 1) * 12;
+
+  const goal =
+    donor.goalCents != null && Number.isFinite(donor.goalCents) && donor.goalCents > 0
+      ? Math.round(donor.goalCents)
+      : null;
+
+  if (goal != null) {
+    const surplus = available - goal;
+    if (surplus > 0) {
+      // Fully funded with leftover — excellent donor for the surplus.
+      score += 110;
+      score += Math.min(70, (surplus / goal) * 50);
+    } else {
+      // Still short of the goal — protect remaining money.
+      const deficitRatio = Math.min(1, -surplus / goal);
+      score -= 90 + deficitRatio * 70;
+    }
+
+    const plan = requiredContributionCents({
+      goalCents: goal,
+      availableCents: available,
+      frequency: donor.goalFrequency,
+      goalDueOn: donor.goalDueOn,
+      asOfIso,
+    });
+    if (plan && plan.remainingCents > 0) {
+      // Imminent deadlines get stronger protection than far-away ones.
+      score -= Math.min(100, 100 / Math.max(1, plan.periodsLeft));
+      if (plan.perPeriodCents > 0) {
+        score -= Math.min(55, (plan.perPeriodCents / available) * 45);
+      }
+    }
+
+    // Long-horizon goals that barely spend this month behave like savings sinks.
+    const spentThisMonth = Math.max(0, -Math.round(donor.activityCents));
+    if (
+      (donor.goalFrequency === "yearly" || donor.goalFrequency === "once") &&
+      spentThisMonth < available * 0.08
+    ) {
+      score -= 50;
+    }
+  } else {
+    // No goal = unstructured buffer; still useful, but less than funded surplus.
+    score += 60;
+
+    // Intentional monthly funding without a goal — slightly protect.
+    if (donor.assignMode === "fixed" && donor.assignFixedCents > 0) {
+      score -= 28;
+    } else if (donor.assignMode === "percent" && donor.assignPercent >= 10) {
+      score -= 18;
+    }
+  }
+
+  // Auto Priority: user explicitly queued this category to receive funding.
+  if (donor.assignPriority > 0) {
+    const urgency = Math.max(0, 12 - donor.assignPriority);
+    score -= 75 + urgency * 6;
+  }
+
+  return score;
+}
+
+/** Sort donors best-to-pull-from first (descending softness, then available). */
+export function compareOverspendDonors(
+  a: OverspendDonorCandidate,
+  b: OverspendDonorCandidate,
+  asOfIso: string,
+): number {
+  const scoreDiff =
+    overspendDonorSoftnessScore(b, asOfIso) - overspendDonorSoftnessScore(a, asOfIso);
+  if (Math.abs(scoreDiff) > 1e-9) return scoreDiff > 0 ? 1 : -1;
+  if (b.availableCents !== a.availableCents) {
+    return b.availableCents - a.availableCents;
+  }
+  return a.categoryId.localeCompare(b.categoryId);
+}
+
+export function rankOverspendDonors<T extends OverspendDonorCandidate>(
+  donors: T[],
+  asOfIso: string,
+): T[] {
+  return [...donors].sort((a, b) => compareOverspendDonors(a, b, asOfIso));
 }
 
 /**
