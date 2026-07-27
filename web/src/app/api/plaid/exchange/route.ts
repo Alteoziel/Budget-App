@@ -93,7 +93,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const accounts = await ensureLocalAccountsForItem(admin, {
+    const linked = await ensureLocalAccountsForItem(admin, {
       budgetId: active.budget.id,
       userId: user.id,
       itemRowId: item.id,
@@ -113,17 +113,19 @@ export async function POST(req: Request) {
       updated: syncResult.updated,
       errors: syncResult.errors.length
         ? syncResult.errors.join("\n").slice(0, 4000)
-        : null,
+        : linked.errors.length
+          ? linked.errors.join("\n").slice(0, 4000)
+          : null,
     });
 
     return NextResponse.json({
       ok: true,
       itemId: item.id,
-      accounts,
+      accounts: linked.linked,
       inserted: syncResult.inserted,
       updated: syncResult.updated,
       removed: syncResult.removed,
-      errors: syncResult.errors,
+      errors: [...linked.errors, ...syncResult.errors],
     });
   } catch (e) {
     return NextResponse.json(
