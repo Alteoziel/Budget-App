@@ -7,6 +7,7 @@
  * Dark mode swaps those two ramps so existing utility classes keep working.
  */
 :root {
+  color-scheme: light;
   --c-ink-950: 15 26 23;
   --c-ink-900: 21 36 31;
   --c-ink-800: 30 51 44;
@@ -74,6 +75,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   /* Text and dark accents become light. Secondary text stays bright enough to
    * read against elevated cards, which is where dark mode usually falls apart. */
   --c-ink-950: 248 251 249;
@@ -145,6 +147,7 @@
 html,
 body {
   min-height: 100%;
+  background-color: var(--page-bg);
 }
 
 html {
@@ -271,14 +274,8 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 }
 
 @layer utilities {
+  /* Reserved for rare screens that still need extra bottom clearance. */
   .safe-pb {
-    /* Bottom nav clearance on phones; desktop uses side nav so less padding */
-    padding-bottom: calc(5.75rem + env(safe-area-inset-bottom, 0px));
-  }
-
-  @media (min-width: 1024px) {
-    .safe-pb {
-      padding-bottom: 2rem;
-    }
+    padding-bottom: 2rem;
   }
 }

@@ -1,10 +1,13 @@
 "use client";
 
 import { useEffect, useSyncExternalStore } from "react";
+import {
+  applyDocumentThemeChrome,
+  resolveIsDark,
+  type ThemePref,
+} from "@/lib/theme-chrome";
 
 export const THEME_STORAGE_KEY = "alte-theme";
-
-type ThemePref = "system" | "light" | "dark";
 
 const OPTIONS: Array<{ value: ThemePref; label: string }> = [
   { value: "system", label: "System" },
@@ -13,11 +16,11 @@ const OPTIONS: Array<{ value: ThemePref; label: string }> = [
 ];
 
 function applyTheme(pref: ThemePref) {
-  const dark =
-    pref === "dark" ||
-    (pref === "system" &&
-      window.matchMedia("(prefers-color-scheme: dark)").matches);
-  document.documentElement.classList.toggle("dark", dark);
+  const dark = resolveIsDark(
+    pref,
+    window.matchMedia("(prefers-color-scheme: dark)").matches,
+  );
+  applyDocumentThemeChrome(dark);
 }
 
 const listeners = new Set<() => void>();
