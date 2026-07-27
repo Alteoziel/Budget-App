@@ -46,6 +46,8 @@ export type Category = {
   assign_fixed_cents?: number;
   /** Auto Priority (AP): 0 = off; lower positive numbers fund first. */
   assign_priority?: number;
+  /** When true, Fix Now will not pull from this category. */
+  exclude_from_overspend_cover?: boolean;
 };
 
 export type CategoryMonth = {
@@ -93,6 +95,8 @@ export type BudgetRow = {
   assignFixedCents: number;
   /** Auto Priority (AP): 0 = off; lower positive numbers fund first. */
   assignPriority: number;
+  /** When true, Fix Now will not offer this category as a funding source. */
+  excludeFromOverspendCover: boolean;
 } & CategoryGoal;
 
 export type BudgetSnapshotTxn = {

@@ -267,6 +267,8 @@ async function restoreCategoryDelete(
     assign_percent: category.assign_percent ?? 0,
     assign_mode: category.assign_mode ?? "percent",
     assign_fixed_cents: category.assign_fixed_cents ?? 0,
+    assign_priority: category.assign_priority ?? 0,
+    exclude_from_overspend_cover: category.exclude_from_overspend_cover ?? false,
     goal_cents: category.goal_cents ?? null,
     goal_name: category.goal_name ?? "",
     goal_frequency: category.goal_frequency ?? "monthly",

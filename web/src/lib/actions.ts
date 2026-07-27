@@ -929,6 +929,51 @@ export async function deleteCategoryAction(formData: FormData) {
   revalidatePath("/transactions");
 }
 
+/** Toggle whether Fix Now may pull from this category to cover overspending. */
+export async function toggleCategoryOverspendCoverAction(formData: FormData) {
+  const { supabase, budget } = await requireBudget("editor");
+  const categoryId = String(formData.get("category_id") ?? "");
+  if (!categoryId) {
+    redirectWithError("/budget", "Category not found.");
+  }
+
+  const { data: category, error: loadError } = await supabase
+    .from("categories")
+    .select("id,name,exclude_from_overspend_cover")
+    .eq("budget_id", budget.id)
+    .eq("id", categoryId)
+    .maybeSingle();
+
+  if (loadError) {
+    redirectWithError(
+      "/budget",
+      /exclude_from_overspend|column|schema cache/i.test(loadError.message)
+        ? "Run the exclude_from_overspend_cover migration in Supabase, then try again."
+        : "Could not update category.",
+    );
+  }
+  if (!category) {
+    redirectWithError("/budget", "Category not found.");
+  }
+
+  const next = !Boolean(category!.exclude_from_overspend_cover);
+  const { error } = await supabase
+    .from("categories")
+    .update({ exclude_from_overspend_cover: next })
+    .eq("budget_id", budget.id)
+    .eq("id", categoryId);
+  if (error) {
+    redirectWithError(
+      "/budget",
+      /exclude_from_overspend|column|schema cache/i.test(error.message)
+        ? "Run the exclude_from_overspend_cover migration in Supabase, then try again."
+        : "Could not update category.",
+    );
+  }
+
+  revalidatePath("/budget");
+}
+
 export async function renameCategoryGroupAction(formData: FormData) {
   const { supabase, user, budget } = await requireBudget("editor");
   const groupId = String(formData.get("group_id") ?? "");
@@ -1569,6 +1614,12 @@ export async function applyOverspendFixAction(payload: {
     for (const [categoryId, donatedCents] of plan.donatedByCategory) {
       const row = rowById.get(categoryId);
       if (!row) return { ok: false, error: "A category in this fix no longer exists." };
+      if (row.excludeFromOverspendCover) {
+        return {
+          ok: false,
+          error: `${row.categoryName} is protected from funding overspending.`,
+        };
+      }
       if (donatedCents > row.availableCents) {
         return {
           ok: false,

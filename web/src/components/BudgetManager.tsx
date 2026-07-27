@@ -16,6 +16,7 @@ import {
   renameCategoryGroupAction,
   reorderCategoryAction,
   reorderCategoryGroupAction,
+  toggleCategoryOverspendCoverAction,
 } from "@/lib/actions";
 import { formatCents } from "@/lib/money";
 import type { BudgetRow } from "@/lib/types";
@@ -434,6 +435,28 @@ export function BudgetManager({
                                 >
                                   Rename
                                 </button>
+                                <form action={toggleCategoryOverspendCoverAction}>
+                                  <input
+                                    type="hidden"
+                                    name="category_id"
+                                    value={row.categoryId}
+                                  />
+                                  <PendingSubmitButton
+                                    pendingLabel="…"
+                                    className={`min-h-9 rounded-lg px-2 text-xs font-bold ${
+                                      row.excludeFromOverspendCover
+                                        ? "text-ink-700"
+                                        : "text-moss-600"
+                                    }`}
+                                    title={
+                                      row.excludeFromOverspendCover
+                                        ? "Allow Fix Now to pull from this category"
+                                        : "Keep Fix Now from pulling from this category"
+                                    }
+                                  >
+                                    {row.excludeFromOverspendCover ? "Unprotect" : "Protect"}
+                                  </PendingSubmitButton>
+                                </form>
                                 <form action={deleteCategoryAction}>
                                   <input
                                     type="hidden"
