@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#080c0b" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
+    <title>Alte' Budgeting</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background: #080c0b;
+        color-scheme: dark;
+      }
+    </style>
+  </head>
+  <body style="background: #080c0b">
+    <script>
+      (async function () {
+        var url = location.href;
+        var lockKey = "alte-boot-lock";
+        try {
+          // Avoid a boot→replace→boot loop if the page cache never warms.
+          if (sessionStorage.getItem(lockKey) === url) {
+            sessionStorage.removeItem(lockKey);
+            return;
+          }
+          sessionStorage.setItem(lockKey, url);
+          var res = await fetch(url, {
+            credentials: "same-origin",
+            cache: "reload",
+            headers: {
+              Accept: "text/html",
+              "X-Alte-Boot": "1",
+            },
+          });
+          if (!res.ok) throw new Error("boot fetch failed");
+          sessionStorage.removeItem(lockKey);
+          location.replace(url);
+        } catch (e) {
+          sessionStorage.removeItem(lockKey);
+          location.replace("/offline.html");
+        }
+      })();
+    </script>
+  </body>
+</html>
