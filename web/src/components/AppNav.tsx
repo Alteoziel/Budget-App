@@ -17,13 +17,17 @@ function navClass(active: boolean) {
   }`;
 }
 
-/** Fixed bottom tab bar — phones / narrow viewports only. */
+/**
+ * Bottom tab bar — phones / narrow viewports only.
+ * Sits in normal document flow at the bottom of the app shell (not `fixed`)
+ * so mobile Safari/Chrome can’t leave a gap after long actions like Sync now.
+ */
 export function MobileBottomNav() {
   const pathname = usePathname();
 
   return (
     <nav
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-ink-900/10 bg-sand-50/95 backdrop-blur lg:hidden"
+      className="shrink-0 border-t border-ink-900/10 bg-sand-50/95 backdrop-blur lg:hidden"
       aria-label="Primary"
     >
       <ul className="mx-auto grid max-w-lg grid-cols-5 gap-1 px-2 pb-[max(0.65rem,env(safe-area-inset-bottom))] pt-2">
