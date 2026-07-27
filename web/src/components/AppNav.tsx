@@ -27,7 +27,7 @@ export function MobileBottomNav() {
 
   return (
     <nav
-      className="shrink-0 border-t border-ink-900/10 bg-sand-50/95 backdrop-blur lg:hidden"
+      className="shrink-0 border-t border-ink-900/10 bg-sand-50 lg:hidden"
       aria-label="Primary"
     >
       <ul className="mx-auto grid max-w-lg grid-cols-5 gap-1 px-2 pb-[max(0.65rem,env(safe-area-inset-bottom))] pt-2">
