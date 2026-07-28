@@ -112,8 +112,10 @@ export function BudgetRealtimeProvider({
     }
     refreshTimer.current = window.setTimeout(() => {
       refreshTimer.current = null;
+      // Don't cancel an in-flight tab navigation (sticky pressed tab bug).
+      if (document.documentElement.dataset.alteNavPending === "1") return;
       router.refresh();
-    }, 200);
+    }, 500);
   }, [router]);
 
   const setEditing = useCallback((next: PresenceEditing) => {
