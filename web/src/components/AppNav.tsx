@@ -98,6 +98,15 @@ export function DesktopSideNav() {
     document.documentElement.dataset.alteNavPending = "";
   }, [pathname]);
 
+  useEffect(() => {
+    if (!pendingHref) return;
+    const timer = window.setTimeout(() => {
+      setPendingHref(null);
+      document.documentElement.dataset.alteNavPending = "";
+    }, 8_000);
+    return () => window.clearTimeout(timer);
+  }, [pendingHref]);
+
   return (
     <nav
       className="hidden w-56 shrink-0 flex-col border-r border-ink-900/10 bg-sand-50/60 px-3 py-6 lg:flex"
