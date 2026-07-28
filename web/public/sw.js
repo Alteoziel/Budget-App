@@ -1,5 +1,5 @@
 /* Alte' Budgeting service worker — offline shell + last-visited pages. */
-const VERSION = "v10";
+const VERSION = "v11";
 const STATIC_CACHE = `alte-static-${VERSION}`;
 const PAGE_CACHE = `alte-pages-${VERSION}`;
 const PRIVATE_CACHE_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
@@ -19,6 +19,7 @@ const APP_SHELL_PATHS = [
   "/budget",
   "/accounts",
   "/insights",
+  "/transactions",
   "/import",
   "/settings",
   "/offline",

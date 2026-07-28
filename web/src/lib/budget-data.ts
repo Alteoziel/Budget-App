@@ -833,12 +833,19 @@ export const getAccountRegister = cache(async (accountId: string): Promise<{
 });
 
 /** Budget-wide register for the Transactions tab. */
-export const getAllTransactionsRegister = cache(async (): Promise<{
+export const getAllTransactionsRegister = cache(async (
+  limit = 100,
+): Promise<{
   transactions: Transaction[];
   categories: Array<{ id: string; name: string; groupName: string }>;
   accounts: Array<{ id: string; name: string }>;
+  limit: number;
+  hasMore: boolean;
 }> => {
   const { supabase, budget } = await requireBudget("viewer");
+  const pageSize = Math.min(Math.max(limit, 25), 500);
+  // Fetch one extra row so the UI can offer “Load more” without a count query.
+  const fetchSize = Math.min(pageSize + 1, 501);
 
   const [transactionsRes, categoriesRes, groupsRes, accountsRes] =
     await Promise.all([
@@ -850,7 +857,7 @@ export const getAllTransactionsRegister = cache(async (): Promise<{
         .eq("budget_id", budget.id)
         .order("occurred_on", { ascending: false })
         .order("created_at", { ascending: false })
-        .limit(1000),
+        .limit(fetchSize),
       supabase
         .from("categories")
         .select("id,name,group_id")
@@ -876,8 +883,12 @@ export const getAllTransactionsRegister = cache(async (): Promise<{
     (groupsRes.data ?? []).map((g) => [g.id as string, g.name as string]),
   );
 
+  const rows = (transactionsRes.data as Transaction[] | null) ?? [];
+  const hasMore = rows.length > pageSize;
+  const transactions = hasMore ? rows.slice(0, pageSize) : rows;
+
   return {
-    transactions: (transactionsRes.data as Transaction[] | null) ?? [],
+    transactions,
     categories: (categoriesRes.data ?? []).map((c) => ({
       id: c.id as string,
       name: c.name as string,
@@ -887,5 +898,7 @@ export const getAllTransactionsRegister = cache(async (): Promise<{
       id: row.id as string,
       name: row.name as string,
     })),
+    limit: pageSize,
+    hasMore,
   };
 });
