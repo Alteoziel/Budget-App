@@ -13,7 +13,7 @@
   "dependencies": {
     "@supabase/ssr": "^0.12.3",
     "@supabase/supabase-js": "^2.110.8",
-    "jose": "^6.2.4",
+    "jose": "^6.2.5",
     "next": "^16.2.11",
     "papaparse": "^5.5.4",
     "plaid": "^44.0.0",
