@@ -2313,6 +2313,118 @@ export async function setTransactionIgnoredAction(formData: FormData) {
   );
 }
 
+const BATCH_IGNORE_LIMIT = 500;
+
+export async function batchSetTransactionIgnoredAction(formData: FormData) {
+  const { supabase, user, budget } = await requireBudget("editor");
+  const accountId = String(formData.get("account_id") ?? "").trim();
+  const ignoredRaw = String(formData.get("ignored") ?? "").trim();
+  const ignored = ignoredRaw === "1" || ignoredRaw === "true";
+  const returnTo = safeInternalPath(
+    String(formData.get("return_to") ?? ""),
+    "",
+  );
+  const fromTransactions = returnTo.startsWith("/transactions");
+  const ids = formData
+    .getAll("transaction_ids")
+    .map((value) => String(value).trim())
+    .filter(Boolean);
+
+  const errorPath = fromTransactions
+    ? "/transactions"
+    : accountId
+      ? `/accounts/${accountId}`
+      : "/accounts";
+
+  if (!fromTransactions && !accountId) {
+    redirect("/accounts");
+  }
+  if (ids.length === 0) {
+    redirectWithError(errorPath, "Select at least one transaction.");
+  }
+  if (ids.length > BATCH_IGNORE_LIMIT) {
+    redirectWithError(
+      errorPath,
+      `You can update at most ${BATCH_IGNORE_LIMIT} transactions at once.`,
+    );
+  }
+
+  let existingQuery = supabase
+    .from("transactions")
+    .select("*")
+    .eq("budget_id", budget.id)
+    .in("id", ids);
+  if (accountId) {
+    existingQuery = existingQuery.eq("account_id", accountId);
+  }
+  const { data: existingRows } = await existingQuery;
+  if (!existingRows?.length) {
+    redirectWithError(errorPath, "No matching transactions to update.");
+  }
+
+  let updateQuery = supabase
+    .from("transactions")
+    .update({ ignored })
+    .eq("budget_id", budget.id)
+    .in("id", ids);
+  if (accountId) {
+    updateQuery = updateQuery.eq("account_id", accountId);
+  }
+  const { data: updatedRows, error } = await updateQuery.select("id");
+  if (error) {
+    if (/ignored|schema cache|column/i.test(error.message)) {
+      redirectWithError(
+        errorPath,
+        "Ignore is not available until the latest database migration is applied.",
+      );
+    }
+    redirectWithError(errorPath, "Could not update selected transactions.");
+  }
+  const updatedCount = updatedRows?.length ?? 0;
+  if (!updatedCount) {
+    redirectWithError(errorPath, "No matching transactions to update.");
+  }
+
+  await recordBudgetChange(supabase, {
+    budgetId: budget.id,
+    actorUserId: user.id,
+    entityType: "transaction",
+    entityId: null,
+    action: "update",
+    summary: ignored
+      ? `Ignored ${updatedCount} transaction${updatedCount === 1 ? "" : "s"} from insights`
+      : `Included ${updatedCount} transaction${updatedCount === 1 ? "" : "s"} in insights again`,
+    beforeSnapshot: { transactions: existingRows },
+    afterSnapshot: {
+      transactions: existingRows.map((row) => ({ ...row, ignored })),
+    },
+  });
+
+  const accountIds = [
+    ...new Set(
+      existingRows
+        .map((row) => String(row.account_id ?? ""))
+        .filter(Boolean),
+    ),
+  ];
+  for (const id of accountIds) {
+    revalidatePath(`/accounts/${id}`);
+  }
+  revalidatePath("/transactions");
+  revalidatePath("/insights");
+
+  const notice = ignored
+    ? `Ignored ${updatedCount} from insights`
+    : `Included ${updatedCount} in insights again`;
+  if (fromTransactions) {
+    redirect("/transactions?notice=" + encodeURIComponent(notice));
+  }
+  if (accountId) {
+    redirect(`/accounts/${accountId}?notice=` + encodeURIComponent(notice));
+  }
+  redirect("/transactions?notice=" + encodeURIComponent(notice));
+}
+
 export async function deleteTransactionAction(formData: FormData) {
   const { supabase, user, budget } = await requireBudget("editor");
   const transactionId = String(formData.get("transaction_id") ?? "");
