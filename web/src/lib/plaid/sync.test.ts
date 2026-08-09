@@ -56,9 +56,101 @@ async function main() {
     plaidExternalId,
     plaidTransactionImportFields,
     formatManualSyncNotice,
+    isPlaidSyncMutationDuringPagination,
+    fetchPlaidSyncPages,
   } = await import("@/lib/plaid/sync");
 
   assert.equal(plaidExternalId("txn_abc"), "plaid:txn_abc");
+
+  assert.equal(
+    isPlaidSyncMutationDuringPagination({
+      response: {
+        data: {
+          error_code: "TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION",
+          error_message:
+            "Underlying transaction data changed since last page was fetched.",
+        },
+      },
+    }),
+    true,
+  );
+  assert.equal(
+    isPlaidSyncMutationDuringPagination({
+      response: { data: { error_code: "ITEM_LOGIN_REQUIRED" } },
+    }),
+    false,
+  );
+
+  // Mutation mid-pagination must restart from the original cursor — not the
+  // failed page's next_cursor — and only then return the completed batch.
+  {
+    const calls: Array<string | undefined> = [];
+    let n = 0;
+    const client = {
+      transactionsSync: async ({ cursor }: { cursor?: string }) => {
+        calls.push(cursor);
+        n += 1;
+        if (n === 1) {
+          return {
+            data: {
+              added: [{ transaction_id: "a1" }],
+              modified: [],
+              removed: [],
+              next_cursor: "page-2",
+              has_more: true,
+            },
+          };
+        }
+        if (n === 2) {
+          const err = {
+            response: {
+              data: {
+                error_code: "TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION",
+                error_message:
+                  "Underlying transaction data changed since last page was fetched.",
+              },
+            },
+          };
+          throw err;
+        }
+        // After the caller restarts from the original cursor ("start").
+        if (cursor === "start") {
+          return {
+            data: {
+              added: [{ transaction_id: "b1" }, { transaction_id: "b2" }],
+              modified: [],
+              removed: [],
+              next_cursor: "done",
+              has_more: false,
+            },
+          };
+        }
+        throw new Error(`unexpected cursor ${cursor}`);
+      },
+    };
+
+    let batch;
+    let mutationRestarts = 0;
+    const originalCursor = "start";
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        batch = await fetchPlaidSyncPages(
+          client as never,
+          "access-token",
+          originalCursor,
+        );
+        break;
+      } catch (e) {
+        if (!isPlaidSyncMutationDuringPagination(e)) throw e;
+        mutationRestarts += 1;
+      }
+    }
+    assert.equal(mutationRestarts, 1);
+    assert.ok(batch);
+    assert.equal(batch!.nextCursor, "done");
+    assert.equal(batch!.added.length, 2);
+    assert.deepEqual(calls, ["start", "page-2", "start"]);
+  }
 
   // Pending authorizations must be importable (uncleared), not dropped.
   const pendingFields = plaidTransactionImportFields({
