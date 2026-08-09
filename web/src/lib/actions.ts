@@ -3275,6 +3275,7 @@ export async function syncPlaidNowAction(formData: FormData) {
     revalidatePath("/settings");
     revalidatePath("/accounts");
     revalidatePath("/transactions");
+    revalidatePath("/budget");
     if (result.errors.length) {
       redirectWithError(
         "/settings",
@@ -3287,6 +3288,45 @@ export async function syncPlaidNowAction(formData: FormData) {
   } catch (error) {
     unstable_rethrow(error);
     redirectWithError("/settings", bankSyncConfigErrorMessage(error));
+  }
+}
+
+/**
+ * Open-app / resume bank sync — same manual-style pull as Sync now, without
+ * redirects, so the client can refresh the UI when it finishes.
+ */
+export async function syncPlaidOnOpenAction(): Promise<{
+  skipped: boolean;
+  reason?: string;
+  runs?: number;
+  inserted?: number;
+  updated?: number;
+  errors?: string[];
+  notice?: string;
+}> {
+  const { budget } = await requireBudget("viewer");
+
+  try {
+    const { forceSyncPlaidForBudget } = await import("@/lib/plaid/catch-up");
+    const result = await forceSyncPlaidForBudget(budget.id);
+
+    if (!result.skipped) {
+      revalidatePath("/budget");
+      revalidatePath("/accounts");
+      revalidatePath("/transactions");
+      revalidatePath("/settings");
+    }
+
+    return result;
+  } catch (error) {
+    unstable_rethrow(error);
+    const message = bankSyncConfigErrorMessage(error);
+    return {
+      skipped: true,
+      reason: message,
+      notice: message,
+      errors: [message],
+    };
   }
 }
 

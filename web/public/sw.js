@@ -58,6 +58,11 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("message", (event) => {
+  // Reject cross-origin postMessage (CodeQL js/missing-origin-check).
+  // Same-origin app pages post SKIP_WAITING / PURGE_PRIVATE_DATA only.
+  if (event.origin !== self.location.origin) {
+    return;
+  }
   if (event.data === "SKIP_WAITING") {
     self.skipWaiting();
   }

@@ -14,7 +14,12 @@ function resolveLimit(raw: string | undefined): number {
 export default async function TransactionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; notice?: string; limit?: string }>;
+  searchParams: Promise<{
+    error?: string;
+    notice?: string;
+    limit?: string;
+    category?: string;
+  }>;
 }) {
   const query = await searchParams;
   const limit = resolveLimit(query.limit);
@@ -22,6 +27,15 @@ export default async function TransactionsPage({
     await getAllTransactionsRegister(limit);
   const today = new Date().toISOString().slice(0, 10);
   const nextLimit = Math.min(limit + 100, 500);
+  const initialCategoryFilter =
+    query.category === "uncategorized" ||
+    (query.category && categories.some((c) => c.id === query.category))
+      ? query.category
+      : "all";
+  const loadMoreHref =
+    initialCategoryFilter !== "all"
+      ? `/transactions?limit=${nextLimit}&category=${encodeURIComponent(initialCategoryFilter)}`
+      : `/transactions?limit=${nextLimit}`;
 
   return (
     <AppShell
@@ -40,16 +54,18 @@ export default async function TransactionsPage({
 
       <section className="animate-rise card-surface mt-2 overflow-hidden rounded-2xl">
         <RegisterTransactions
+          key={`register:${initialCategoryFilter}`}
           transactions={transactions}
           categories={categories}
           accounts={accounts}
           showAccountName
           returnTo="/transactions"
+          initialCategoryFilter={initialCategoryFilter}
         />
         {hasMore ? (
           <div className="border-t border-ink-900/8 px-4 py-3">
             <Link
-              href={`/transactions?limit=${nextLimit}`}
+              href={loadMoreHref}
               prefetch={false}
               className="flex min-h-11 touch-manipulation items-center justify-center rounded-xl bg-ink-900 px-4 py-2 text-sm font-bold text-sand-50"
             >
