@@ -1,5 +1,5 @@
 /* Alte' Budgeting service worker — offline shell + last-visited pages. */
-const VERSION = "v10";
+const VERSION = "v11";
 const STATIC_CACHE = `alte-static-${VERSION}`;
 const PAGE_CACHE = `alte-pages-${VERSION}`;
 const PRIVATE_CACHE_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
@@ -57,6 +57,11 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("message", (event) => {
+  // Reject cross-origin postMessage (CodeQL js/missing-origin-check).
+  // Same-origin app pages post SKIP_WAITING / PURGE_PRIVATE_DATA only.
+  if (event.origin !== self.location.origin) {
+    return;
+  }
   if (event.data === "SKIP_WAITING") {
     self.skipWaiting();
   }
