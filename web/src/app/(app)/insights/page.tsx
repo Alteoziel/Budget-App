@@ -8,8 +8,8 @@ export default async function InsightsPage() {
   return (
     <AppShell title="Insights" subtitle="Trends & tips">
       <p className="mb-4 text-sm text-ink-600">
-        Charts and trends show what happened. Tips below turn those signals into next
-        steps. Filters apply instantly — the data is loaded once.
+        Start with month spending, or expand charts, trends, and tips. Filters apply
+        instantly — the data is loaded once.
       </p>
       <InsightsExplorer dataset={dataset} />
     </AppShell>
