@@ -109,7 +109,10 @@ export function BankSyncOnOpen({
   );
 
   useEffect(() => {
-    void runSync("mount");
+    // Defer so the effect itself doesn’t synchronously setState (lint + paint).
+    const bootTimer = window.setTimeout(() => {
+      void runSync("mount");
+    }, 0);
 
     const onVisible = () => {
       if (document.visibilityState === "visible") {
@@ -123,6 +126,7 @@ export function BankSyncOnOpen({
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("focus", onFocus);
     return () => {
+      window.clearTimeout(bootTimer);
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", onFocus);
       if (hideTimer.current != null) {
