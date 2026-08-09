@@ -2287,27 +2287,29 @@ export async function setTransactionIgnoredAction(formData: FormData) {
     entityId: transactionId,
     action: "update",
     summary: ignored
-      ? `Ignored transaction “${existing.payee || "Untitled"}”`
-      : `Unignored transaction “${existing.payee || "Untitled"}”`,
+      ? `Ignored “${existing.payee || "Untitled"}” from insights`
+      : `Included “${existing.payee || "Untitled"}” in insights again`,
     beforeSnapshot: { row: existing },
     afterSnapshot: { row: { ...existing, ignored } },
   });
 
   revalidatePath(`/accounts/${accountId}`);
-  revalidatePath("/accounts");
-  revalidatePath("/budget");
   revalidatePath("/transactions");
   revalidatePath("/insights");
 
   if (fromTransactions) {
     redirect(
       "/transactions?notice=" +
-        encodeURIComponent(ignored ? "Transaction ignored" : "Transaction restored"),
+        encodeURIComponent(
+          ignored ? "Ignored from insights" : "Included in insights again",
+        ),
     );
   }
   redirect(
     `/accounts/${accountId}?notice=` +
-      encodeURIComponent(ignored ? "Transaction ignored" : "Transaction restored"),
+      encodeURIComponent(
+        ignored ? "Ignored from insights" : "Included in insights again",
+      ),
   );
 }
 

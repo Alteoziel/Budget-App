@@ -43,46 +43,19 @@ export async function GET() {
     ]);
 
     const accountIds = accounts.map((a) => a.id);
-    let txns: Array<{
-      id: string;
-      account_id: string;
-      category_id: string | null;
-      occurred_on: string;
-      payee: string | null;
-      memo: string | null;
-      amount_cents: number;
-    }> = [];
-    if (accountIds.length) {
-      const withIgnored = await supabase
-        .from("transactions")
-        .select("id,account_id,category_id,occurred_on,payee,memo,amount_cents,ignored")
-        .eq("budget_id", active.budget.id)
-        .in("account_id", accountIds)
-        .eq("ignored", false)
-        .order("occurred_on", { ascending: false })
-        .order("created_at", { ascending: false })
-        .limit(200);
-      if (
-        withIgnored.error &&
-        /ignored|schema cache|column/i.test(withIgnored.error.message)
-      ) {
-        const legacy = await supabase
+    const { data: txns, error } = accountIds.length
+      ? await supabase
           .from("transactions")
           .select("id,account_id,category_id,occurred_on,payee,memo,amount_cents")
           .eq("budget_id", active.budget.id)
           .in("account_id", accountIds)
           .order("occurred_on", { ascending: false })
           .order("created_at", { ascending: false })
-          .limit(200);
-        if (legacy.error) {
-          return NextResponse.json({ error: legacy.error.message }, { status: 500 });
-        }
-        txns = (legacy.data as typeof txns) ?? [];
-      } else if (withIgnored.error) {
-        return NextResponse.json({ error: withIgnored.error.message }, { status: 500 });
-      } else {
-        txns = (withIgnored.data as typeof txns) ?? [];
-      }
+          .limit(200)
+      : { data: [], error: null };
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
     const accountName = new Map(accounts.map((a) => [a.id, a.name]));
