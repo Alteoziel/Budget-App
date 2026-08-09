@@ -60,7 +60,7 @@ export const getInsightsDataset = cache(async (): Promise<InsightsDataset> => {
   const months: string[] = [];
   for (let i = 0; i < MAX_MONTHS_BACK; i += 1) months.push(addMonths(startMonth, i));
 
-  let [txnsRes, accountsRes, categoriesRes, groupsRes, priorRes] = await Promise.all([
+  const [txnsRes, accountsRes, categoriesRes, groupsRes, priorRes] = await Promise.all([
     supabase
       .from("transactions")
       .select("account_id,category_id,amount_cents,occurred_on,payee,ignored")
