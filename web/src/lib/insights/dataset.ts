@@ -1,7 +1,7 @@
 import { cache } from "react";
 import { requireBudget } from "@/lib/budget-context";
 import {
-  filterActiveTxns,
+  filterInsightsTxns,
   isIgnoredColumnMissing,
 } from "@/lib/transactions-ignored";
 import type { Account } from "@/lib/types";
@@ -154,7 +154,7 @@ export const getInsightsDataset = cache(async (): Promise<InsightsDataset> => {
   const txnPayeeIndex = new Map<string, number>();
   const txnCells: InsightsDataset["txnCells"] = [];
 
-  for (const txn of filterActiveTxns(txnRows)) {
+  for (const txn of filterInsightsTxns(txnRows)) {
     const occurredOn = String(txn.occurred_on);
     const mi = monthIndex.get(occurredOn.slice(0, 7));
     if (mi == null) continue;
@@ -213,7 +213,7 @@ export const getInsightsDataset = cache(async (): Promise<InsightsDataset> => {
   }
 
   const priorByAccount = new Array<number>(accounts.length).fill(0);
-  for (const row of filterActiveTxns(priorRows)) {
+  for (const row of filterInsightsTxns(priorRows)) {
     const ai = accountIndex.get(row.account_id as string);
     if (ai == null) continue;
     priorByAccount[ai] += row.amount_cents as number;
