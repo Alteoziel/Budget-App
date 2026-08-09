@@ -5,6 +5,7 @@ import { useAnnounceEditing } from "@/components/BudgetRealtimeProvider";
 import { Money } from "@/components/Money";
 import {
   batchDeleteTransactionsAction,
+  batchSetTransactionIgnoredAction,
   deleteTransactionAction,
   setTransactionIgnoredAction,
   updateTransactionAction,
@@ -278,44 +279,110 @@ export function RegisterTransactions({
           />
           Select all ({filtered.length})
         </label>
-        <form
-          action={async (formData) => {
-            setPending(true);
-            try {
-              await batchDeleteTransactionsAction(formData);
-            } finally {
-              setPending(false);
-              setSelected(new Set());
-              setEditingId(null);
-            }
-          }}
-          onSubmit={(event) => {
-            if (
-              !confirm(
-                `Delete ${selectedCount} selected transaction${selectedCount === 1 ? "" : "s"}? You can undo this from Settings → People & access for 7 days.`,
-              )
-            ) {
-              event.preventDefault();
-            }
-          }}
-        >
-          {accountId ? (
-            <input type="hidden" name="account_id" value={accountId} />
-          ) : null}
-          {returnTo ? (
-            <input type="hidden" name="return_to" value={returnTo} />
-          ) : null}
-          {[...selected].map((id) => (
-            <input key={id} type="hidden" name="transaction_ids" value={id} />
-          ))}
-          <button
-            type="submit"
-            disabled={selectedCount === 0 || pending}
-            className="rounded-xl bg-coral-500 px-3 py-2 text-sm font-bold text-sand-50 disabled:cursor-not-allowed disabled:opacity-40"
+        <div className="flex flex-wrap items-center gap-2">
+          <form
+            action={async (formData) => {
+              setPending(true);
+              try {
+                await batchSetTransactionIgnoredAction(formData);
+              } finally {
+                setPending(false);
+                setSelected(new Set());
+                setEditingId(null);
+              }
+            }}
           >
-            {pending ? "Deleting…" : `Delete selected (${selectedCount})`}
-          </button>
-        </form>
+            {accountId ? (
+              <input type="hidden" name="account_id" value={accountId} />
+            ) : null}
+            {returnTo ? (
+              <input type="hidden" name="return_to" value={returnTo} />
+            ) : null}
+            <input type="hidden" name="ignored" value="1" />
+            {[...selected].map((id) => (
+              <input key={id} type="hidden" name="transaction_ids" value={id} />
+            ))}
+            <button
+              type="submit"
+              disabled={selectedCount === 0 || pending}
+              className="rounded-xl border border-ink-900/15 bg-sand-50 px-3 py-2 text-sm font-bold text-ink-700 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {pending
+                ? "Updating…"
+                : `Ignore in insights (${selectedCount})`}
+            </button>
+          </form>
+          <form
+            action={async (formData) => {
+              setPending(true);
+              try {
+                await batchSetTransactionIgnoredAction(formData);
+              } finally {
+                setPending(false);
+                setSelected(new Set());
+                setEditingId(null);
+              }
+            }}
+          >
+            {accountId ? (
+              <input type="hidden" name="account_id" value={accountId} />
+            ) : null}
+            {returnTo ? (
+              <input type="hidden" name="return_to" value={returnTo} />
+            ) : null}
+            <input type="hidden" name="ignored" value="0" />
+            {[...selected].map((id) => (
+              <input key={id} type="hidden" name="transaction_ids" value={id} />
+            ))}
+            <button
+              type="submit"
+              disabled={selectedCount === 0 || pending}
+              className="rounded-xl border border-moss-500/30 bg-moss-500/10 px-3 py-2 text-sm font-bold text-moss-800 disabled:cursor-not-allowed disabled:opacity-40 dark:text-moss-200"
+            >
+              {pending
+                ? "Updating…"
+                : `Include in insights (${selectedCount})`}
+            </button>
+          </form>
+          <form
+            action={async (formData) => {
+              setPending(true);
+              try {
+                await batchDeleteTransactionsAction(formData);
+              } finally {
+                setPending(false);
+                setSelected(new Set());
+                setEditingId(null);
+              }
+            }}
+            onSubmit={(event) => {
+              if (
+                !confirm(
+                  `Delete ${selectedCount} selected transaction${selectedCount === 1 ? "" : "s"}? You can undo this from Settings → People & access for 7 days.`,
+                )
+              ) {
+                event.preventDefault();
+              }
+            }}
+          >
+            {accountId ? (
+              <input type="hidden" name="account_id" value={accountId} />
+            ) : null}
+            {returnTo ? (
+              <input type="hidden" name="return_to" value={returnTo} />
+            ) : null}
+            {[...selected].map((id) => (
+              <input key={id} type="hidden" name="transaction_ids" value={id} />
+            ))}
+            <button
+              type="submit"
+              disabled={selectedCount === 0 || pending}
+              className="rounded-xl bg-coral-500 px-3 py-2 text-sm font-bold text-sand-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {pending ? "Deleting…" : `Delete selected (${selectedCount})`}
+            </button>
+          </form>
+        </div>
       </div>
 
       {filtered.length === 0 ? (
