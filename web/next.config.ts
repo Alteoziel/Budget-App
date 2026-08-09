@@ -16,6 +16,14 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  // Keep soft tab navigations snappy: reuse recent dynamic RSC payloads briefly
+  // instead of refetching Transactions/Budget on every tap.
+  experimental: {
+    staleTimes: {
+      dynamic: 30,
+      static: 180,
+    },
+  },
   async headers() {
     return [
       {
@@ -40,6 +48,15 @@ const nextConfig: NextConfig = {
       },
       {
         source: "/offline.html",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=0, must-revalidate",
+          },
+        ],
+      },
+      {
+        source: "/boot.html",
         headers: [
           {
             key: "Cache-Control",

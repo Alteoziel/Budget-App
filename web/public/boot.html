@@ -19,7 +19,7 @@
       body {
         margin: 0;
         min-height: 100%;
-        background: #080c0b;
+        background: #080c0b !important;
         color-scheme: dark;
       }
     </style>
@@ -30,9 +30,10 @@
         var url = location.href;
         var lockKey = "alte-boot-lock";
         try {
-          // Avoid a boot→replace→boot loop if the page cache never warms.
+          // Avoid a boot loop if the page cache never warms.
           if (sessionStorage.getItem(lockKey) === url) {
             sessionStorage.removeItem(lockKey);
+            location.replace("/offline.html");
             return;
           }
           sessionStorage.setItem(lockKey, url);
@@ -45,8 +46,13 @@
             },
           });
           if (!res.ok) throw new Error("boot fetch failed");
+          var html = await res.text();
           sessionStorage.removeItem(lockKey);
-          location.replace(url);
+          // Replace this document in-place. location.replace() caused a second
+          // WKWebView white gap between unloading boot and painting the app.
+          document.open();
+          document.write(html);
+          document.close();
         } catch (e) {
           sessionStorage.removeItem(lockKey);
           location.replace("/offline.html");

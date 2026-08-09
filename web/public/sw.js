@@ -19,6 +19,7 @@ const APP_SHELL_PATHS = [
   "/budget",
   "/accounts",
   "/insights",
+  "/transactions",
   "/import",
   "/settings",
   "/offline",

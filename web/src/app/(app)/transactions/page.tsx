@@ -1,22 +1,41 @@
+import Link from "next/link";
 import { AddTransactionFab } from "@/components/AddTransactionFab";
 import { AppShell } from "@/components/AppShell";
 import { FlashError } from "@/components/FlashError";
 import { RegisterTransactions } from "@/components/RegisterTransactions";
 import { getAllTransactionsRegister } from "@/lib/budget-data";
 
+function resolveLimit(raw: string | undefined): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return 100;
+  return Math.min(Math.max(Math.trunc(n), 25), 500);
+}
+
 export default async function TransactionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; notice?: string; category?: string }>;
+  searchParams: Promise<{
+    error?: string;
+    notice?: string;
+    limit?: string;
+    category?: string;
+  }>;
 }) {
   const query = await searchParams;
-  const { transactions, categories, accounts } = await getAllTransactionsRegister();
+  const limit = resolveLimit(query.limit);
+  const { transactions, categories, accounts, hasMore } =
+    await getAllTransactionsRegister(limit);
   const today = new Date().toISOString().slice(0, 10);
+  const nextLimit = Math.min(limit + 100, 500);
   const initialCategoryFilter =
     query.category === "uncategorized" ||
     (query.category && categories.some((c) => c.id === query.category))
       ? query.category
       : "all";
+  const loadMoreHref =
+    initialCategoryFilter !== "all"
+      ? `/transactions?limit=${nextLimit}&category=${encodeURIComponent(initialCategoryFilter)}`
+      : `/transactions?limit=${nextLimit}`;
 
   return (
     <AppShell
@@ -43,6 +62,24 @@ export default async function TransactionsPage({
           returnTo="/transactions"
           initialCategoryFilter={initialCategoryFilter}
         />
+        {hasMore ? (
+          <div className="border-t border-ink-900/8 px-4 py-3">
+            <Link
+              href={loadMoreHref}
+              prefetch={false}
+              className="flex min-h-11 touch-manipulation items-center justify-center rounded-xl bg-ink-900 px-4 py-2 text-sm font-bold text-sand-50"
+            >
+              Load more
+            </Link>
+            <p className="mt-2 text-center text-xs text-ink-500">
+              Showing latest {transactions.length}
+            </p>
+          </div>
+        ) : transactions.length > 0 ? (
+          <p className="border-t border-ink-900/8 px-4 py-3 text-center text-xs text-ink-500">
+            Showing latest {transactions.length}
+          </p>
+        ) : null}
       </section>
     </AppShell>
   );
