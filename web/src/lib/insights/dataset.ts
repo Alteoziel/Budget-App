@@ -1,5 +1,10 @@
 import { cache } from "react";
 import { requireBudget } from "@/lib/budget-context";
+import {
+  filterActiveTxns,
+  isIgnoredColumnMissing,
+} from "@/lib/transactions-ignored";
+import type { Account } from "@/lib/types";
 
 export const MAX_MONTHS_BACK = 24;
 
@@ -10,7 +15,11 @@ export const MAX_MONTHS_BACK = 24;
  */
 export type InsightsDataset = {
   months: string[];
-  accounts: Array<{ id: string; name: string }>;
+  accounts: Array<{
+    id: string;
+    name: string;
+    account_type: Account["account_type"];
+  }>;
   categories: Array<{ id: string; name: string; groupName: string }>;
   /** [monthIndex, accountIndex, categoryIndex (-1 = uncategorized), amountCents] */
   cells: Array<[number, number, number, number]>;
@@ -51,14 +60,18 @@ export const getInsightsDataset = cache(async (): Promise<InsightsDataset> => {
   const months: string[] = [];
   for (let i = 0; i < MAX_MONTHS_BACK; i += 1) months.push(addMonths(startMonth, i));
 
-  const [txnsRes, accountsRes, categoriesRes, groupsRes, priorRes] = await Promise.all([
+  let [txnsRes, accountsRes, categoriesRes, groupsRes, priorRes] = await Promise.all([
     supabase
       .from("transactions")
-      .select("account_id,category_id,amount_cents,occurred_on,payee")
+      .select("account_id,category_id,amount_cents,occurred_on,payee,ignored")
       .eq("budget_id", budget.id)
       .gte("occurred_on", startDate)
       .lt("occurred_on", endExclusive),
-    supabase.from("accounts").select("id,name").eq("budget_id", budget.id).order("name"),
+    supabase
+      .from("accounts")
+      .select("id,name,account_type")
+      .eq("budget_id", budget.id)
+      .order("name"),
     supabase
       .from("categories")
       .select("id,name,group_id")
@@ -67,12 +80,51 @@ export const getInsightsDataset = cache(async (): Promise<InsightsDataset> => {
     supabase.from("category_groups").select("id,name").eq("budget_id", budget.id),
     supabase
       .from("transactions")
-      .select("account_id,amount_cents")
+      .select("account_id,amount_cents,ignored")
       .eq("budget_id", budget.id)
       .lt("occurred_on", startDate),
   ]);
 
-  for (const res of [txnsRes, accountsRes, categoriesRes, groupsRes, priorRes]) {
+  let txnRows = txnsRes.data as Array<{
+    account_id: string;
+    category_id: string | null;
+    amount_cents: number;
+    occurred_on: string;
+    payee: string | null;
+    ignored?: boolean;
+  }> | null;
+  let priorRows = priorRes.data as Array<{
+    account_id: string;
+    amount_cents: number;
+    ignored?: boolean;
+  }> | null;
+
+  if (txnsRes.error && isIgnoredColumnMissing(txnsRes.error.message)) {
+    const legacy = await supabase
+      .from("transactions")
+      .select("account_id,category_id,amount_cents,occurred_on,payee")
+      .eq("budget_id", budget.id)
+      .gte("occurred_on", startDate)
+      .lt("occurred_on", endExclusive);
+    if (legacy.error) throw new Error(legacy.error.message);
+    txnRows = legacy.data as typeof txnRows;
+  } else if (txnsRes.error) {
+    throw new Error(txnsRes.error.message);
+  }
+
+  if (priorRes.error && isIgnoredColumnMissing(priorRes.error.message)) {
+    const legacy = await supabase
+      .from("transactions")
+      .select("account_id,amount_cents")
+      .eq("budget_id", budget.id)
+      .lt("occurred_on", startDate);
+    if (legacy.error) throw new Error(legacy.error.message);
+    priorRows = legacy.data as typeof priorRows;
+  } else if (priorRes.error) {
+    throw new Error(priorRes.error.message);
+  }
+
+  for (const res of [accountsRes, categoriesRes, groupsRes]) {
     if (res.error) throw new Error(res.error.message);
   }
 
@@ -83,6 +135,7 @@ export const getInsightsDataset = cache(async (): Promise<InsightsDataset> => {
   const accounts = (accountsRes.data ?? []).map((a) => ({
     id: a.id as string,
     name: a.name as string,
+    account_type: (a.account_type as Account["account_type"]) ?? "other",
   }));
   const categories = (categoriesRes.data ?? []).map((c) => ({
     id: c.id as string,
@@ -101,7 +154,7 @@ export const getInsightsDataset = cache(async (): Promise<InsightsDataset> => {
   const txnPayeeIndex = new Map<string, number>();
   const txnCells: InsightsDataset["txnCells"] = [];
 
-  for (const txn of txnsRes.data ?? []) {
+  for (const txn of filterActiveTxns(txnRows)) {
     const occurredOn = String(txn.occurred_on);
     const mi = monthIndex.get(occurredOn.slice(0, 7));
     if (mi == null) continue;
@@ -160,7 +213,7 @@ export const getInsightsDataset = cache(async (): Promise<InsightsDataset> => {
   }
 
   const priorByAccount = new Array<number>(accounts.length).fill(0);
-  for (const row of priorRes.data ?? []) {
+  for (const row of filterActiveTxns(priorRows)) {
     const ai = accountIndex.get(row.account_id as string);
     if (ai == null) continue;
     priorByAccount[ai] += row.amount_cents as number;

@@ -58,6 +58,17 @@ function defaultSelectedMonth(available: string[]): string | null {
   return available[available.length - 1] ?? null;
 }
 
+/** Prefer checking accounts; if none exist, select every account. */
+function defaultAccountIds(
+  accounts: InsightsDataset["accounts"],
+): string[] {
+  const checking = accounts
+    .filter((account) => account.account_type === "checking")
+    .map((account) => account.id);
+  if (checking.length) return checking;
+  return accounts.map((account) => account.id);
+}
+
 type Drilldown = {
   categoryId: string | null;
   name: string;
@@ -65,16 +76,17 @@ type Drilldown = {
 
 export function MonthSpendingBreakdown({
   dataset,
-  accountIds = [],
 }: {
   dataset: InsightsDataset;
-  accountIds?: string[];
 }) {
   const available = dataset.months;
   const availableSet = useMemo(() => new Set(available), [available]);
   const latest = defaultSelectedMonth(available);
   const [selectedMonths, setSelectedMonths] = useState<string[]>(() =>
     latest ? [latest] : [],
+  );
+  const [accountIds, setAccountIds] = useState<string[]>(() =>
+    defaultAccountIds(dataset.accounts),
   );
   const [viewYear, setViewYear] = useState(() =>
     Number((latest ?? available[0] ?? "2026-01").slice(0, 4)),
@@ -122,6 +134,13 @@ export function MonthSpendingBreakdown({
     setSelectedMonths([month]);
   }
 
+  function toggleAccount(id: string) {
+    setAccountIds((prev) => {
+      if (prev.includes(id)) return prev.filter((x) => x !== id);
+      return [...prev, id];
+    });
+  }
+
   const selectedLabel =
     selectedMonths.length === 0
       ? "No months selected"
@@ -129,8 +148,73 @@ export function MonthSpendingBreakdown({
         ? formatBudgetMonth(selectedMonths[0]!)
         : `${selectedMonths.length} months selected`;
 
+  const checkingDefaults = dataset.accounts
+    .filter((account) => account.account_type === "checking")
+    .map((account) => account.id);
+  const accountsLabel =
+    accountIds.length === 0
+      ? "No accounts selected"
+      : accountIds.length === dataset.accounts.length
+        ? "All accounts"
+        : accountIds.length === 1
+          ? (dataset.accounts.find((a) => a.id === accountIds[0])?.name ??
+            "1 account")
+          : `${accountIds.length} accounts`;
+
   return (
     <div className="space-y-4">
+      {dataset.accounts.length ? (
+        <div className="rounded-2xl border border-moss-500/30 bg-moss-500/10 px-3 py-3">
+          <div className="mb-2 flex items-baseline justify-between gap-2">
+            <h3 className="text-[11px] font-bold uppercase tracking-[0.14em] text-moss-700 dark:text-moss-300">
+              Accounts
+            </h3>
+            <p className="text-[11px] font-semibold text-ink-500">{accountsLabel}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {dataset.accounts.map((account) => {
+              const on = accountIds.includes(account.id);
+              return (
+                <button
+                  key={account.id}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => toggleAccount(account.id)}
+                  className={`min-h-11 touch-manipulation rounded-xl px-3 py-1.5 text-xs font-bold transition ${
+                    on
+                      ? "bg-moss-500 text-sand-50"
+                      : "border border-moss-500/25 bg-sand-50 text-moss-800 hover:border-moss-500/40 dark:text-moss-200"
+                  }`}
+                >
+                  {account.name}
+                </button>
+              );
+            })}
+          </div>
+          <div className="mt-2 flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => setAccountIds(dataset.accounts.map((a) => a.id))}
+              className="text-[11px] font-bold text-ink-600 underline-offset-2 hover:underline"
+            >
+              Select all
+            </button>
+            {checkingDefaults.length ? (
+              <button
+                type="button"
+                onClick={() => setAccountIds(checkingDefaults)}
+                className="text-[11px] font-bold text-ink-600 underline-offset-2 hover:underline"
+              >
+                Checking only
+              </button>
+            ) : null}
+          </div>
+          <p className="mt-2 text-[11px] font-semibold text-ink-500">
+            Defaults to checking so transfers from other accounts stay out of spending.
+          </p>
+        </div>
+      ) : null}
+
       <div className="card-surface rounded-2xl p-4">
         <div className="mb-3 flex items-center justify-between gap-2">
           <div>
@@ -211,7 +295,11 @@ export function MonthSpendingBreakdown({
           </p>
         </div>
 
-        {!selectedMonths.length ? (
+        {!accountIds.length ? (
+          <p className="py-8 text-center text-sm text-ink-600">
+            Select at least one account to see the breakdown.
+          </p>
+        ) : !selectedMonths.length ? (
           <p className="py-8 text-center text-sm text-ink-600">
             Select one or more months to see the breakdown.
           </p>

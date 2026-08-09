@@ -66,6 +66,8 @@ export type Transaction = {
   memo: string;
   amount_cents: number;
   cleared: boolean;
+  /** When true, excluded from balances, budget activity, and insights. */
+  ignored?: boolean;
   external_id?: string | null;
 };
 

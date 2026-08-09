@@ -11,8 +11,8 @@ const months = ["2026-01", "2026-02", "2026-03", "2026-04"];
 const dataset: InsightsDataset = {
   months,
   accounts: [
-    { id: "acc-1", name: "Checking" },
-    { id: "acc-2", name: "Savings" },
+    { id: "acc-1", name: "Checking", account_type: "checking" },
+    { id: "acc-2", name: "Savings", account_type: "savings" },
   ],
   categories: [
     { id: "cat-1", name: "Groceries", groupName: "Everyday" },

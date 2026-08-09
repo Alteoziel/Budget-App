@@ -11,6 +11,10 @@ import {
   isBudgetMonth,
   isValidIsoDate,
 } from "@/lib/money";
+import {
+  filterActiveTxns,
+  isIgnoredColumnMissing,
+} from "@/lib/transactions-ignored";
 import type {
   Account,
   AssignMode,
@@ -22,6 +26,11 @@ import type {
   GoalFrequency,
   Transaction,
 } from "@/lib/types";
+
+const TXN_REGISTER_COLUMNS =
+  "id,budget_id,account_id,category_id,occurred_on,payee,memo,amount_cents,cleared,ignored,external_id";
+const TXN_REGISTER_COLUMNS_LEGACY =
+  "id,budget_id,account_id,category_id,occurred_on,payee,memo,amount_cents,cleared,external_id";
 
 function assertNoError(error: { message: string } | null, label: string) {
   if (error) {
@@ -162,13 +171,13 @@ export const getBudgetRows = cache(async (month = currentBudgetMonth()): Promise
       : Promise.resolve({ data: [] as Array<{ assigned_cents: number }>, error: null }),
     supabase
       .from("transactions")
-      .select("category_id,amount_cents,occurred_on")
+      .select("category_id,amount_cents,occurred_on,ignored")
       .eq("budget_id", budget.id)
       .gte("occurred_on", range.start)
       .lt("occurred_on", range.endExclusive),
     supabase
       .from("transactions")
-      .select("category_id,amount_cents")
+      .select("category_id,amount_cents,ignored")
       .eq("budget_id", budget.id)
       .lt("occurred_on", range.start),
   ]);
@@ -181,16 +190,40 @@ export const getBudgetRows = cache(async (month = currentBudgetMonth()): Promise
   assertNoError(assignmentsRes.error, "Failed to load assignments");
   assertNoError(priorAssignmentsRes.error, "Failed to load prior assignments");
   assertNoError(futureAssignmentsRes.error, "Failed to load future assignments");
-  assertNoError(txnsRes.error, "Failed to load transactions");
-  assertNoError(priorTxnsRes.error, "Failed to load prior transactions");
+  // `ignored` may be missing until migration is applied.
+  let txns = txnsRes.data;
+  let priorTxns = priorTxnsRes.data;
+  if (txnsRes.error && isIgnoredColumnMissing(txnsRes.error.message)) {
+    const legacy = await supabase
+      .from("transactions")
+      .select("category_id,amount_cents,occurred_on")
+      .eq("budget_id", budget.id)
+      .gte("occurred_on", range.start)
+      .lt("occurred_on", range.endExclusive);
+    assertNoError(legacy.error, "Failed to load transactions");
+    txns = legacy.data as typeof txns;
+  } else {
+    assertNoError(txnsRes.error, "Failed to load transactions");
+    txns = filterActiveTxns(txns);
+  }
+  if (priorTxnsRes.error && isIgnoredColumnMissing(priorTxnsRes.error.message)) {
+    const legacy = await supabase
+      .from("transactions")
+      .select("category_id,amount_cents")
+      .eq("budget_id", budget.id)
+      .lt("occurred_on", range.start);
+    assertNoError(legacy.error, "Failed to load prior transactions");
+    priorTxns = legacy.data as typeof priorTxns;
+  } else {
+    assertNoError(priorTxnsRes.error, "Failed to load prior transactions");
+    priorTxns = filterActiveTxns(priorTxns);
+  }
 
   const groups = groupsRes.data;
   const categories = categoriesData;
   const assignments = assignmentsRes.data;
   const priorAssignments = priorAssignmentsRes.data;
   const futureAssignments = futureAssignmentsRes.data;
-  const txns = txnsRes.data;
-  const priorTxns = priorTxnsRes.data;
 
   const groupMap = new Map((groups as CategoryGroup[] | null)?.map((g) => [g.id, g]) ?? []);
   const assignedMap = new Map(
@@ -370,37 +403,37 @@ export const getBudgetSnapshot = cache(async (as: string): Promise<BudgetSnapsho
       .lt("month", month),
     supabase
       .from("transactions")
-      .select("category_id,amount_cents")
+      .select("category_id,amount_cents,ignored")
       .eq("budget_id", budget.id)
       .gte("occurred_on", range.start)
       .lt("occurred_on", activityEndExclusive),
     supabase
       .from("transactions")
-      .select("category_id,amount_cents")
+      .select("category_id,amount_cents,ignored")
       .eq("budget_id", budget.id)
       .lt("occurred_on", range.start),
     isDay
       ? supabase
           .from("transactions")
-          .select("amount_cents")
+          .select("amount_cents,ignored")
           .eq("budget_id", budget.id)
           .lte("occurred_on", totalThrough as string)
       : supabase
           .from("transactions")
-          .select("amount_cents")
+          .select("amount_cents,ignored")
           .eq("budget_id", budget.id)
           .lt("occurred_on", range.endExclusive),
     isDay
       ? supabase
           .from("transactions")
-          .select("id,occurred_on,payee,memo,amount_cents,category_id,account_id")
+          .select("id,occurred_on,payee,memo,amount_cents,category_id,account_id,ignored")
           .eq("budget_id", budget.id)
           .eq("occurred_on", as)
           .order("occurred_on", { ascending: false })
           .limit(80)
       : supabase
           .from("transactions")
-          .select("id,occurred_on,payee,memo,amount_cents,category_id,account_id")
+          .select("id,occurred_on,payee,memo,amount_cents,category_id,account_id,ignored")
           .eq("budget_id", budget.id)
           .gte("occurred_on", range.start)
           .lt("occurred_on", range.endExclusive)
@@ -416,11 +449,31 @@ export const getBudgetSnapshot = cache(async (as: string): Promise<BudgetSnapsho
   assertNoError(categoriesError, "Failed to load categories");
   assertNoError(assignmentsRes.error, "Failed to load assignments");
   assertNoError(priorAssignmentsRes.error, "Failed to load prior assignments");
-  assertNoError(activityRes.error, "Failed to load activity");
-  assertNoError(priorTxnsRes.error, "Failed to load prior transactions");
-  assertNoError(totalRes.error, "Failed to load money total");
-  assertNoError(periodTxnsRes.error, "Failed to load transactions");
+  const ignoredMissing =
+    isIgnoredColumnMissing(activityRes.error?.message) ||
+    isIgnoredColumnMissing(priorTxnsRes.error?.message) ||
+    isIgnoredColumnMissing(totalRes.error?.message) ||
+    isIgnoredColumnMissing(periodTxnsRes.error?.message);
+  if (!ignoredMissing) {
+    assertNoError(activityRes.error, "Failed to load activity");
+    assertNoError(priorTxnsRes.error, "Failed to load prior transactions");
+    assertNoError(totalRes.error, "Failed to load money total");
+    assertNoError(periodTxnsRes.error, "Failed to load transactions");
+  }
   assertNoError(accountsRes.error, "Failed to load accounts");
+
+  const activityRows = ignoredMissing
+    ? (activityRes.data ?? [])
+    : filterActiveTxns(activityRes.data);
+  const priorTxnRows = ignoredMissing
+    ? (priorTxnsRes.data ?? [])
+    : filterActiveTxns(priorTxnsRes.data);
+  const totalRows = ignoredMissing
+    ? (totalRes.data ?? [])
+    : filterActiveTxns(totalRes.data);
+  const periodTxnRows = ignoredMissing
+    ? (periodTxnsRes.data ?? [])
+    : filterActiveTxns(periodTxnsRes.data);
 
   const groupMap = new Map(
     ((groupsRes.data as CategoryGroup[] | null) ?? []).map((g) => [g.id, g]),
@@ -440,7 +493,7 @@ export const getBudgetSnapshot = cache(async (as: string): Promise<BudgetSnapsho
       (carryInMap.get(categoryId) ?? 0) + (row.assigned_cents as number),
     );
   }
-  for (const txn of priorTxnsRes.data ?? []) {
+  for (const txn of priorTxnRows) {
     const categoryId = txn.category_id as string | null;
     if (!categoryId) continue;
     carryInMap.set(
@@ -453,7 +506,7 @@ export const getBudgetSnapshot = cache(async (as: string): Promise<BudgetSnapsho
   let uncategorizedCurrent = 0;
   let incomeCents = 0;
   let spendingCents = 0;
-  for (const txn of activityRes.data ?? []) {
+  for (const txn of activityRows) {
     const amount = txn.amount_cents as number;
     if (amount >= 0) incomeCents += amount;
     else spendingCents += -amount;
@@ -466,7 +519,7 @@ export const getBudgetSnapshot = cache(async (as: string): Promise<BudgetSnapsho
   }
 
   let uncategorizedPrior = 0;
-  for (const txn of priorTxnsRes.data ?? []) {
+  for (const txn of priorTxnRows) {
     if (txn.category_id == null) {
       uncategorizedPrior += txn.amount_cents as number;
     }
@@ -528,7 +581,7 @@ export const getBudgetSnapshot = cache(async (as: string): Promise<BudgetSnapsho
     ]),
   );
 
-  const transactions: BudgetSnapshotTxn[] = (periodTxnsRes.data ?? []).map((txn) => ({
+  const transactions: BudgetSnapshotTxn[] = periodTxnRows.map((txn) => ({
     id: txn.id as string,
     occurredOn: txn.occurred_on as string,
     payee: (txn.payee as string) || "Transaction",
@@ -540,11 +593,11 @@ export const getBudgetSnapshot = cache(async (as: string): Promise<BudgetSnapsho
     accountName: accountNameById.get(txn.account_id as string) ?? "Account",
   }));
 
-  const totalMoneyCents = (totalRes.data ?? []).reduce(
+  const totalMoneyCents = totalRows.reduce(
     (sum, row) => sum + (row.amount_cents as number),
     0,
   );
-  const activityCents = (activityRes.data ?? []).reduce(
+  const activityCents = activityRows.reduce(
     (sum, row) => sum + (row.amount_cents as number),
     0,
   );
@@ -612,21 +665,40 @@ export const getAccountsWithBalances = cache(async (): Promise<
       .order("name");
   }
 
-  const txnsRes = await supabase
-    .from("transactions")
-    .select("account_id,amount_cents")
-    .eq("budget_id", budget.id);
+  let balanceTxnRows: Array<{
+    account_id: string;
+    amount_cents: number;
+    ignored?: boolean;
+  }> | null = null;
+  {
+    const withIgnored = await supabase
+      .from("transactions")
+      .select("account_id,amount_cents,ignored")
+      .eq("budget_id", budget.id);
+    if (withIgnored.error && isIgnoredColumnMissing(withIgnored.error.message)) {
+      const legacy = await supabase
+        .from("transactions")
+        .select("account_id,amount_cents")
+        .eq("budget_id", budget.id);
+      assertNoError(legacy.error, "Failed to load account balances");
+      balanceTxnRows = (legacy.data as typeof balanceTxnRows) ?? [];
+    } else {
+      assertNoError(withIgnored.error, "Failed to load account balances");
+      balanceTxnRows = filterActiveTxns(
+        withIgnored.data as typeof balanceTxnRows,
+      );
+    }
+  }
 
   assertNoError(accountsRes.error, "Failed to load accounts");
-  assertNoError(txnsRes.error, "Failed to load account balances");
 
   const accounts = (accountsRes.data ?? []) as Array<
     Account & { include_in_total?: boolean; sort_order?: number }
   >;
-  const txns = txnsRes.data;
+  const txns = balanceTxnRows ?? [];
 
   const balances = new Map<string, number>();
-  for (const txn of txns ?? []) {
+  for (const txn of txns) {
     const id = txn.account_id as string;
     balances.set(id, (balances.get(id) ?? 0) + (txn.amount_cents as number));
   }
@@ -700,9 +772,7 @@ export const getAccountRegister = cache(async (accountId: string): Promise<{
         .maybeSingle(),
       supabase
         .from("transactions")
-        .select(
-          "id,budget_id,account_id,category_id,occurred_on,payee,memo,amount_cents,cleared,external_id",
-        )
+        .select(TXN_REGISTER_COLUMNS)
         .eq("budget_id", budget.id)
         .eq("account_id", accountId)
         .order("occurred_on", { ascending: false })
@@ -710,7 +780,7 @@ export const getAccountRegister = cache(async (accountId: string): Promise<{
         .limit(500),
       supabase
         .from("transactions")
-        .select("amount_cents")
+        .select("amount_cents,ignored")
         .eq("budget_id", budget.id)
         .eq("account_id", accountId),
       supabase
@@ -740,8 +810,39 @@ export const getAccountRegister = cache(async (accountId: string): Promise<{
     ]);
 
   assertNoError(accountRes.error, "Failed to load account");
-  assertNoError(transactionsRes.error, "Failed to load register");
-  assertNoError(balanceRes.error, "Failed to load balance");
+  let registerTxns = transactionsRes.data;
+  if (transactionsRes.error && isIgnoredColumnMissing(transactionsRes.error.message)) {
+    const legacy = await supabase
+      .from("transactions")
+      .select(TXN_REGISTER_COLUMNS_LEGACY)
+      .eq("budget_id", budget.id)
+      .eq("account_id", accountId)
+      .order("occurred_on", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(500);
+    assertNoError(legacy.error, "Failed to load register");
+    registerTxns = legacy.data as typeof registerTxns;
+  } else {
+    assertNoError(transactionsRes.error, "Failed to load register");
+  }
+
+  let balanceRows = balanceRes.data as Array<{
+    amount_cents: number;
+    ignored?: boolean;
+  }> | null;
+  if (balanceRes.error && isIgnoredColumnMissing(balanceRes.error.message)) {
+    const legacy = await supabase
+      .from("transactions")
+      .select("amount_cents")
+      .eq("budget_id", budget.id)
+      .eq("account_id", accountId);
+    assertNoError(legacy.error, "Failed to load balance");
+    balanceRows = legacy.data as typeof balanceRows;
+  } else {
+    assertNoError(balanceRes.error, "Failed to load balance");
+    balanceRows = filterActiveTxns(balanceRows);
+  }
+
   assertNoError(categoriesRes.error, "Failed to load categories");
   assertNoError(groupsRes.error, "Failed to load category groups");
   assertNoError(accountsRes.error, "Failed to load accounts");
@@ -754,8 +855,7 @@ export const getAccountRegister = cache(async (accountId: string): Promise<{
   }
 
   const account = accountRes.data;
-  const transactions = transactionsRes.data;
-  const balanceRows = balanceRes.data;
+  const transactions = registerTxns;
   const categories = categoriesRes.data;
   const groups = groupsRes.data;
   const allAccounts = accountsRes.data;
@@ -851,9 +951,7 @@ export const getAllTransactionsRegister = cache(async (
     await Promise.all([
       supabase
         .from("transactions")
-        .select(
-          "id,budget_id,account_id,category_id,occurred_on,payee,memo,amount_cents,cleared,external_id",
-        )
+        .select(TXN_REGISTER_COLUMNS)
         .eq("budget_id", budget.id)
         .order("occurred_on", { ascending: false })
         .order("created_at", { ascending: false })
@@ -874,7 +972,20 @@ export const getAllTransactionsRegister = cache(async (
         .order("name"),
     ]);
 
-  assertNoError(transactionsRes.error, "Failed to load transactions");
+  let allTxns = transactionsRes.data;
+  if (transactionsRes.error && isIgnoredColumnMissing(transactionsRes.error.message)) {
+    const legacy = await supabase
+      .from("transactions")
+      .select(TXN_REGISTER_COLUMNS_LEGACY)
+      .eq("budget_id", budget.id)
+      .order("occurred_on", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(fetchSize);
+    assertNoError(legacy.error, "Failed to load transactions");
+    allTxns = legacy.data as typeof allTxns;
+  } else {
+    assertNoError(transactionsRes.error, "Failed to load transactions");
+  }
   assertNoError(categoriesRes.error, "Failed to load categories");
   assertNoError(groupsRes.error, "Failed to load category groups");
   assertNoError(accountsRes.error, "Failed to load accounts");
@@ -883,7 +994,7 @@ export const getAllTransactionsRegister = cache(async (
     (groupsRes.data ?? []).map((g) => [g.id as string, g.name as string]),
   );
 
-  const rows = (transactionsRes.data as Transaction[] | null) ?? [];
+  const rows = (allTxns as Transaction[] | null) ?? [];
   const hasMore = rows.length > pageSize;
   const transactions = hasMore ? rows.slice(0, pageSize) : rows;
 

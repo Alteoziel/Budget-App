@@ -36,7 +36,7 @@ export function InsightsExplorer({ dataset }: { dataset: InsightsDataset }) {
         description="Pick months on the calendar to see spending by category. Tap a category for its transactions."
         defaultOpen
       >
-        <MonthSpendingBreakdown dataset={dataset} accountIds={accountIds} />
+        <MonthSpendingBreakdown dataset={dataset} />
       </CollapsibleInsight>
 
       <CollapsibleInsight
