@@ -1,12 +1,19 @@
 "use client";
 
-import { useNotifyBudgetChange } from "@/components/BudgetRealtimeProvider";
+import { useRouter } from "next/navigation";
+import {
+  useBeginLocalBudgetMutation,
+  useNotifyBudgetChange,
+} from "@/components/BudgetRealtimeProvider";
 import { PendingSubmitButton } from "@/components/PendingSubmitButton";
 import { categoryAmountAction } from "@/lib/actions";
 import type { BudgetRow } from "@/lib/types";
 
 const btnClass =
   "min-h-11 w-full rounded-xl border border-ink-900/15 bg-white px-2 text-sm font-bold text-ink-800 hover:bg-sand-100";
+
+const primaryBtnClass =
+  "min-h-11 w-full rounded-xl bg-moss-500 px-2 text-sm font-bold text-sand-50 hover:bg-moss-400";
 
 export function CategoryAssignControl({
   month,
@@ -15,16 +22,22 @@ export function CategoryAssignControl({
   month: string;
   row: BudgetRow;
 }) {
+  const router = useRouter();
   const notifyChange = useNotifyBudgetChange();
+  const beginLocalMutation = useBeginLocalBudgetMutation();
 
   return (
     <form
       action={async (formData) => {
+        // Arm echo-skip before the write so realtime can't paint a stale RSC
+        // snapshot between commit and our own refresh.
+        const endLocalMutation = beginLocalMutation();
         try {
           await categoryAmountAction(formData);
-        } finally {
-          // Broadcast even when the action redirects — peers need the update.
           notifyChange();
+          router.refresh();
+        } finally {
+          endLocalMutation();
         }
       }}
       className="mt-2 space-y-2"
@@ -44,18 +57,18 @@ export function CategoryAssignControl({
       />
 
       <div className="grid grid-cols-3 gap-2">
-        <PendingSubmitButton name="intent" value="add" pendingLabel="+" className={btnClass}>
+        <PendingSubmitButton
+          name="intent"
+          value="add"
+          pendingLabel="+"
+          className={primaryBtnClass}
+        >
           +
         </PendingSubmitButton>
         <PendingSubmitButton name="intent" value="sub" pendingLabel="−" className={btnClass}>
           −
         </PendingSubmitButton>
-        <PendingSubmitButton
-          name="intent"
-          value="set"
-          pendingLabel="set"
-          className="min-h-11 w-full rounded-xl bg-moss-500 px-2 text-sm font-bold text-sand-50 hover:bg-moss-400"
-        >
+        <PendingSubmitButton name="intent" value="set" pendingLabel="set" className={btnClass}>
           set
         </PendingSubmitButton>
         <PendingSubmitButton

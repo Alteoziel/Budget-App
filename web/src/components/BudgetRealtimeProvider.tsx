@@ -41,6 +41,12 @@ type BudgetRealtimeContextValue = {
   live: boolean;
   /** Tell other clients on this budget to refresh (broadcast + local signal). */
   notifyChange: () => void;
+  /**
+   * Mark a local mutation in-flight so postgres_changes / peer poll can't
+   * apply a stale router.refresh() that races the mutation's own refresh.
+   * Returns an end() callback for finally {}.
+   */
+  beginLocalMutation: () => () => void;
 };
 
 const BudgetRealtimeContext = createContext<BudgetRealtimeContextValue>({
@@ -48,6 +54,7 @@ const BudgetRealtimeContext = createContext<BudgetRealtimeContextValue>({
   setEditing: () => {},
   live: false,
   notifyChange: () => {},
+  beginLocalMutation: () => () => {},
 });
 
 const LIVE_TABLES = [
@@ -105,13 +112,18 @@ export function BudgetRealtimeProvider({
   const channelRef = useRef<RealtimeChannel | null>(null);
   const refreshTimer = useRef<number | null>(null);
   const lastLocalNotify = useRef(0);
+  const localMutationDepth = useRef(0);
 
   const scheduleRefresh = useCallback(() => {
+    if (localMutationDepth.current > 0) return;
     if (refreshTimer.current != null) {
       window.clearTimeout(refreshTimer.current);
     }
     refreshTimer.current = window.setTimeout(() => {
       refreshTimer.current = null;
+      // Drop refreshes that were scheduled before a local mutation finished.
+      if (localMutationDepth.current > 0) return;
+      if (Date.now() - lastLocalNotify.current < 2_000) return;
       router.refresh();
     }, 200);
   }, [router]);
@@ -138,6 +150,19 @@ export function BudgetRealtimeProvider({
     window.dispatchEvent(new CustomEvent(BUDGET_CHANGED_EVENT));
   }, [budgetId, userId]);
 
+  const beginLocalMutation = useCallback(() => {
+    localMutationDepth.current += 1;
+    lastLocalNotify.current = Date.now();
+    if (refreshTimer.current != null) {
+      window.clearTimeout(refreshTimer.current);
+      refreshTimer.current = null;
+    }
+    return () => {
+      localMutationDepth.current = Math.max(0, localMutationDepth.current - 1);
+      lastLocalNotify.current = Date.now();
+    };
+  }, []);
+
   useEffect(() => {
     const supabase = createClient();
     const channel = supabase.channel(`budget-live:${budgetId}`, {
@@ -159,8 +184,9 @@ export function BudgetRealtimeProvider({
           filter: `budget_id=eq.${budgetId}`,
         },
         () => {
-          // Skip echo right after our own notify (local page already refreshed).
-          if (Date.now() - lastLocalNotify.current < 800) return;
+          // Skip echo right after our own notify / while a local mutation runs.
+          if (localMutationDepth.current > 0) return;
+          if (Date.now() - lastLocalNotify.current < 2_000) return;
           scheduleRefresh();
         },
       );
@@ -171,6 +197,7 @@ export function BudgetRealtimeProvider({
         (message?.payload as { userId?: string } | undefined)?.userId ?? "",
       );
       if (fromUser && fromUser === userId) return;
+      if (localMutationDepth.current > 0) return;
       scheduleRefresh();
     });
 
@@ -230,15 +257,16 @@ export function BudgetRealtimeProvider({
   useEffect(() => {
     if (!live || peers.length === 0) return;
     const timer = window.setInterval(() => {
-      if (Date.now() - lastLocalNotify.current < 1_500) return;
+      if (localMutationDepth.current > 0) return;
+      if (Date.now() - lastLocalNotify.current < 2_000) return;
       scheduleRefresh();
     }, PEER_POLL_MS);
     return () => window.clearInterval(timer);
   }, [live, peers.length, scheduleRefresh]);
 
   const value = useMemo(
-    () => ({ peers, setEditing, live, notifyChange }),
-    [peers, setEditing, live, notifyChange],
+    () => ({ peers, setEditing, live, notifyChange, beginLocalMutation }),
+    [peers, setEditing, live, notifyChange, beginLocalMutation],
   );
 
   return (
@@ -273,4 +301,10 @@ export function useAnnounceEditing(editing: PresenceEditing) {
 export function useNotifyBudgetChange() {
   const { notifyChange } = useBudgetRealtime();
   return notifyChange;
+}
+
+/** Guard local mutations against stale realtime refreshes. */
+export function useBeginLocalBudgetMutation() {
+  const { beginLocalMutation } = useBudgetRealtime();
+  return beginLocalMutation;
 }
