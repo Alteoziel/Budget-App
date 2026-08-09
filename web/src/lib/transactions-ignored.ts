@@ -1,10 +1,10 @@
-/** True when a transaction row is marked ignored. */
+/** True when a transaction is marked ignored from insights. */
 export function isIgnoredTxn(row: { ignored?: boolean | null }): boolean {
   return row.ignored === true;
 }
 
-/** Drop ignored rows; treats missing `ignored` as active. */
-export function filterActiveTxns<T extends { ignored?: boolean | null }>(
+/** Drop insights-ignored rows; treats missing `ignored` as active. */
+export function filterInsightsTxns<T extends { ignored?: boolean | null }>(
   rows: T[] | null | undefined,
 ): T[] {
   return (rows ?? []).filter((row) => !isIgnoredTxn(row));

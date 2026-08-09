@@ -42,7 +42,6 @@ export function RegisterTransactions({
   const [categoryFilter, setCategoryFilter] = useState(initialCategoryFilter);
   const [accountFilter, setAccountFilter] = useState("all");
   const [flowFilter, setFlowFilter] = useState<"all" | "income" | "spending">("all");
-  const [ignoredFilter, setIgnoredFilter] = useState<"hide" | "all" | "only">("hide");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
 
@@ -88,8 +87,6 @@ export function RegisterTransactions({
       }
       if (flowFilter === "income" && txn.amount_cents <= 0) return false;
       if (flowFilter === "spending" && txn.amount_cents >= 0) return false;
-      if (ignoredFilter === "hide" && isIgnoredTxn(txn)) return false;
-      if (ignoredFilter === "only" && !isIgnoredTxn(txn)) return false;
       if (fromDate && txn.occurred_on < fromDate) return false;
       if (toDate && txn.occurred_on > toDate) return false;
       return true;
@@ -100,7 +97,6 @@ export function RegisterTransactions({
     categoryFilter,
     accountFilter,
     flowFilter,
-    ignoredFilter,
     fromDate,
     toDate,
     categoryLabel,
@@ -112,7 +108,6 @@ export function RegisterTransactions({
     categoryFilter !== "all" ||
     accountFilter !== "all" ||
     flowFilter !== "all" ||
-    ignoredFilter !== "hide" ||
     Boolean(fromDate) ||
     Boolean(toDate);
 
@@ -128,7 +123,6 @@ export function RegisterTransactions({
     setCategoryFilter("all");
     setAccountFilter("all");
     setFlowFilter("all");
-    setIgnoredFilter("hide");
     setFromDate("");
     setToDate("");
   }
@@ -241,23 +235,6 @@ export function RegisterTransactions({
               </label>
 
               <label className="block text-xs font-semibold text-ink-600">
-                Ignored
-                <select
-                  value={ignoredFilter}
-                  onChange={(event) =>
-                    setIgnoredFilter(
-                      event.target.value as "hide" | "all" | "only",
-                    )
-                  }
-                  className="mt-1 min-h-11 w-full rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm outline-none ring-moss-400 focus:ring-2"
-                >
-                  <option value="hide">Hide ignored</option>
-                  <option value="all">Include ignored</option>
-                  <option value="only">Ignored only</option>
-                </select>
-              </label>
-
-              <label className="block text-xs font-semibold text-ink-600">
                 From
                 <input
                   type="date"
@@ -356,10 +333,7 @@ export function RegisterTransactions({
           const ignored = isIgnoredTxn(txn);
 
           return (
-            <li
-              key={txn.id}
-              className={`px-4 py-3 ${ignored ? "bg-ink-900/[0.03] opacity-80" : ""}`}
-            >
+            <li key={txn.id} className="px-4 py-3">
               <div className="flex items-start gap-3">
                 <input
                   type="checkbox"
@@ -487,7 +461,7 @@ export function RegisterTransactions({
                             ) : null}
                             {ignored ? (
                               <span className="ml-2 align-middle text-[10px] font-bold uppercase tracking-wide text-ink-500">
-                                Ignored
+                                Ignored in insights
                               </span>
                             ) : null}
                           </p>

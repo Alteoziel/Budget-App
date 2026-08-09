@@ -28,24 +28,10 @@ export async function AppChrome({ children }: { children: React.ReactNode }) {
         .from("transactions")
         .select("id", { count: "exact", head: true })
         .eq("budget_id", active.budget.id)
-        .is("category_id", null)
-        .eq("ignored", false),
+        .is("category_id", null),
     ]);
     displayName = profile?.display_name?.trim() || "You";
-    // Fallback if ignored column is not migrated yet.
-    if (
-      uncategorizedRes.error &&
-      /ignored|schema cache|column/i.test(uncategorizedRes.error.message)
-    ) {
-      const legacy = await supabase
-        .from("transactions")
-        .select("id", { count: "exact", head: true })
-        .eq("budget_id", active.budget.id)
-        .is("category_id", null);
-      uncategorizedCount = legacy.count ?? 0;
-    } else {
-      uncategorizedCount = uncategorizedRes.count ?? 0;
-    }
+    uncategorizedCount = uncategorizedRes.count ?? 0;
   }
 
   const bankSyncOnOpen = Boolean(active && plaidConfigured());
