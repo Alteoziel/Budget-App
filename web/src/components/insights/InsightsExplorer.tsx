@@ -33,7 +33,7 @@ export function InsightsExplorer({ dataset }: { dataset: InsightsDataset }) {
     <>
       <CollapsibleInsight
         title="Month spending"
-        description="Pick months on the calendar to see spending by category. Tap a category for its transactions."
+        description="Defaults to checking. Pick accounts and months, then tap a category for its transactions."
         defaultOpen
       >
         <MonthSpendingBreakdown dataset={dataset} />
