@@ -24,7 +24,8 @@ PR quality gates from the governance stack stay in place.
 - Insights charts + rule-based trend tips
 - YNAB register / Reflect **CSV import**
 - Offline PWA: service worker caches app shell; cold starts paint from cache (stale-while-revalidate) with a dark splash so dark mode doesn’t flash white
-- Plaid bank sync (Link + transactions sync) + daily Vercel Cron
+- Plaid bank sync (Link + transactions sync) + daily Vercel Cron + force sync on app open/resume
+- Uncategorized transaction badge on the Transactions tab
 - Supabase Auth + budget-scoped RLS
 - Passkey (WebAuthn) or email/password sign-in (either works)
 - Installable PWA shell
@@ -56,7 +57,7 @@ This app is meant to run on **Vercel**. Secrets live in **Doppler** and sync int
 1. Import this GitHub repo
 2. Set **Root Directory** to `web`
 3. Deploy — env vars arrive from the Doppler sync (do not paste secrets into Vercel by hand)
-4. Cron: [`web/vercel.json`](web/vercel.json) hits `/api/cron/plaid-sync` daily at `15 12 * * *` UTC (6:15 AM Mountain) with `Authorization: Bearer CRON_SECRET`. The route bypasses auth middleware, retries once per item, and logs loudly. Opening the app also catch-up syncs when the last sync is older than 16 hours.
+4. Cron: [`web/vercel.json`](web/vercel.json) hits `/api/cron/plaid-sync` daily at `15 12 * * *` UTC (6:15 AM Mountain) with `Authorization: Bearer CRON_SECRET`. The route bypasses auth middleware, retries once per item, and logs loudly. Opening or returning to the app also runs a full bank sync (same path as Sync now), with a short debounce, then refreshes the UI.
 
 Preview / production URLs come from Vercel after deploy.
 
@@ -67,6 +68,7 @@ Preview / production URLs come from Vercel after deploy.
 - Settings → **Connect bank** opens Plaid Link; categories left blank for you to assign
 - Pending bank authorizations are imported as uncleared; Sync now does a full refresh
 - Sync now remaps accounts and requests an on-demand Plaid bank refresh when available — disconnecting is not required to recover missing transactions
+- Opening the app runs that same full sync (source `open`); apply `supabase/migrations/20260809120000_sync_runs_open_source.sql` so sync_runs accepts it
 - Run migration `supabase/migrations/20260724150000_plaid_bank_sync.sql`
 - Disconnect / Sync now are available per connected item on Settings
 

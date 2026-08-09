@@ -1,11 +1,9 @@
-import { after } from "next/server";
 import { DesktopSideNav, MobileBottomNav } from "@/components/AppNav";
 import { AppLiveShell } from "@/components/AppLiveShell";
 import { AppOfflineShell } from "@/components/AppOfflineShell";
 import { BudgetSwitcher } from "@/components/BudgetSwitcher";
 import { CollaboratorsBadge } from "@/components/CollaboratorsBadge";
 import { listUserBudgets, resolveActiveBudget } from "@/lib/budget-context";
-import { catchUpStalePlaidSyncForBudget } from "@/lib/plaid/catch-up";
 import { plaidConfigured } from "@/lib/plaid/client";
 import { createClient } from "@/lib/supabase/server";
 
@@ -17,39 +15,46 @@ export async function AppChrome({ children }: { children: React.ReactNode }) {
   ]);
 
   let displayName = "You";
+  let uncategorizedCount = 0;
   if (active) {
     const supabase = await createClient();
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("display_name")
-      .eq("id", active.userId)
-      .maybeSingle();
+    const [{ data: profile }, uncategorizedRes] = await Promise.all([
+      supabase
+        .from("profiles")
+        .select("display_name")
+        .eq("id", active.userId)
+        .maybeSingle(),
+      supabase
+        .from("transactions")
+        .select("id", { count: "exact", head: true })
+        .eq("budget_id", active.budget.id)
+        .is("category_id", null),
+    ]);
     displayName = profile?.display_name?.trim() || "You";
-
-    // If the daily cron missed, catch up after the page is sent so open-app
-    // still refreshes bank data without blocking navigation.
-    if (plaidConfigured()) {
-      const budgetId = active.budget.id;
-      after(() => {
-        void catchUpStalePlaidSyncForBudget(budgetId);
-      });
-    }
+    uncategorizedCount = uncategorizedRes.count ?? 0;
   }
+
+  const bankSyncOnOpen = Boolean(active && plaidConfigured());
 
   return (
     <AppLiveShell
       budgetId={active?.budget.id}
       userId={active?.userId}
       displayName={displayName}
+      bankSyncOnOpen={bankSyncOnOpen}
     >
       {/*
         Full-viewport flex shell keeps the mobile tab bar in normal flow at the
         bottom. `position: fixed` was leaving a gap under the tabs after long
         server actions (Sync now) when the mobile visual viewport resettled.
       */}
+      {/*
+        Solid --page-bg under the glow is applied via globals.css `.bg-app-glow`
+        so Safari doesn’t flash white when this full-viewport layer streams in.
+      */}
       <div className="flex h-dvh max-h-dvh flex-col overflow-hidden bg-app-glow">
         <div className="mx-auto flex min-h-0 w-full max-w-6xl flex-1">
-          <DesktopSideNav />
+          <DesktopSideNav uncategorizedCount={uncategorizedCount} />
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-y-contain">
             <header className="flex items-start justify-between gap-3 px-4 pb-2 pt-[max(1.25rem,env(safe-area-inset-top))] sm:px-6 lg:px-8">
               <div className="min-w-0">
@@ -82,7 +87,7 @@ export async function AppChrome({ children }: { children: React.ReactNode }) {
             </main>
           </div>
         </div>
-        <MobileBottomNav />
+        <MobileBottomNav uncategorizedCount={uncategorizedCount} />
       </div>
     </AppLiveShell>
   );

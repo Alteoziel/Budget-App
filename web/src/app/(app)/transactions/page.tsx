@@ -7,11 +7,16 @@ import { getAllTransactionsRegister } from "@/lib/budget-data";
 export default async function TransactionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; notice?: string }>;
+  searchParams: Promise<{ error?: string; notice?: string; category?: string }>;
 }) {
   const query = await searchParams;
   const { transactions, categories, accounts } = await getAllTransactionsRegister();
   const today = new Date().toISOString().slice(0, 10);
+  const initialCategoryFilter =
+    query.category === "uncategorized" ||
+    (query.category && categories.some((c) => c.id === query.category))
+      ? query.category
+      : "all";
 
   return (
     <AppShell
@@ -30,11 +35,13 @@ export default async function TransactionsPage({
 
       <section className="animate-rise card-surface mt-2 overflow-hidden rounded-2xl">
         <RegisterTransactions
+          key={`register:${initialCategoryFilter}`}
           transactions={transactions}
           categories={categories}
           accounts={accounts}
           showAccountName
           returnTo="/transactions"
+          initialCategoryFilter={initialCategoryFilter}
         />
       </section>
     </AppShell>

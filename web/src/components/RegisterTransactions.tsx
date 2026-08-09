@@ -19,6 +19,7 @@ export function RegisterTransactions({
   accounts,
   showAccountName = false,
   returnTo,
+  initialCategoryFilter = "all",
 }: {
   accountId?: string;
   transactions: Transaction[];
@@ -26,13 +27,17 @@ export function RegisterTransactions({
   accounts: Array<{ id: string; name: string }>;
   showAccountName?: boolean;
   returnTo?: string;
+  /** Prefill category filter (e.g. "uncategorized" from nav badge). */
+  initialCategoryFilter?: string;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(
+    () => initialCategoryFilter !== "all",
+  );
   const [search, setSearch] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState(initialCategoryFilter);
   const [accountFilter, setAccountFilter] = useState("all");
   const [flowFilter, setFlowFilter] = useState<"all" | "income" | "spending">("all");
   const [fromDate, setFromDate] = useState("");

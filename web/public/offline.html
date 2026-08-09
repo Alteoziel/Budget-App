@@ -1,33 +1,35 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="dark">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="theme-color" content="#080c0b" media="(prefers-color-scheme: dark)" />
-    <meta name="theme-color" content="#e9e3d6" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#080c0b" />
+    <meta name="color-scheme" content="dark light" />
     <title>Offline · Alte' Budgeting</title>
     <style>
       :root {
-        color-scheme: light dark;
-        --ink: #15241f;
-        --sand: #e9e3d6;
-        --card: #fefdfa;
-        --moss: #3f7a5c;
+        color-scheme: dark light;
+        /* Default dark — matches the installed app; avoids cream flash on open. */
+        --ink: #eaf1ed;
+        --sand: #080c0b;
+        --card: #212926;
+        --moss: #5a9a75;
         --coral: #c45c3a;
       }
-      @media (prefers-color-scheme: dark) {
+      @media (prefers-color-scheme: light) {
         :root {
-          --ink: #eaf1ed;
-          --sand: #080c0b;
-          --card: #212926;
-          --moss: #5a9a75;
+          --ink: #15241f;
+          --sand: #e9e3d6;
+          --card: #fefdfa;
+          --moss: #3f7a5c;
         }
       }
       * { box-sizing: border-box; }
       html, body {
         margin: 0;
         min-height: 100dvh;
+        background: #080c0b;
         background: var(--sand);
       }
       body {

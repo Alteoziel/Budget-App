@@ -47,6 +47,7 @@ export function ThemeToggle() {
   const pref = useSyncExternalStore(subscribe, readPref, () => "system" as ThemePref);
 
   useEffect(() => {
+    applyTheme(pref);
     if (pref !== "system") return;
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     const onChange = () => applyTheme("system");

@@ -7,14 +7,37 @@ const links = [
   { href: "/budget", label: "Budget" },
   { href: "/accounts", label: "Accounts" },
   { href: "/insights", label: "Insights" },
-  { href: "/transactions", label: "Transactions" },
+  { href: "/transactions", label: "Transactions", badgeKey: "uncategorized" as const },
   { href: "/settings", label: "Settings" },
 ];
 
 function navClass(active: boolean) {
-  return `touch-manipulation flex items-center justify-center rounded-xl px-2 py-2.5 text-xs font-bold transition sm:text-sm ${
+  return `touch-manipulation relative flex items-center justify-center rounded-xl px-2 py-2.5 text-xs font-bold transition sm:text-sm ${
     active ? "bg-moss-500 text-sand-50" : "text-ink-700 hover:bg-sand-100 active:bg-sand-200"
   }`;
+}
+
+function UncategorizedBadge({
+  count,
+  active,
+}: {
+  count: number;
+  active: boolean;
+}) {
+  if (count <= 0) return null;
+  const label = count > 99 ? "99+" : String(count);
+  return (
+    <span
+      className={`absolute -right-0.5 -top-0.5 inline-flex min-h-[1.1rem] min-w-[1.1rem] items-center justify-center rounded-md px-1 text-[10px] font-bold leading-none ${
+        active
+          ? "bg-sand-50 text-moss-600"
+          : "bg-coral-500 text-sand-50"
+      }`}
+      aria-label={`${count} uncategorized transaction${count === 1 ? "" : "s"}`}
+    >
+      {label}
+    </span>
+  );
 }
 
 /**
@@ -22,21 +45,32 @@ function navClass(active: boolean) {
  * Sits in normal document flow at the bottom of the app shell (not `fixed`)
  * so mobile Safari/Chrome can’t leave a gap after long actions like Sync now.
  */
-export function MobileBottomNav() {
+export function MobileBottomNav({
+  uncategorizedCount = 0,
+}: {
+  uncategorizedCount?: number;
+}) {
   const pathname = usePathname();
 
   return (
     <nav
-      className="shrink-0 border-t border-ink-900/10 bg-sand-50/95 backdrop-blur lg:hidden"
+      className="shrink-0 border-t border-ink-900/10 bg-sand-50 lg:hidden"
       aria-label="Primary"
     >
       <ul className="mx-auto grid max-w-lg grid-cols-5 gap-1 px-2 pb-[max(0.65rem,env(safe-area-inset-bottom))] pt-2">
         {links.map((link) => {
           const active = pathname === link.href || pathname.startsWith(`${link.href}/`);
+          const href =
+            link.badgeKey === "uncategorized" && uncategorizedCount > 0
+              ? "/transactions?category=uncategorized"
+              : link.href;
           return (
             <li key={link.href}>
-              <Link href={link.href} prefetch className={navClass(active)}>
+              <Link href={href} prefetch className={navClass(active)}>
                 {link.label}
+                {link.badgeKey === "uncategorized" ? (
+                  <UncategorizedBadge count={uncategorizedCount} active={active} />
+                ) : null}
               </Link>
             </li>
           );
@@ -47,7 +81,11 @@ export function MobileBottomNav() {
 }
 
 /** Left sidebar — desktop / large tablets. */
-export function DesktopSideNav() {
+export function DesktopSideNav({
+  uncategorizedCount = 0,
+}: {
+  uncategorizedCount?: number;
+}) {
   const pathname = usePathname();
 
   return (
@@ -61,18 +99,34 @@ export function DesktopSideNav() {
       <ul className="mt-3 space-y-1">
         {links.map((link) => {
           const active = pathname === link.href || pathname.startsWith(`${link.href}/`);
+          const href =
+            link.badgeKey === "uncategorized" && uncategorizedCount > 0
+              ? "/transactions?category=uncategorized"
+              : link.href;
           return (
             <li key={link.href}>
               <Link
-                href={link.href}
+                href={href}
                 prefetch
-                className={`touch-manipulation flex min-h-11 items-center rounded-xl px-3 text-sm font-bold transition ${
+                className={`touch-manipulation relative flex min-h-11 items-center rounded-xl px-3 text-sm font-bold transition ${
                   active
                     ? "bg-moss-500 text-sand-50"
                     : "text-ink-800 hover:bg-sand-100 active:bg-sand-200"
                 }`}
               >
-                {link.label}
+                <span className="flex-1">{link.label}</span>
+                {link.badgeKey === "uncategorized" && uncategorizedCount > 0 ? (
+                  <span
+                    className={`ml-2 inline-flex min-h-[1.25rem] min-w-[1.25rem] items-center justify-center rounded-md px-1.5 text-[11px] font-bold ${
+                      active
+                        ? "bg-sand-50 text-moss-600"
+                        : "bg-coral-500 text-sand-50"
+                    }`}
+                    aria-label={`${uncategorizedCount} uncategorized`}
+                  >
+                    {uncategorizedCount > 99 ? "99+" : uncategorizedCount}
+                  </span>
+                ) : null}
               </Link>
             </li>
           );
