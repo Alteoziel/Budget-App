@@ -5,6 +5,7 @@ import { useEffect, useId, useMemo, useRef, useState, useTransition } from "reac
 import { createPortal } from "react-dom";
 import {
   useAnnounceEditing,
+  useBeginLocalBudgetMutation,
   useNotifyBudgetChange,
 } from "@/components/BudgetRealtimeProvider";
 import { clearCategoryGoalAction, setCategoryGoalAction } from "@/lib/actions";
@@ -50,6 +51,7 @@ export function CategoryGoalButton({
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const notifyChange = useNotifyBudgetChange();
+  const beginLocalMutation = useBeginLocalBudgetMutation();
 
   useAnnounceEditing(
     open
@@ -131,42 +133,52 @@ export function CategoryGoalButton({
   function save() {
     setError(null);
     startTransition(async () => {
-      const result = await setCategoryGoalAction({
-        categoryId: row.categoryId,
-        amount,
-        goalName,
-        frequency,
-        note,
-        dueOnEnabled,
-        dueOn,
-      });
-      if (!result.ok) {
-        setError(result.error);
-        return;
+      const endLocalMutation = beginLocalMutation();
+      try {
+        const result = await setCategoryGoalAction({
+          categoryId: row.categoryId,
+          amount,
+          goalName,
+          frequency,
+          note,
+          dueOnEnabled,
+          dueOn,
+        });
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+        setOpen(false);
+        notifyChange();
+        router.refresh();
+      } finally {
+        endLocalMutation();
       }
-      setOpen(false);
-      notifyChange();
-      router.refresh();
     });
   }
 
   function clearGoal() {
     setError(null);
     startTransition(async () => {
-      const result = await clearCategoryGoalAction(row.categoryId);
-      if (!result.ok) {
-        setError(result.error);
-        return;
+      const endLocalMutation = beginLocalMutation();
+      try {
+        const result = await clearCategoryGoalAction(row.categoryId);
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+        setAmount("");
+        setGoalName("");
+        setFrequency("monthly");
+        setNote("");
+        setDueOnEnabled(false);
+        setDueOn("");
+        setOpen(false);
+        notifyChange();
+        router.refresh();
+      } finally {
+        endLocalMutation();
       }
-      setAmount("");
-      setGoalName("");
-      setFrequency("monthly");
-      setNote("");
-      setDueOnEnabled(false);
-      setDueOn("");
-      setOpen(false);
-      notifyChange();
-      router.refresh();
     });
   }
 
