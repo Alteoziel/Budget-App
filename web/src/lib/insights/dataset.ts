@@ -19,6 +19,13 @@ export type InsightsDataset = {
   /** Recurring-charge detection input: [monthIndex, payeeIndex, outflowCents] */
   payeeCells: Array<[number, number, number]>;
   payees: string[];
+  /**
+   * Outflow transactions for category drill-down:
+   * [monthIndex, accountIndex, categoryIndex (-1 = uncategorized), amountCents (negative), dayOfMonth, payeeIndex]
+   */
+  txnCells: Array<[number, number, number, number, number, number]>;
+  /** Payee strings indexed by txnCells payeeIndex. */
+  txnPayees: string[];
 };
 
 function monthKey(date: Date): string {
@@ -90,9 +97,13 @@ export const getInsightsDataset = cache(async (): Promise<InsightsDataset> => {
   const cellTotals = new Map<string, number>();
   const payeeMonthTotals = new Map<string, number>();
   const payeeCounts = new Map<string, Set<number>>();
+  const txnPayeeList: string[] = [];
+  const txnPayeeIndex = new Map<string, number>();
+  const txnCells: InsightsDataset["txnCells"] = [];
 
   for (const txn of txnsRes.data ?? []) {
-    const mi = monthIndex.get(String(txn.occurred_on).slice(0, 7));
+    const occurredOn = String(txn.occurred_on);
+    const mi = monthIndex.get(occurredOn.slice(0, 7));
     if (mi == null) continue;
     const ai = accountIndex.get(txn.account_id as string);
     if (ai == null) continue;
@@ -104,13 +115,23 @@ export const getInsightsDataset = cache(async (): Promise<InsightsDataset> => {
     cellTotals.set(key, (cellTotals.get(key) ?? 0) + amount);
 
     if (amount < 0) {
-      const payee = String(txn.payee ?? "").trim().toLowerCase();
-      if (payee) {
-        const pKey = `${payee}|${mi}`;
+      const day = Number(occurredOn.slice(8, 10)) || 1;
+      const payeeRaw = String(txn.payee ?? "").trim();
+      const payeeKey = payeeRaw.toLowerCase();
+      let pi = txnPayeeIndex.get(payeeKey);
+      if (pi == null) {
+        pi = txnPayeeList.length;
+        txnPayeeIndex.set(payeeKey, pi);
+        txnPayeeList.push(payeeRaw || "Unknown");
+      }
+      txnCells.push([mi, ai, ci, amount, day, pi]);
+
+      if (payeeKey) {
+        const pKey = `${payeeKey}|${mi}`;
         payeeMonthTotals.set(pKey, (payeeMonthTotals.get(pKey) ?? 0) + Math.abs(amount));
-        const seen = payeeCounts.get(payee) ?? new Set<number>();
+        const seen = payeeCounts.get(payeeKey) ?? new Set<number>();
         seen.add(mi);
-        payeeCounts.set(payee, seen);
+        payeeCounts.set(payeeKey, seen);
       }
     }
   }
@@ -153,5 +174,7 @@ export const getInsightsDataset = cache(async (): Promise<InsightsDataset> => {
     priorByAccount,
     payeeCells,
     payees: recurringPayees,
+    txnCells,
+    txnPayees: txnPayeeList,
   };
 });

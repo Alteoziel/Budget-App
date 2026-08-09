@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import type { InsightsDataset } from "@/lib/insights/dataset";
-import { deriveInsights } from "@/lib/insights/derive";
+import {
+  deriveCategoryBreakdown,
+  deriveCategoryTransactions,
+  deriveInsights,
+} from "@/lib/insights/derive";
 
 const months = ["2026-01", "2026-02", "2026-03", "2026-04"];
 
@@ -30,6 +34,13 @@ const dataset: InsightsDataset = {
     [2, 0, 1500],
   ],
   payees: ["streaming service"],
+  txnCells: [
+    [0, 0, 0, -50000, 5, 0],
+    [1, 0, 0, -50000, 8, 0],
+    [2, 0, 0, -50000, 12, 0],
+    [3, 0, 1, -20000, 3, 1],
+  ],
+  txnPayees: ["Market", "Cafe"],
 };
 
 const all = deriveInsights(dataset, {
@@ -79,5 +90,23 @@ assert.equal(
   lastTwo.points[2]!.endBalanceCents,
   all.points[3]!.endBalanceCents,
 );
+
+const breakdown = deriveCategoryBreakdown(dataset, ["2026-01", "2026-04"]);
+assert.equal(breakdown.totalCents, 70000);
+assert.equal(breakdown.rows.length, 2);
+assert.equal(breakdown.rows[0]!.name, "Groceries");
+assert.equal(breakdown.rows[0]!.cents, 50000);
+assert.equal(breakdown.rows[1]!.name, "Dining");
+assert.equal(breakdown.rows[1]!.cents, 20000);
+
+const diningTxns = deriveCategoryTransactions(dataset, ["2026-04"], "cat-2");
+assert.equal(diningTxns.length, 1);
+assert.equal(diningTxns[0]!.payee, "Cafe");
+assert.equal(diningTxns[0]!.occurredOn, "2026-04-03");
+assert.equal(diningTxns[0]!.amountCents, -20000);
+
+const emptyMonths = deriveCategoryBreakdown(dataset, []);
+assert.equal(emptyMonths.totalCents, 0);
+assert.equal(emptyMonths.rows.length, 0);
 
 console.log("derive.test.ts: ok");
