@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { PasskeySignInButton } from "@/components/PasskeySignInButton";
 import { PendingSubmitButton } from "@/components/PendingSubmitButton";
+import { PurgeOfflineOnLogin } from "@/components/PurgeOfflineOnLogin";
 import { signInAction, signUpAction } from "@/lib/actions";
 import { safeInternalPath } from "@/lib/paths";
 
@@ -20,6 +21,7 @@ export default async function LoginPage({
 
   return (
     <main className="flex min-h-dvh items-center bg-app-glow px-5 py-10">
+      <PurgeOfflineOnLogin />
       <div className="mx-auto w-full max-w-md animate-rise card-surface rounded-2xl p-6 backdrop-blur">
         <p className="text-xs font-bold uppercase tracking-[0.2em] text-moss-500">
           Alte&apos; Budgeting

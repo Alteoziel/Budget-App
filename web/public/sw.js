@@ -1,5 +1,5 @@
 /* Alte' Budgeting service worker — offline shell + last-visited pages. */
-const VERSION = "v11";
+const VERSION = "v12";
 const STATIC_CACHE = `alte-static-${VERSION}`;
 const PAGE_CACHE = `alte-pages-${VERSION}`;
 const PRIVATE_CACHE_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
@@ -23,7 +23,6 @@ const APP_SHELL_PATHS = [
   "/import",
   "/settings",
   "/offline",
-  "/login",
 ];
 
 self.addEventListener("install", (event) => {
@@ -86,7 +85,12 @@ async function migratePageCacheForward() {
       requests.map(async (request) => {
         if (await next.match(request)) return;
         const response = await prev.match(request);
-        if (response) await next.put(request, response);
+        if (!response || response.redirected) return;
+        try {
+          await next.put(request, await cloneWithoutRedirect(response));
+        } catch {
+          // Skip entries Safari/Chrome reject (e.g. leftover redirected copies).
+        }
       }),
     );
   }
@@ -143,6 +147,50 @@ function isBootFetch(request) {
   return request.headers.get("X-Alte-Boot") === "1";
 }
 
+/**
+ * Auth/session routes issue HTTP redirects (login ↔ budget, passkey setup,
+ * magic-link callback). Safari rejects SW-fulfilled navigations that carry
+ * redirect metadata ("Response served by service worker has redirections").
+ * Let the browser handle these natively.
+ */
+function isAuthPath(url) {
+  const path = url.pathname;
+  return (
+    path === "/login" ||
+    path.startsWith("/login/") ||
+    path === "/passkey-setup" ||
+    path.startsWith("/passkey-setup/") ||
+    path.startsWith("/auth/") ||
+    path.startsWith("/invite/")
+  );
+}
+
+/**
+ * Strip redirect metadata so the response can fulfill navigation requests
+ * (redirect mode "manual") in Safari/Chrome.
+ */
+async function cloneWithoutRedirect(response) {
+  const cloned = response.clone();
+  const body = "body" in cloned ? cloned.body : await cloned.blob();
+  return new Response(body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+}
+
+async function navigationSafeResponse(request, response) {
+  if (!response) return response;
+  // Opaque redirects (manual mode) — synthesize a real redirect response.
+  if (response.type === "opaqueredirect" || response.status === 0) {
+    return Response.redirect(request.url, 302);
+  }
+  if (response.redirected || request.redirect === "manual") {
+    return cloneWithoutRedirect(response);
+  }
+  return response;
+}
+
 async function freshCachedPage(cache, request) {
   const cached = await cache.match(request);
   if (!cached) return null;
@@ -167,10 +215,13 @@ async function freshCachedPage(cache, request) {
     await cache.delete(request);
     return null;
   }
-  return cached;
+  return cloneWithoutRedirect(cached);
 }
 
 async function putPageCache(cache, request, response) {
+  if (!response || !response.ok || response.redirected) {
+    return;
+  }
   const url = new URL(request.url);
   if (
     !APP_SHELL_PATHS.some(
@@ -204,6 +255,7 @@ async function putPageCache(cache, request, response) {
 async function darkBootNavigationResponse() {
   const cached = await caches.match("/boot.html");
   if (cached) {
+    // Always rebuild — Safari treats cross-URL cached responses as redirected.
     return new Response(await cached.blob(), {
       status: 200,
       headers: {
@@ -227,23 +279,44 @@ async function darkBootNavigationResponse() {
 }
 
 /**
+ * Rebuild navigation requests before fetch(). Following a POST→redirect with
+ * the original navigation Request can confuse some WebViews; a clean GET
+ * with redirect:"follow" plus cloneWithoutRedirect keeps Safari happy.
+ */
+function networkPageRequest(request) {
+  if (request.mode !== "navigate" && !isBootFetch(request)) {
+    return request;
+  }
+  const headers = new Headers(request.headers);
+  return new Request(request.url, {
+    method: "GET",
+    headers,
+    mode: "same-origin",
+    credentials: request.credentials === "omit" ? "omit" : "same-origin",
+    cache: request.cache,
+    redirect: "follow",
+  });
+}
+
+/**
  * Paint a warm cache immediately on cold start, then refresh in the background.
  * On cache miss, paint a dark boot shell immediately instead of waiting on the
  * network (which leaves a white WKWebView gap after the OS splash).
  */
 async function staleWhileRevalidatePage(request) {
   const requestUrl = new URL(request.url);
-  if (requestUrl.pathname === "/login") {
-    await purgePrivateData();
-  }
   const cache = await caches.open(PAGE_CACHE);
   const cached = await freshCachedPage(cache, request);
   const bootFetch = isBootFetch(request);
 
-  const networkPromise = fetch(request)
+  const networkPromise = fetch(networkPageRequest(request))
     .then(async (response) => {
-      if (response && response.ok) {
-        await putPageCache(cache, request, response);
+      if (response && response.ok && !response.redirected) {
+        try {
+          await putPageCache(cache, request, response);
+        } catch {
+          // Caching must never fail the navigation / boot fetch.
+        }
       }
       return response;
     })
@@ -258,7 +331,14 @@ async function staleWhileRevalidatePage(request) {
   // into another dark shell.
   if (bootFetch) {
     const network = await networkPromise;
-    if (network) return network;
+    if (network) {
+      // If auth middleware redirected (e.g. session expired → /login), hand the
+      // final URL to the boot shell via a synthetic redirect response.
+      if (network.redirected) {
+        return Response.redirect(network.url, 302);
+      }
+      return network;
+    }
     const bare = await freshCachedPage(cache, requestUrl.pathname);
     if (bare) return bare;
     const offline = await caches.match("/offline.html");
@@ -279,7 +359,9 @@ async function staleWhileRevalidatePage(request) {
   }
 
   const network = await networkPromise;
-  if (network) return network;
+  if (network) {
+    return navigationSafeResponse(request, network);
+  }
 
   const bare = await freshCachedPage(cache, requestUrl.pathname);
   if (bare) return bare;
@@ -297,9 +379,9 @@ async function staleWhileRevalidatePage(request) {
 async function networkFirstManifest(request) {
   try {
     const response = await fetch(request);
-    if (response && response.ok) {
+    if (response && response.ok && !response.redirected) {
       const cache = await caches.open(STATIC_CACHE);
-      await cache.put(request, response.clone());
+      await cache.put(request, await cloneWithoutRedirect(response));
     }
     return response;
   } catch {
@@ -318,9 +400,9 @@ async function cacheFirstStatic(request) {
   if (cached) return cached;
   try {
     const response = await fetch(request);
-    if (response && response.ok) {
+    if (response && response.ok && !response.redirected) {
       const cache = await caches.open(STATIC_CACHE);
-      await cache.put(request, response.clone());
+      await cache.put(request, await cloneWithoutRedirect(response));
     }
     return response;
   } catch {
@@ -341,6 +423,12 @@ self.addEventListener("fetch", (event) => {
   // Never let the SW itself be stale forever.
   if (url.pathname === "/sw.js") {
     event.respondWith(fetch(request));
+    return;
+  }
+
+  // Password / passkey / invite / magic-link flows redirect. Bypass the SW so
+  // Safari does not throw "Response served by service worker has redirections".
+  if (isAuthPath(url)) {
     return;
   }
 

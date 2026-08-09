@@ -40,12 +40,20 @@
           var res = await fetch(url, {
             credentials: "same-origin",
             cache: "reload",
+            redirect: "follow",
             headers: {
               Accept: "text/html",
               "X-Alte-Boot": "1",
             },
           });
           if (!res.ok) throw new Error("boot fetch failed");
+          // Auth middleware may redirect (e.g. /budget → /login). Follow in the
+          // address bar instead of document.writing the wrong URL's HTML.
+          if (res.redirected && res.url && res.url !== url) {
+            sessionStorage.removeItem(lockKey);
+            location.replace(res.url);
+            return;
+          }
           var html = await res.text();
           sessionStorage.removeItem(lockKey);
           // Replace this document in-place. location.replace() caused a second
