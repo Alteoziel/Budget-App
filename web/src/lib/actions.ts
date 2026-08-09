@@ -2232,6 +2232,85 @@ export async function updateTransactionAction(formData: FormData) {
   }
 }
 
+export async function setTransactionIgnoredAction(formData: FormData) {
+  const { supabase, user, budget } = await requireBudget("editor");
+  const transactionId = String(formData.get("transaction_id") ?? "").trim();
+  const accountId = String(formData.get("account_id") ?? "").trim();
+  const ignoredRaw = String(formData.get("ignored") ?? "").trim();
+  const ignored = ignoredRaw === "1" || ignoredRaw === "true";
+  const returnTo = safeInternalPath(
+    String(formData.get("return_to") ?? ""),
+    "",
+  );
+  const fromTransactions = returnTo.startsWith("/transactions");
+  const errorPath = fromTransactions
+    ? "/transactions"
+    : accountId
+      ? `/accounts/${accountId}`
+      : "/accounts";
+
+  if (!transactionId || !accountId) {
+    redirect(fromTransactions ? "/transactions" : "/accounts");
+  }
+
+  const { data: existing } = await supabase
+    .from("transactions")
+    .select("*")
+    .eq("budget_id", budget.id)
+    .eq("id", transactionId)
+    .eq("account_id", accountId)
+    .maybeSingle();
+  if (!existing?.id) {
+    redirectWithError(errorPath, "Transaction not found.");
+  }
+
+  const { error } = await supabase
+    .from("transactions")
+    .update({ ignored })
+    .eq("budget_id", budget.id)
+    .eq("id", transactionId)
+    .eq("account_id", accountId);
+  if (error) {
+    if (/ignored|schema cache|column/i.test(error.message)) {
+      redirectWithError(
+        errorPath,
+        "Ignore is not available until the latest database migration is applied.",
+      );
+    }
+    redirectWithError(errorPath, "Could not update transaction.");
+  }
+
+  await recordBudgetChange(supabase, {
+    budgetId: budget.id,
+    actorUserId: user.id,
+    entityType: "transaction",
+    entityId: transactionId,
+    action: "update",
+    summary: ignored
+      ? `Ignored transaction “${existing.payee || "Untitled"}”`
+      : `Unignored transaction “${existing.payee || "Untitled"}”`,
+    beforeSnapshot: { row: existing },
+    afterSnapshot: { row: { ...existing, ignored } },
+  });
+
+  revalidatePath(`/accounts/${accountId}`);
+  revalidatePath("/accounts");
+  revalidatePath("/budget");
+  revalidatePath("/transactions");
+  revalidatePath("/insights");
+
+  if (fromTransactions) {
+    redirect(
+      "/transactions?notice=" +
+        encodeURIComponent(ignored ? "Transaction ignored" : "Transaction restored"),
+    );
+  }
+  redirect(
+    `/accounts/${accountId}?notice=` +
+      encodeURIComponent(ignored ? "Transaction ignored" : "Transaction restored"),
+  );
+}
+
 export async function deleteTransactionAction(formData: FormData) {
   const { supabase, user, budget } = await requireBudget("editor");
   const transactionId = String(formData.get("transaction_id") ?? "");

@@ -6,8 +6,10 @@ import { Money } from "@/components/Money";
 import {
   batchDeleteTransactionsAction,
   deleteTransactionAction,
+  setTransactionIgnoredAction,
   updateTransactionAction,
 } from "@/lib/actions";
+import { isIgnoredTxn } from "@/lib/transactions-ignored";
 import type { Transaction } from "@/lib/types";
 
 type CategoryOption = { id: string; name: string; groupName: string };
@@ -40,6 +42,7 @@ export function RegisterTransactions({
   const [categoryFilter, setCategoryFilter] = useState(initialCategoryFilter);
   const [accountFilter, setAccountFilter] = useState("all");
   const [flowFilter, setFlowFilter] = useState<"all" | "income" | "spending">("all");
+  const [ignoredFilter, setIgnoredFilter] = useState<"hide" | "all" | "only">("hide");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
 
@@ -85,6 +88,8 @@ export function RegisterTransactions({
       }
       if (flowFilter === "income" && txn.amount_cents <= 0) return false;
       if (flowFilter === "spending" && txn.amount_cents >= 0) return false;
+      if (ignoredFilter === "hide" && isIgnoredTxn(txn)) return false;
+      if (ignoredFilter === "only" && !isIgnoredTxn(txn)) return false;
       if (fromDate && txn.occurred_on < fromDate) return false;
       if (toDate && txn.occurred_on > toDate) return false;
       return true;
@@ -95,6 +100,7 @@ export function RegisterTransactions({
     categoryFilter,
     accountFilter,
     flowFilter,
+    ignoredFilter,
     fromDate,
     toDate,
     categoryLabel,
@@ -106,6 +112,7 @@ export function RegisterTransactions({
     categoryFilter !== "all" ||
     accountFilter !== "all" ||
     flowFilter !== "all" ||
+    ignoredFilter !== "hide" ||
     Boolean(fromDate) ||
     Boolean(toDate);
 
@@ -121,6 +128,7 @@ export function RegisterTransactions({
     setCategoryFilter("all");
     setAccountFilter("all");
     setFlowFilter("all");
+    setIgnoredFilter("hide");
     setFromDate("");
     setToDate("");
   }
@@ -233,6 +241,23 @@ export function RegisterTransactions({
               </label>
 
               <label className="block text-xs font-semibold text-ink-600">
+                Ignored
+                <select
+                  value={ignoredFilter}
+                  onChange={(event) =>
+                    setIgnoredFilter(
+                      event.target.value as "hide" | "all" | "only",
+                    )
+                  }
+                  className="mt-1 min-h-11 w-full rounded-xl border border-ink-900/10 bg-white px-3 py-2 text-sm outline-none ring-moss-400 focus:ring-2"
+                >
+                  <option value="hide">Hide ignored</option>
+                  <option value="all">Include ignored</option>
+                  <option value="only">Ignored only</option>
+                </select>
+              </label>
+
+              <label className="block text-xs font-semibold text-ink-600">
                 From
                 <input
                   type="date"
@@ -328,9 +353,13 @@ export function RegisterTransactions({
           const direction = txn.amount_cents >= 0 ? "inflow" : "outflow";
           const amountAbs = (Math.abs(txn.amount_cents) / 100).toFixed(2);
           const rowAccountId = txn.account_id;
+          const ignored = isIgnoredTxn(txn);
 
           return (
-            <li key={txn.id} className="px-4 py-3">
+            <li
+              key={txn.id}
+              className={`px-4 py-3 ${ignored ? "bg-ink-900/[0.03] opacity-80" : ""}`}
+            >
               <div className="flex items-start gap-3">
                 <input
                   type="checkbox"
@@ -456,6 +485,11 @@ export function RegisterTransactions({
                                 Pending
                               </span>
                             ) : null}
+                            {ignored ? (
+                              <span className="ml-2 align-middle text-[10px] font-bold uppercase tracking-wide text-ink-500">
+                                Ignored
+                              </span>
+                            ) : null}
                           </p>
                           <p className="text-xs text-ink-600">
                             {txn.occurred_on}
@@ -471,7 +505,7 @@ export function RegisterTransactions({
                           <Money cents={txn.amount_cents} />
                         </p>
                       </div>
-                      <div className="mt-2 flex gap-3">
+                      <div className="mt-2 flex flex-wrap gap-3">
                         <button
                           type="button"
                           onClick={() => setEditingId(txn.id)}
@@ -479,6 +513,24 @@ export function RegisterTransactions({
                         >
                           Edit
                         </button>
+                        <form action={setTransactionIgnoredAction}>
+                          <input type="hidden" name="transaction_id" value={txn.id} />
+                          <input type="hidden" name="account_id" value={rowAccountId} />
+                          <input
+                            type="hidden"
+                            name="ignored"
+                            value={ignored ? "0" : "1"}
+                          />
+                          {returnTo ? (
+                            <input type="hidden" name="return_to" value={returnTo} />
+                          ) : null}
+                          <button
+                            type="submit"
+                            className="text-xs font-bold text-ink-600"
+                          >
+                            {ignored ? "Unignore" : "Ignore"}
+                          </button>
+                        </form>
                         <form action={deleteTransactionAction}>
                           <input type="hidden" name="transaction_id" value={txn.id} />
                           <input type="hidden" name="account_id" value={rowAccountId} />
