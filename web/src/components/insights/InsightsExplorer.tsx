@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { CollapsibleInsight } from "@/components/insights/CollapsibleInsight";
 import { InsightsCharts } from "@/components/insights/InsightsCharts";
+import { MonthSpendingBreakdown } from "@/components/insights/MonthSpendingBreakdown";
 import type { InsightsDataset } from "@/lib/insights/dataset";
 import { deriveInsights } from "@/lib/insights/derive";
 import { tipsFromFindings } from "@/lib/insights/tips";
@@ -29,111 +31,132 @@ export function InsightsExplorer({ dataset }: { dataset: InsightsDataset }) {
 
   return (
     <>
-      <div className="mb-6 space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-ink-500">
-            Filters
-          </p>
-          {filtersActive ? (
-            <button
-              type="button"
-              onClick={() => {
-                setMonthsBack(12);
-                setAccountIds([]);
-                setCategoryIds([]);
-              }}
-              className="min-h-9 rounded-xl border border-ink-900/15 bg-sand-50 px-3 py-1.5 text-xs font-bold text-ink-700"
+      <CollapsibleInsight
+        title="Month spending"
+        description="Pick months on the calendar to see spending by category. Tap a category for its transactions."
+        defaultOpen
+      >
+        <MonthSpendingBreakdown dataset={dataset} accountIds={accountIds} />
+      </CollapsibleInsight>
+
+      <CollapsibleInsight
+        title="Filters"
+        description="Narrow the charts, trends, and tips below."
+      >
+        <div className="space-y-3">
+          <div className="flex items-center justify-end gap-3">
+            {filtersActive ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setMonthsBack(12);
+                  setAccountIds([]);
+                  setCategoryIds([]);
+                }}
+                className="min-h-9 rounded-xl border border-ink-900/15 bg-sand-50 px-3 py-1.5 text-xs font-bold text-ink-700"
+              >
+                Reset
+              </button>
+            ) : null}
+          </div>
+
+          <FilterGroup
+            label="Time range"
+            tone="time"
+            hint="How far back charts look"
+          >
+            {MONTH_OPTIONS.map((n) => {
+              const on = monthsBack === n;
+              return (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setMonthsBack(n)}
+                  aria-pressed={on}
+                  className={chipClass("time", on)}
+                >
+                  {n} mo
+                </button>
+              );
+            })}
+          </FilterGroup>
+
+          {dataset.accounts.length ? (
+            <FilterGroup
+              label="Accounts"
+              tone="accounts"
+              hint={
+                accountIds.length
+                  ? `${accountIds.length} selected`
+                  : "All accounts"
+              }
             >
-              Reset
-            </button>
+              {dataset.accounts.map((account) => {
+                const on = accountIds.includes(account.id);
+                return (
+                  <button
+                    key={account.id}
+                    type="button"
+                    onClick={() =>
+                      setAccountIds((prev) => toggle(prev, account.id))
+                    }
+                    aria-pressed={on}
+                    className={chipClass("accounts", on)}
+                  >
+                    {account.name}
+                  </button>
+                );
+              })}
+            </FilterGroup>
+          ) : null}
+
+          {dataset.categories.length ? (
+            <FilterGroup
+              label="Categories"
+              tone="categories"
+              hint={
+                categoryIds.length
+                  ? `${categoryIds.length} selected`
+                  : "All categories"
+              }
+              scrollable
+            >
+              {dataset.categories.map((category) => {
+                const on = categoryIds.includes(category.id);
+                return (
+                  <button
+                    key={category.id}
+                    type="button"
+                    onClick={() =>
+                      setCategoryIds((prev) => toggle(prev, category.id))
+                    }
+                    aria-pressed={on}
+                    className={chipClass("categories", on)}
+                  >
+                    {category.name}
+                  </button>
+                );
+              })}
+            </FilterGroup>
           ) : null}
         </div>
+      </CollapsibleInsight>
 
-        <FilterGroup
-          label="Time range"
-          tone="time"
-          hint="How far back charts look"
-        >
-          {MONTH_OPTIONS.map((n) => {
-            const on = monthsBack === n;
-            return (
-              <button
-                key={n}
-                type="button"
-                onClick={() => setMonthsBack(n)}
-                aria-pressed={on}
-                className={chipClass("time", on)}
-              >
-                {n} mo
-              </button>
-            );
-          })}
-        </FilterGroup>
+      <CollapsibleInsight
+        title="Charts"
+        description="Spending, income, and balance over the filtered range."
+      >
+        <InsightsCharts points={points} />
+      </CollapsibleInsight>
 
-        {dataset.accounts.length ? (
-          <FilterGroup
-            label="Accounts"
-            tone="accounts"
-            hint={
-              accountIds.length
-                ? `${accountIds.length} selected`
-                : "All accounts"
-            }
-          >
-            {dataset.accounts.map((account) => {
-              const on = accountIds.includes(account.id);
-              return (
-                <button
-                  key={account.id}
-                  type="button"
-                  onClick={() => setAccountIds((prev) => toggle(prev, account.id))}
-                  aria-pressed={on}
-                  className={chipClass("accounts", on)}
-                >
-                  {account.name}
-                </button>
-              );
-            })}
-          </FilterGroup>
-        ) : null}
-
-        {dataset.categories.length ? (
-          <FilterGroup
-            label="Categories"
-            tone="categories"
-            hint={
-              categoryIds.length
-                ? `${categoryIds.length} selected`
-                : "All categories"
-            }
-            scrollable
-          >
-            {dataset.categories.map((category) => {
-              const on = categoryIds.includes(category.id);
-              return (
-                <button
-                  key={category.id}
-                  type="button"
-                  onClick={() =>
-                    setCategoryIds((prev) => toggle(prev, category.id))
-                  }
-                  aria-pressed={on}
-                  className={chipClass("categories", on)}
-                >
-                  {category.name}
-                </button>
-              );
-            })}
-          </FilterGroup>
-        ) : null}
-      </div>
-
-      <InsightsCharts points={points} />
-
-      <section className="mt-6 space-y-3">
-        <h2 className="font-display text-lg font-bold text-ink-900">Trends</h2>
+      <CollapsibleInsight
+        title="Trends"
+        description="Signals pulled from your filtered history."
+      >
         {!findings.length ? (
-          <p className="text-sm text-ink-600">Not enough history for trend signals yet.</p>
+          <p className="text-sm text-ink-600">
+            Not enough history for trend signals yet.
+          </p>
         ) : (
           <ul className="space-y-2">
             {findings.map((f) => (
@@ -147,15 +170,12 @@ export function InsightsExplorer({ dataset }: { dataset: InsightsDataset }) {
             ))}
           </ul>
         )}
-      </section>
+      </CollapsibleInsight>
 
-      <section className="mt-6 space-y-3">
-        <div>
-          <h2 className="font-display text-lg font-bold text-ink-900">Tips for you</h2>
-          <p className="mt-1 text-sm text-ink-600">
-            Actionable next steps based on your trends — not the same cards again.
-          </p>
-        </div>
+      <CollapsibleInsight
+        title="Tips for you"
+        description="Actionable next steps based on your trends — not the same cards again."
+      >
         {!tips.length ? (
           <p className="text-sm text-ink-600">
             Tips show up once there is enough history for a clear recommendation.
@@ -163,8 +183,13 @@ export function InsightsExplorer({ dataset }: { dataset: InsightsDataset }) {
         ) : (
           <ul className="space-y-2">
             {tips.map((tip) => (
-              <li key={tip.id} className="rounded-3xl bg-moss-500/10 px-4 py-3 shadow-soft">
-                <p className="text-sm font-semibold text-ink-900">{tip.headline}</p>
+              <li
+                key={tip.id}
+                className="rounded-3xl bg-moss-500/10 px-4 py-3 shadow-soft"
+              >
+                <p className="text-sm font-semibold text-ink-900">
+                  {tip.headline}
+                </p>
                 <p className="mt-1 text-sm text-ink-600">{tip.body}</p>
                 {tip.actions.length ? (
                   <div className="mt-2 flex flex-wrap gap-2">
@@ -185,17 +210,14 @@ export function InsightsExplorer({ dataset }: { dataset: InsightsDataset }) {
             ))}
           </ul>
         )}
-      </section>
+      </CollapsibleInsight>
     </>
   );
 }
 
 type FilterTone = "time" | "accounts" | "categories";
 
-const GROUP_TONES: Record<
-  FilterTone,
-  { shell: string; label: string }
-> = {
+const GROUP_TONES: Record<FilterTone, { shell: string; label: string }> = {
   time: {
     shell: "border-ink-900/15 bg-ink-900/[0.04] dark:bg-ink-900/10",
     label: "text-ink-700",
@@ -256,7 +278,9 @@ function FilterGroup({
         >
           {label}
         </h3>
-        {hint ? <p className="text-[11px] font-semibold text-ink-500">{hint}</p> : null}
+        {hint ? (
+          <p className="text-[11px] font-semibold text-ink-500">{hint}</p>
+        ) : null}
       </div>
       <div
         className={`flex flex-wrap gap-2 ${
@@ -277,7 +301,9 @@ function SeverityBadge({ severity }: { severity: "info" | "watch" | "alert" }) {
         ? "bg-amber-100 text-amber-900"
         : "bg-sand-100 text-ink-600";
   return (
-    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${styles}`}>
+    <span
+      className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${styles}`}
+    >
       {severity}
     </span>
   );

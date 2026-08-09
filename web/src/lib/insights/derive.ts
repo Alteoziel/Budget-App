@@ -13,6 +13,26 @@ export type DerivedInsights = {
   findings: TrendFinding[];
 };
 
+export type CategorySpendRow = {
+  categoryId: string | null;
+  name: string;
+  groupName: string;
+  cents: number;
+  share: number;
+};
+
+export type CategoryTxnRow = {
+  occurredOn: string;
+  payee: string;
+  accountName: string;
+  amountCents: number;
+};
+
+export type CategoryBreakdown = {
+  totalCents: number;
+  rows: CategorySpendRow[];
+};
+
 function pctChange(current: number, prior: number): number | null {
   if (prior === 0) return current === 0 ? 0 : null;
   return ((current - prior) / Math.abs(prior)) * 100;
@@ -252,4 +272,100 @@ function deriveTrendFindings({
   }
 
   return findings;
+}
+
+/** Spending by category for an explicit set of YYYY-MM months. */
+export function deriveCategoryBreakdown(
+  dataset: InsightsDataset,
+  selectedMonths: string[],
+  accountIds: string[] = [],
+): CategoryBreakdown {
+  const monthSet = new Set(selectedMonths);
+  const monthIndexes = new Set(
+    dataset.months
+      .map((month, index) => (monthSet.has(month) ? index : -1))
+      .filter((index) => index >= 0),
+  );
+  const accountSet = new Set(accountIds);
+  const accountAllowed = dataset.accounts.map(
+    (account) => accountSet.size === 0 || accountSet.has(account.id),
+  );
+
+  const totals = new Map<number, number>();
+  for (const [mi, ai, ci, amount] of dataset.cells) {
+    if (!monthIndexes.has(mi) || !accountAllowed[ai] || amount >= 0) continue;
+    const key = ci;
+    totals.set(key, (totals.get(key) ?? 0) + Math.abs(amount));
+  }
+
+  const totalCents = [...totals.values()].reduce((sum, cents) => sum + cents, 0);
+  const rows: CategorySpendRow[] = [...totals.entries()]
+    .map(([ci, cents]) => {
+      if (ci < 0) {
+        return {
+          categoryId: null,
+          name: "Uncategorized",
+          groupName: "Other",
+          cents,
+          share: totalCents > 0 ? (cents / totalCents) * 100 : 0,
+        };
+      }
+      const category = dataset.categories[ci]!;
+      return {
+        categoryId: category.id,
+        name: category.name,
+        groupName: category.groupName,
+        cents,
+        share: totalCents > 0 ? (cents / totalCents) * 100 : 0,
+      };
+    })
+    .sort((a, b) => b.cents - a.cents);
+
+  return { totalCents, rows };
+}
+
+/** Outflow transactions in a category for the selected months. */
+export function deriveCategoryTransactions(
+  dataset: InsightsDataset,
+  selectedMonths: string[],
+  categoryId: string | null,
+  accountIds: string[] = [],
+): CategoryTxnRow[] {
+  const monthSet = new Set(selectedMonths);
+  const monthIndexes = new Set(
+    dataset.months
+      .map((month, index) => (monthSet.has(month) ? index : -1))
+      .filter((index) => index >= 0),
+  );
+  const accountSet = new Set(accountIds);
+  const accountAllowed = dataset.accounts.map(
+    (account) => accountSet.size === 0 || accountSet.has(account.id),
+  );
+
+  let categoryIndex = -1;
+  if (categoryId != null) {
+    categoryIndex = dataset.categories.findIndex((c) => c.id === categoryId);
+    if (categoryIndex < 0) return [];
+  }
+
+  const rows: CategoryTxnRow[] = [];
+  for (const [mi, ai, ci, amount, day, payeeIdx] of dataset.txnCells) {
+    if (!monthIndexes.has(mi) || !accountAllowed[ai]) continue;
+    if (ci !== categoryIndex) continue;
+    const month = dataset.months[mi]!;
+    rows.push({
+      occurredOn: `${month}-${String(day).padStart(2, "0")}`,
+      payee: dataset.txnPayees[payeeIdx] ?? "Unknown",
+      accountName: dataset.accounts[ai]?.name ?? "Account",
+      amountCents: amount,
+    });
+  }
+
+  rows.sort((a, b) => {
+    if (a.occurredOn === b.occurredOn) {
+      return Math.abs(b.amountCents) - Math.abs(a.amountCents);
+    }
+    return a.occurredOn < b.occurredOn ? 1 : -1;
+  });
+  return rows;
 }
