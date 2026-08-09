@@ -102,6 +102,64 @@ function mergeSyncResults(into: SyncResult, from: SyncResult): SyncResult {
   return into;
 }
 
+/** Plaid asks us to restart the whole page loop from the original cursor. */
+export function isPlaidSyncMutationDuringPagination(error: unknown): boolean {
+  return plaidErrorCode(error) === "TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION";
+}
+
+const MAX_SYNC_MUTATION_RETRIES = 5;
+
+type SyncPageBatch = {
+  added: PlaidTxn[];
+  modified: PlaidTxn[];
+  removed: RemovedTransaction[];
+  nextCursor: string | null;
+  plaidAdded: number;
+  plaidModified: number;
+};
+
+/**
+ * Pull every page for one sync update. On MUTATION_DURING_PAGINATION, callers
+ * must discard this batch and restart from the same original cursor — never
+ * retry only the failed page, and never persist the cursor until has_more is
+ * false (Plaid Transactions sync contract).
+ */
+export async function fetchPlaidSyncPages(
+  client: ReturnType<typeof getPlaidClient>,
+  accessToken: string,
+  originalCursor: string | undefined,
+): Promise<SyncPageBatch> {
+  let cursor = originalCursor;
+  let hasMore = true;
+  const added: PlaidTxn[] = [];
+  const modified: PlaidTxn[] = [];
+  const removed: RemovedTransaction[] = [];
+  let nextCursor: string | null = originalCursor ?? null;
+
+  while (hasMore) {
+    const response = await client.transactionsSync({
+      access_token: accessToken,
+      cursor,
+    });
+    const data = response.data;
+    added.push(...data.added);
+    modified.push(...data.modified);
+    removed.push(...data.removed);
+    nextCursor = data.next_cursor ?? null;
+    cursor = data.next_cursor;
+    hasMore = data.has_more;
+  }
+
+  return {
+    added,
+    modified,
+    removed,
+    nextCursor,
+    plaidAdded: added.length,
+    plaidModified: modified.length,
+  };
+}
+
 export async function syncPlaidItem(
   supabase: SupabaseClient,
   item: ItemRow,
@@ -145,58 +203,73 @@ export async function syncPlaidItem(
   // Learn categories from prior payee assignments once per sync pass.
   const payeeMemory = await loadPayeeCategoryMemory(supabase, item.budget_id);
 
-  let cursor = options.resetCursor ? undefined : (item.sync_cursor ?? undefined);
-  let hasMore = true;
+  // Keep the cursor that started this update so MUTATION_DURING_PAGINATION can
+  // restart the entire page loop (not the failed page alone).
+  const originalCursor = options.resetCursor
+    ? undefined
+    : (item.sync_cursor ?? undefined);
 
   try {
-    while (hasMore) {
-      const response = await client.transactionsSync({
-        access_token: accessToken,
-        cursor,
+    let batch: SyncPageBatch | null = null;
+    for (let attempt = 0; attempt <= MAX_SYNC_MUTATION_RETRIES; attempt += 1) {
+      try {
+        batch = await fetchPlaidSyncPages(client, accessToken, originalCursor);
+        break;
+      } catch (e) {
+        if (
+          isPlaidSyncMutationDuringPagination(e) &&
+          attempt < MAX_SYNC_MUTATION_RETRIES
+        ) {
+          // Underlying data changed mid-pagination — discard pages and restart
+          // from the original cursor per Plaid's sync contract.
+          continue;
+        }
+        throw e;
+      }
+    }
+
+    if (!batch) {
+      throw new Error("Plaid sync pagination failed after mutation retries.");
+    }
+
+    result.plaidAdded += batch.plaidAdded;
+    result.plaidModified += batch.plaidModified;
+
+    // Apply only after every page for this update was retrieved successfully.
+    for (const txn of batch.added) {
+      const counts = await upsertPlaidTransaction(supabase, {
+        budgetId: item.budget_id,
+        userId: item.created_by,
+        accountByPlaid,
+        payeeMemory,
+        txn,
       });
-      const data = response.data;
-
-      result.plaidAdded += data.added.length;
-      result.plaidModified += data.modified.length;
-
-      for (const txn of data.added) {
-        const counts = await upsertPlaidTransaction(supabase, {
-          budgetId: item.budget_id,
-          userId: item.created_by,
-          accountByPlaid,
-          payeeMemory,
-          txn,
-        });
-        result.inserted += counts.inserted;
-        result.updated += counts.updated;
-        result.skippedUnmapped += counts.skippedUnmapped;
-        result.pendingImported += counts.pendingImported;
-      }
-      for (const txn of data.modified) {
-        const counts = await upsertPlaidTransaction(supabase, {
-          budgetId: item.budget_id,
-          userId: item.created_by,
-          accountByPlaid,
-          payeeMemory,
-          txn,
-        });
-        result.inserted += counts.inserted;
-        result.updated += counts.updated;
-        result.skippedUnmapped += counts.skippedUnmapped;
-        result.pendingImported += counts.pendingImported;
-      }
-      for (const txn of data.removed) {
-        result.removed += await removePlaidTransaction(supabase, item.budget_id, txn);
-      }
-
-      cursor = data.next_cursor;
-      hasMore = data.has_more;
+      result.inserted += counts.inserted;
+      result.updated += counts.updated;
+      result.skippedUnmapped += counts.skippedUnmapped;
+      result.pendingImported += counts.pendingImported;
+    }
+    for (const txn of batch.modified) {
+      const counts = await upsertPlaidTransaction(supabase, {
+        budgetId: item.budget_id,
+        userId: item.created_by,
+        accountByPlaid,
+        payeeMemory,
+        txn,
+      });
+      result.inserted += counts.inserted;
+      result.updated += counts.updated;
+      result.skippedUnmapped += counts.skippedUnmapped;
+      result.pendingImported += counts.pendingImported;
+    }
+    for (const txn of batch.removed) {
+      result.removed += await removePlaidTransaction(supabase, item.budget_id, txn);
     }
 
     await supabase
       .from("plaid_items")
       .update({
-        sync_cursor: cursor ?? null,
+        sync_cursor: batch.nextCursor,
         last_synced_at: new Date().toISOString(),
         last_error: null,
         status: "active",
