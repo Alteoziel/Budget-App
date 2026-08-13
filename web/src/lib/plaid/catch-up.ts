@@ -126,7 +126,8 @@ export async function catchUpStalePlaidSyncForBudget(budgetId: string): Promise<
 /**
  * Force a manual-style bank sync for every connected item in the budget.
  * Same path as Settings → Sync now (remap + refresh + full sync), but for
- * open-app / resume without redirects.
+ * open-app / resume without redirects. Skips when a sync already started
+ * within PLAID_OPEN_SYNC_DEBOUNCE_MS (one hour).
  */
 export async function forceSyncPlaidForBudget(
   budgetId: string,

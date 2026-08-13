@@ -4,7 +4,7 @@ import {
   PLAID_OPEN_SYNC_DEBOUNCE_MS,
 } from "@/lib/plaid/open-sync";
 
-assert.equal(PLAID_OPEN_SYNC_DEBOUNCE_MS, 90 * 1000);
+assert.equal(PLAID_OPEN_SYNC_DEBOUNCE_MS, 60 * 60 * 1000);
 
 assert.equal(
   formatOpenSyncNotice({ inserted: 3, updated: 0, errors: [] }),

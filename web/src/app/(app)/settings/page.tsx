@@ -479,7 +479,7 @@ export default async function SettingsPage({
         >
           <SettingsCard
             title="Bank sync (Plaid)"
-            description={`Environment: ${plaidEnv}. Daily cron at 6:15 AM Mountain. Opening or returning to the app also runs the same full bank sync as Sync now (with a short debounce). Sync now re-links bank accounts into this budget, asks Plaid for a refresh when available, and imports pending charges — you do not need to disconnect.`}
+            description={`Environment: ${plaidEnv}. Daily cron at 6:15 AM Mountain. Opening or returning to the app also runs the same full bank sync as Sync now if there hasn’t been a sync in the last hour. Sync now re-links bank accounts into this budget, asks Plaid for a refresh when available, and imports pending charges — you do not need to disconnect.`}
           >
             {plaidReady ? (
               <PlaidLinkButton />
