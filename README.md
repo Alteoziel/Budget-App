@@ -57,7 +57,7 @@ This app is meant to run on **Vercel**. Secrets live in **Doppler** and sync int
 1. Import this GitHub repo
 2. Set **Root Directory** to `web`
 3. Deploy — env vars arrive from the Doppler sync (do not paste secrets into Vercel by hand)
-4. Cron: [`web/vercel.json`](web/vercel.json) hits `/api/cron/plaid-sync` daily at `15 12 * * *` UTC (6:15 AM Mountain) with `Authorization: Bearer CRON_SECRET`. The route bypasses auth middleware, retries once per item, and logs loudly. Opening or returning to the app also runs a full bank sync (same path as Sync now), with a short debounce, then refreshes the UI.
+4. Cron: [`web/vercel.json`](web/vercel.json) hits `/api/cron/plaid-sync` daily at `15 12 * * *` UTC (6:15 AM Mountain) with `Authorization: Bearer CRON_SECRET`. The route bypasses auth middleware, retries once per item, and logs loudly. Opening or returning to the app also runs a full bank sync (same path as Sync now) if there hasn’t been a sync in the last hour, then refreshes the UI.
 
 Preview / production URLs come from Vercel after deploy.
 
@@ -68,7 +68,7 @@ Preview / production URLs come from Vercel after deploy.
 - Settings → **Connect bank** opens Plaid Link; categories left blank for you to assign
 - Pending bank authorizations are imported as uncleared; Sync now does a full refresh
 - Sync now remaps accounts and requests an on-demand Plaid bank refresh when available — disconnecting is not required to recover missing transactions
-- Opening the app runs that same full sync (source `open`); apply `supabase/migrations/20260809120000_sync_runs_open_source.sql` so sync_runs accepts it
+- Opening the app runs that same full sync (source `open`) if there hasn’t been a sync in the last hour; apply `supabase/migrations/20260809120000_sync_runs_open_source.sql` so sync_runs accepts it
 - Run migration `supabase/migrations/20260724150000_plaid_bank_sync.sql`
 - Disconnect / Sync now are available per connected item on Settings
 

@@ -3,10 +3,10 @@
  */
 
 /**
- * Open-app force sync debounce. Short enough that leaving and returning pulls
- * fresh bank data; long enough that tab focus thrashing won’t hammer Plaid.
+ * Open-app / resume auto-sync cooldown. Skip automatic bank syncs when a
+ * sync already started within the last hour (manual Sync now is unaffected).
  */
-export const PLAID_OPEN_SYNC_DEBOUNCE_MS = 90 * 1000;
+export const PLAID_OPEN_SYNC_DEBOUNCE_MS = 60 * 60 * 1000;
 
 /** Compact status line for the open-app bank sync toast. */
 export function formatOpenSyncNotice(input: {

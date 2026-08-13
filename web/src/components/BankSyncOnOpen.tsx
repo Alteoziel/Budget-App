@@ -12,7 +12,7 @@ const CLIENT_DEBOUNCE_KEY = "alte-plaid-open-sync-at";
 
 function readLastClientSyncAt(budgetId: string): number {
   try {
-    const raw = sessionStorage.getItem(`${CLIENT_DEBOUNCE_KEY}:${budgetId}`);
+    const raw = localStorage.getItem(`${CLIENT_DEBOUNCE_KEY}:${budgetId}`);
     const parsed = raw ? Number(raw) : 0;
     return Number.isFinite(parsed) ? parsed : 0;
   } catch {
@@ -22,15 +22,21 @@ function readLastClientSyncAt(budgetId: string): number {
 
 function writeLastClientSyncAt(budgetId: string, at: number) {
   try {
-    sessionStorage.setItem(`${CLIENT_DEBOUNCE_KEY}:${budgetId}`, String(at));
+    const key = `${CLIENT_DEBOUNCE_KEY}:${budgetId}`;
+    if (at <= 0) {
+      localStorage.removeItem(key);
+      return;
+    }
+    localStorage.setItem(key, String(at));
   } catch {
     // Ignore quota / private-mode failures.
   }
 }
 
 /**
- * Forces a manual-style Plaid sync when the app opens or returns to the
- * foreground, then refreshes RSC data so the UI isn’t stuck on a stale paint.
+ * Auto-syncs Plaid when the app opens or returns to the foreground if there
+ * hasn’t been a sync in the last hour, then refreshes RSC data so the UI
+ * isn’t stuck on a stale paint.
  */
 export function BankSyncOnOpen({
   budgetId,
@@ -58,6 +64,8 @@ export function BankSyncOnOpen({
       if (now - last < PLAID_OPEN_SYNC_DEBOUNCE_MS) return;
 
       inFlight.current = true;
+      // Stamp before the request so remounts don’t double-fire. Cleared on
+      // error so a failed auto-sync can retry before the hour is up.
       writeLastClientSyncAt(budgetId, now);
       setStatus("syncing");
       setMessage(reason === "resume" ? "Refreshing bank…" : "Syncing with bank…");
@@ -94,6 +102,7 @@ export function BankSyncOnOpen({
           router.refresh();
         }
       } catch {
+        writeLastClientSyncAt(budgetId, 0);
         setStatus("error");
         setMessage("Couldn’t reach the bank just now");
       } finally {
