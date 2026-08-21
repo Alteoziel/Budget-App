@@ -206,7 +206,7 @@ export default async function SettingsPage({
 
         <SettingsCard
           title="Install on iPhone"
-          description="Use Alte' from your Home Screen, including offline."
+          description="Safari Home Screen, or SideStore with the GitHub-built IPA."
         >
           <InstallGuide />
           <Link
