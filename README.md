@@ -6,6 +6,7 @@ PR quality gates from the governance stack stay in place.
 | Piece | Path | Purpose |
 |-------|------|---------|
 | **Product app** | [`web/`](web/) | Alte' Budgeting (Next.js PWA) |
+| **iPhone IPA** | [`ios/`](ios/) | SideStore/AltStore WKWebView shell (built on GitHub macOS) |
 | **DB migrations** | [`supabase/migrations/`](supabase/migrations/) | Schema + RLS |
 | **PR governance** | [`governance/`](governance/) | Automated Steps 1–5 on every PR |
 | **Human review** | [`dashboard/`](dashboard/) | Approve / reject / merge findings |
@@ -29,6 +30,23 @@ PR quality gates from the governance stack stay in place.
 - Supabase Auth + budget-scoped RLS
 - Passkey (WebAuthn) or email/password sign-in (either works)
 - Installable PWA shell
+- SideStore IPA wrapper for iPhone 14/15 without a modern Mac — see [Install on iPhone](#install-on-iphone)
+
+## Install on iPhone
+
+You do **not** need a Mac that can run Xcode. A computer from around 2011 cannot
+build for iPhone 14/15 (those phones need iOS 16/17; that era of Mac stops at
+Xcode 10 / iOS 12). GitHub Actions compiles the unsigned `.ipa` on a current
+macOS runner; **SideStore + WireGuard** re-signs it with your Apple ID.
+
+1. **Safari Home Screen** (best everyday install): open
+   [the live app](https://budget-app-mauve-five.vercel.app) in Safari → Share →
+   **Add to Home Screen**. No 7-day expiry, better offline and passkeys.
+2. **SideStore**: after [iOS IPA (SideStore)](.github/workflows/ios-ipa.yml)
+   publishes, add
+   `https://github.com/Alteoziel/Budget-App/releases/download/ios-sideload/sidestore.json`
+   as a source, or share `AlteBudgeting.ipa` into SideStore. Details:
+   [`ios/README.md`](ios/README.md).
 
 ## Quickstart — Alte' Budgeting (cloud only)
 
@@ -90,6 +108,7 @@ Require status checks on `main`: **Governance Steps 1–5**, **Enterprise Layers
 
 ```
 web/            Alte' Budgeting Next.js PWA
+ios/            SideStore iPhone shell + unsigned IPA workflow
 supabase/       SQL migrations (RLS)
 governance/     Steps 1–5 CLI + reporters
 dashboard/      Human PR review panel

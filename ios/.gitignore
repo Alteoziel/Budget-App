@@ -1,0 +1,5 @@
+# Local / CI leftovers
+ios/build/
+*.ipa
+xcuserdata/
+DerivedData/
