@@ -17,7 +17,6 @@ enum BudgetAppConfig {
     }
 }
 
-@MainActor
 final class BudgetWebSession: ObservableObject {
     @Published var isLoading = true
     @Published var hasRenderedPage = false
@@ -39,6 +38,14 @@ final class BudgetWebSession: ObservableObject {
             webView.reload()
         } else {
             webView?.load(URLRequest(url: BudgetAppConfig.startURL))
+        }
+    }
+
+    fileprivate func onMain(_ work: @escaping () -> Void) {
+        if Thread.isMainThread {
+            work()
+        } else {
+            DispatchQueue.main.async(execute: work)
         }
     }
 }
@@ -81,13 +88,17 @@ struct BudgetWebView: UIViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-            session.isLoading = true
+            session.onMain { [session] in
+                session.isLoading = true
+            }
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            session.isLoading = false
-            session.hasRenderedPage = true
-            session.lastError = nil
+            session.onMain { [session] in
+                session.isLoading = false
+                session.hasRenderedPage = true
+                session.lastError = nil
+            }
         }
 
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
@@ -135,8 +146,11 @@ struct BudgetWebView: UIViewRepresentable {
             if urlError.domain == NSURLErrorDomain, urlError.code == NSURLErrorCancelled {
                 return
             }
-            session.isLoading = false
-            session.lastError = error.localizedDescription
+            let message = error.localizedDescription
+            session.onMain { [session] in
+                session.isLoading = false
+                session.lastError = message
+            }
         }
     }
 }
