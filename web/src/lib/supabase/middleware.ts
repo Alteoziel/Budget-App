@@ -5,22 +5,10 @@ import {
   REAUTH_INTERVAL_MS,
 } from "@/lib/auth/reauth";
 import { supabaseAuthOptions } from "@/lib/supabase/auth-options";
-
-function isPublicPath(path: string): boolean {
-  return (
-    path === "/" ||
-    path.startsWith("/login") ||
-    path.startsWith("/invite") ||
-    path.startsWith("/auth/") ||
-    path.startsWith("/api/cron/") ||
-    path.startsWith("/api/plaid/webhook") ||
-    path.startsWith("/_next") ||
-    path.startsWith("/icons") ||
-    path === "/manifest.webmanifest" ||
-    path === "/sw.js" ||
-    path === "/offline.html"
-  );
-}
+import {
+  isPublicAssetPath,
+  isPublicPath,
+} from "@/lib/security/public-paths";
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
@@ -71,12 +59,7 @@ export async function updateSession(request: NextRequest) {
   const isInviteRoute = path.startsWith("/invite");
   const isAuthCallback = path.startsWith("/auth/");
   const isPlaidWebhook = path.startsWith("/api/plaid/webhook");
-  const isPublicAsset =
-    path.startsWith("/_next") ||
-    path.startsWith("/icons") ||
-    path === "/manifest.webmanifest" ||
-    path === "/sw.js" ||
-    path === "/offline.html";
+  const isPublicAsset = isPublicAssetPath(path);
 
   if (
     user &&

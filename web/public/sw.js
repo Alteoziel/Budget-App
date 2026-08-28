@@ -1,5 +1,5 @@
 /* Alte' Budgeting service worker — offline shell + last-visited pages. */
-const VERSION = "v12";
+const VERSION = "v13";
 const STATIC_CACHE = `alte-static-${VERSION}`;
 const PAGE_CACHE = `alte-pages-${VERSION}`;
 const PRIVATE_CACHE_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
@@ -27,10 +27,24 @@ const APP_SHELL_PATHS = [
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches
-      .open(STATIC_CACHE)
-      .then((cache) => cache.addAll(PRECACHE))
-      .then(() => self.skipWaiting()),
+    (async () => {
+      const cache = await caches.open(STATIC_CACHE);
+      // Fetch each asset separately. cache.addAll() aborts the whole install
+      // if one URL 307s (auth used to redirect /boot.html → /login).
+      await Promise.all(
+        PRECACHE.map(async (path) => {
+          try {
+            const response = await fetch(path, { cache: "reload" });
+            if (response.ok && !response.redirected) {
+              await cache.put(path, response);
+            }
+          } catch {
+            // Skip missing/redirected files so the worker still activates.
+          }
+        }),
+      );
+      await self.skipWaiting();
+    })(),
   );
 });
 
@@ -161,7 +175,11 @@ function isAuthPath(url) {
     path === "/passkey-setup" ||
     path.startsWith("/passkey-setup/") ||
     path.startsWith("/auth/") ||
-    path.startsWith("/invite/")
+    path.startsWith("/invite/") ||
+    // Let the browser load these as real files. Serving a cached /boot.html
+    // for another URL makes Chrome navigate to /boot.html and ERR_FAILED.
+    path === "/boot.html" ||
+    path === "/offline.html"
   );
 }
 
@@ -248,34 +266,74 @@ async function putPageCache(cache, request, response) {
 }
 
 /**
- * Instant dark document for cache-miss navigations. The page then fetches the
- * real HTML (X-Alte-Boot) and location.replace()s so the WebView never sits on
- * the default white background while the network is in flight (~0.5s).
+ * Instant dark document for cache-miss navigations. Built as a *synthetic*
+ * Response (empty URL) so Chrome/Safari cannot treat it as a redirect to
+ * /boot.html — that produced ERR_FAILED after password/passkey sign-in.
+ * The page then fetches the real HTML (X-Alte-Boot) and writes it in-place.
  */
-async function darkBootNavigationResponse() {
-  const cached = await caches.match("/boot.html");
-  if (cached) {
-    // Always rebuild — Safari treats cross-URL cached responses as redirected.
-    return new Response(await cached.blob(), {
-      status: 200,
-      headers: {
-        "Content-Type": "text/html; charset=utf-8",
-        "Cache-Control": "no-store",
-        "X-Alte-Boot-Shell": "1",
-      },
-    });
-  }
-  return new Response(
-    `<!doctype html><html lang="en" class="dark"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/><meta name="theme-color" content="#080c0b"/><meta name="color-scheme" content="dark"/><title>Alte' Budgeting</title><style>html,body{margin:0;min-height:100%;background:#080c0b;color-scheme:dark}</style></head><body style="background:#080c0b"></body></html>`,
-    {
-      status: 200,
-      headers: {
-        "Content-Type": "text/html; charset=utf-8",
-        "Cache-Control": "no-store",
-        "X-Alte-Boot-Shell": "1",
-      },
+const BOOT_SHELL_HTML = `<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#080c0b" />
+    <title>Alte' Budgeting</title>
+    <style>html,body{margin:0;min-height:100%;background:#080c0b!important;color-scheme:dark}</style>
+  </head>
+  <body style="background:#080c0b">
+    <script>
+      (async function () {
+        var path = location.pathname;
+        if (path === "/boot.html" || path === "/offline.html") {
+          try { sessionStorage.removeItem("alte-boot-lock"); } catch (e) {}
+          location.replace("/budget");
+          return;
+        }
+        var url = location.href;
+        var lockKey = "alte-boot-lock";
+        try {
+          if (sessionStorage.getItem(lockKey) === url) {
+            sessionStorage.removeItem(lockKey);
+            location.replace("/offline.html");
+            return;
+          }
+          sessionStorage.setItem(lockKey, url);
+          var res = await fetch(url, {
+            credentials: "same-origin",
+            cache: "reload",
+            redirect: "follow",
+            headers: { Accept: "text/html", "X-Alte-Boot": "1" },
+          });
+          if (!res.ok) throw new Error("boot fetch failed");
+          if (res.redirected && res.url && res.url !== url) {
+            sessionStorage.removeItem(lockKey);
+            location.replace(res.url);
+            return;
+          }
+          var html = await res.text();
+          sessionStorage.removeItem(lockKey);
+          document.open();
+          document.write(html);
+          document.close();
+        } catch (e) {
+          sessionStorage.removeItem(lockKey);
+          location.replace("/offline.html");
+        }
+      })();
+    </script>
+  </body>
+</html>`;
+
+function darkBootNavigationResponse() {
+  return new Response(BOOT_SHELL_HTML, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store",
+      "X-Alte-Boot-Shell": "1",
     },
-  );
+  });
 }
 
 /**
@@ -397,20 +455,33 @@ async function networkFirstManifest(request) {
 
 async function cacheFirstStatic(request) {
   const cached = await caches.match(request);
-  if (cached) return cached;
+  if (cached && !cached.redirected) {
+    return cloneWithoutRedirect(cached);
+  }
   try {
     const response = await fetch(request);
     if (response && response.ok && !response.redirected) {
       const cache = await caches.open(STATIC_CACHE);
       await cache.put(request, await cloneWithoutRedirect(response));
+      return response;
     }
-    return response;
+    // Redirected responses cannot fulfill navigations (Chrome ERR_FAILED /
+    // Safari "Response served by service worker has redirections").
+    if (
+      request.mode === "navigate" &&
+      response &&
+      (response.redirected || response.type === "opaqueredirect")
+    ) {
+      return darkBootNavigationResponse();
+    }
+    if (response && !response.redirected) return response;
   } catch {
-    return (
-      (await caches.match(request)) ||
-      new Response("", { status: 504, statusText: "Offline" })
-    );
+    // fall through to cache / empty 504
   }
+  return (
+    (cached && !cached.redirected ? cached : null) ||
+    new Response("", { status: 504, statusText: "Offline" })
+  );
 }
 
 self.addEventListener("fetch", (event) => {
@@ -426,8 +497,8 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Password / passkey / invite / magic-link flows redirect. Bypass the SW so
-  // Safari does not throw "Response served by service worker has redirections".
+  // Password / passkey / invite / magic-link / boot+offline shells. Bypass so
+  // Safari/Chrome do not fail navigations that 307 (ERR_FAILED / "has redirections").
   if (isAuthPath(url)) {
     return;
   }
