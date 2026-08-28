@@ -11,5 +11,10 @@ assert.equal(safeInternalPath(null, "/accounts"), "/accounts");
 assert.equal(safeInternalPath("/%2f%2fevil.com"), "/budget");
 assert.equal(safeInternalPath("/budget/../login"), "/budget");
 assert.equal(safeInternalPath("/https://evil.com"), "/budget");
+assert.equal(safeInternalPath("/boot.html"), "/budget");
+assert.equal(safeInternalPath("/boot.html?next=/budget"), "/budget");
+assert.equal(safeInternalPath("/offline.html"), "/budget");
+assert.equal(safeInternalPath("/api/offline/snapshot"), "/budget");
+assert.equal(safeInternalPath("/passkey-setup"), "/passkey-setup");
 
 console.log("paths.test.ts: ok");

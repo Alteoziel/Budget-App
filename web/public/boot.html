@@ -27,6 +27,18 @@
   <body style="background: #080c0b">
     <script>
       (async function () {
+        var path = location.pathname;
+        // Chrome may surface this file as the document URL when a service
+        // worker fulfills a /budget navigation from the /boot.html cache
+        // entry. Never fetch ourselves — that 307'd to login (ERR_FAILED)
+        // and even a 200 would loop into offline.html.
+        if (path === "/boot.html" || path === "/offline.html") {
+          try {
+            sessionStorage.removeItem("alte-boot-lock");
+          } catch (e) {}
+          location.replace("/budget");
+          return;
+        }
         var url = location.href;
         var lockKey = "alte-boot-lock";
         try {

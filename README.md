@@ -16,7 +16,7 @@ PR quality gates from the governance stack stay in place.
 
 ## Product
 
-- Multi-budget manager with role invite links (unlimited uses, Share on mobile)
+- Multi-budget manager with role invite links (single-use, 30-day expiry, Share on mobile)
 - Category auto-assign by percentage of Ready to Assign
 - Profile management (display name + password)
 - Budget screen (categories, assigned / activity / available)
