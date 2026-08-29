@@ -35,12 +35,13 @@ const dataset: InsightsDataset = {
   ],
   payees: ["streaming service"],
   txnCells: [
+    [0, 0, -1, 200000, 1, 2],
     [0, 0, 0, -50000, 5, 0],
     [1, 0, 0, -50000, 8, 0],
     [2, 0, 0, -50000, 12, 0],
     [3, 0, 1, -20000, 3, 1],
   ],
-  txnPayees: ["Market", "Cafe"],
+  txnPayees: ["Market", "Cafe", "Payroll"],
 };
 
 const all = deriveInsights(dataset, {
@@ -108,5 +109,37 @@ assert.equal(diningTxns[0]!.amountCents, -20000);
 const emptyMonths = deriveCategoryBreakdown(dataset, []);
 assert.equal(emptyMonths.totalCents, 0);
 assert.equal(emptyMonths.rows.length, 0);
+
+const incomeBreakdown = deriveCategoryBreakdown(
+  dataset,
+  ["2026-01"],
+  ["acc-1"],
+  "income",
+);
+assert.equal(incomeBreakdown.totalCents, 200000);
+assert.equal(incomeBreakdown.rows.length, 1);
+assert.equal(incomeBreakdown.rows[0]!.name, "Uncategorized");
+assert.equal(incomeBreakdown.rows[0]!.cents, 200000);
+
+const incomeTxns = deriveCategoryTransactions(
+  dataset,
+  ["2026-01"],
+  null,
+  ["acc-1"],
+  "income",
+);
+assert.equal(incomeTxns.length, 1);
+assert.equal(incomeTxns[0]!.payee, "Payroll");
+assert.equal(incomeTxns[0]!.occurredOn, "2026-01-01");
+assert.equal(incomeTxns[0]!.amountCents, 200000);
+
+const spendUncat = deriveCategoryTransactions(
+  dataset,
+  ["2026-01"],
+  null,
+  ["acc-1"],
+  "spending",
+);
+assert.equal(spendUncat.length, 0);
 
 console.log("derive.test.ts: ok");

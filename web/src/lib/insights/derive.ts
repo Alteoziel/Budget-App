@@ -33,6 +33,8 @@ export type CategoryBreakdown = {
   rows: CategorySpendRow[];
 };
 
+export type FlowKind = "spending" | "income";
+
 function pctChange(current: number, prior: number): number | null {
   if (prior === 0) return current === 0 ? 0 : null;
   return ((current - prior) / Math.abs(prior)) * 100;
@@ -274,11 +276,12 @@ function deriveTrendFindings({
   return findings;
 }
 
-/** Spending by category for an explicit set of YYYY-MM months. */
+/** Spending or income by category for an explicit set of YYYY-MM months. */
 export function deriveCategoryBreakdown(
   dataset: InsightsDataset,
   selectedMonths: string[],
   accountIds: string[] = [],
+  flow: FlowKind = "spending",
 ): CategoryBreakdown {
   const monthSet = new Set(selectedMonths);
   const monthIndexes = new Set(
@@ -293,9 +296,13 @@ export function deriveCategoryBreakdown(
 
   const totals = new Map<number, number>();
   for (const [mi, ai, ci, amount] of dataset.cells) {
-    if (!monthIndexes.has(mi) || !accountAllowed[ai] || amount >= 0) continue;
-    const key = ci;
-    totals.set(key, (totals.get(key) ?? 0) + Math.abs(amount));
+    if (!monthIndexes.has(mi) || !accountAllowed[ai]) continue;
+    if (flow === "spending") {
+      if (amount >= 0) continue;
+      totals.set(ci, (totals.get(ci) ?? 0) + Math.abs(amount));
+    } else if (amount > 0) {
+      totals.set(ci, (totals.get(ci) ?? 0) + amount);
+    }
   }
 
   const totalCents = [...totals.values()].reduce((sum, cents) => sum + cents, 0);
@@ -324,12 +331,13 @@ export function deriveCategoryBreakdown(
   return { totalCents, rows };
 }
 
-/** Outflow transactions in a category for the selected months. */
+/** Transactions in a category for the selected months, spending or income. */
 export function deriveCategoryTransactions(
   dataset: InsightsDataset,
   selectedMonths: string[],
   categoryId: string | null,
   accountIds: string[] = [],
+  flow: FlowKind = "spending",
 ): CategoryTxnRow[] {
   const monthSet = new Set(selectedMonths);
   const monthIndexes = new Set(
@@ -352,6 +360,8 @@ export function deriveCategoryTransactions(
   for (const [mi, ai, ci, amount, day, payeeIdx] of dataset.txnCells) {
     if (!monthIndexes.has(mi) || !accountAllowed[ai]) continue;
     if (ci !== categoryIndex) continue;
+    if (flow === "spending" && amount >= 0) continue;
+    if (flow === "income" && amount <= 0) continue;
     const month = dataset.months[mi]!;
     rows.push({
       occurredOn: `${month}-${String(day).padStart(2, "0")}`,

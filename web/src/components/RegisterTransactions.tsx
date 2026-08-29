@@ -36,9 +36,7 @@ export function RegisterTransactions({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const [filtersOpen, setFiltersOpen] = useState(
-    () => initialCategoryFilter !== "all",
-  );
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState(initialCategoryFilter);
   const [accountFilter, setAccountFilter] = useState("all");

@@ -1,13 +1,11 @@
 "use client";
 
-import Link from "next/link";
 import { useMemo, useState } from "react";
 import { CollapsibleInsight } from "@/components/insights/CollapsibleInsight";
 import { InsightsCharts } from "@/components/insights/InsightsCharts";
 import { MonthSpendingBreakdown } from "@/components/insights/MonthSpendingBreakdown";
 import type { InsightsDataset } from "@/lib/insights/dataset";
 import { deriveInsights } from "@/lib/insights/derive";
-import { tipsFromFindings } from "@/lib/insights/tips";
 
 const MONTH_OPTIONS = [6, 12, 18, 24];
 
@@ -16,11 +14,10 @@ export function InsightsExplorer({ dataset }: { dataset: InsightsDataset }) {
   const [accountIds, setAccountIds] = useState<string[]>([]);
   const [categoryIds, setCategoryIds] = useState<string[]>([]);
 
-  const { points, findings } = useMemo(
+  const { points } = useMemo(
     () => deriveInsights(dataset, { monthsBack, accountIds, categoryIds }),
     [dataset, monthsBack, accountIds, categoryIds],
   );
-  const tips = useMemo(() => tipsFromFindings(findings), [findings]);
 
   function toggle(list: string[], id: string): string[] {
     return list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
@@ -32,20 +29,20 @@ export function InsightsExplorer({ dataset }: { dataset: InsightsDataset }) {
   return (
     <>
       <CollapsibleInsight
-        title="Month spending"
-        description="Defaults to checking. Pick accounts and months, then tap a category for its transactions."
+        title="Monthly ins and outs"
+        description="Defaults to checking. Pick accounts and months, then view spending, income, or both."
         defaultOpen
       >
         <MonthSpendingBreakdown dataset={dataset} />
       </CollapsibleInsight>
 
       <CollapsibleInsight
-        title="Filters"
-        description="Narrow the charts, trends, and tips below."
+        title="Charts"
+        description="Filter the range, then see spending, income, and balance over time."
       >
         <div className="space-y-3">
-          <div className="flex items-center justify-end gap-3">
-            {filtersActive ? (
+          {filtersActive ? (
+            <div className="flex items-center justify-end gap-3">
               <button
                 type="button"
                 onClick={() => {
@@ -57,8 +54,8 @@ export function InsightsExplorer({ dataset }: { dataset: InsightsDataset }) {
               >
                 Reset
               </button>
-            ) : null}
-          </div>
+            </div>
+          ) : null}
 
           <FilterGroup
             label="Time range"
@@ -140,76 +137,8 @@ export function InsightsExplorer({ dataset }: { dataset: InsightsDataset }) {
             </FilterGroup>
           ) : null}
         </div>
-      </CollapsibleInsight>
 
-      <CollapsibleInsight
-        title="Charts"
-        description="Spending, income, and balance over the filtered range."
-      >
         <InsightsCharts points={points} />
-      </CollapsibleInsight>
-
-      <CollapsibleInsight
-        title="Trends"
-        description="Signals pulled from your filtered history."
-      >
-        {!findings.length ? (
-          <p className="text-sm text-ink-600">
-            Not enough history for trend signals yet.
-          </p>
-        ) : (
-          <ul className="space-y-2">
-            {findings.map((f) => (
-              <li key={f.id} className="card-surface rounded-2xl px-4 py-3">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-semibold text-ink-900">{f.title}</p>
-                  <SeverityBadge severity={f.severity} />
-                </div>
-                <p className="mt-1 text-sm text-ink-600">{f.summary}</p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </CollapsibleInsight>
-
-      <CollapsibleInsight
-        title="Tips for you"
-        description="Actionable next steps based on your trends — not the same cards again."
-      >
-        {!tips.length ? (
-          <p className="text-sm text-ink-600">
-            Tips show up once there is enough history for a clear recommendation.
-          </p>
-        ) : (
-          <ul className="space-y-2">
-            {tips.map((tip) => (
-              <li
-                key={tip.id}
-                className="rounded-3xl bg-moss-500/10 px-4 py-3 shadow-soft"
-              >
-                <p className="text-sm font-semibold text-ink-900">
-                  {tip.headline}
-                </p>
-                <p className="mt-1 text-sm text-ink-600">{tip.body}</p>
-                {tip.actions.length ? (
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {tip.actions.map((a) =>
-                      a.href ? (
-                        <Link
-                          key={a.href + a.label}
-                          href={a.href}
-                          className="rounded-lg bg-moss-500 px-2.5 py-1 text-xs font-bold text-sand-50"
-                        >
-                          {a.label}
-                        </Link>
-                      ) : null,
-                    )}
-                  </div>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        )}
       </CollapsibleInsight>
     </>
   );
@@ -290,21 +219,5 @@ function FilterGroup({
         {children}
       </div>
     </section>
-  );
-}
-
-function SeverityBadge({ severity }: { severity: "info" | "watch" | "alert" }) {
-  const styles =
-    severity === "alert"
-      ? "bg-coral-400/20 text-coral-500"
-      : severity === "watch"
-        ? "bg-amber-100 text-amber-900"
-        : "bg-sand-100 text-ink-600";
-  return (
-    <span
-      className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${styles}`}
-    >
-      {severity}
-    </span>
   );
 }

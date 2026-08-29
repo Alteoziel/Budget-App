@@ -14,6 +14,7 @@ import {
   deriveCategoryBreakdown,
   deriveCategoryTransactions,
   type CategorySpendRow,
+  type FlowKind,
 } from "@/lib/insights/derive";
 import {
   formatBudgetDate,
@@ -21,7 +22,7 @@ import {
   formatCents,
 } from "@/lib/money";
 
-const CATEGORY_COLORS = [
+const SPENDING_COLORS = [
   "#c45c3a",
   "#3f7a5c",
   "#2a463c",
@@ -32,6 +33,19 @@ const CATEGORY_COLORS = [
   "#d9926a",
   "#5a9a75",
   "#8a6a4a",
+];
+
+const INCOME_COLORS = [
+  "#3f7a5c",
+  "#5a9a75",
+  "#8fbf9a",
+  "#2a463c",
+  "#527665",
+  "#b7d9bf",
+  "#1f4d3a",
+  "#7aab88",
+  "#4e8064",
+  "#c6d6cd",
 ];
 
 const SHORT_MONTHS = [
@@ -48,6 +62,8 @@ const SHORT_MONTHS = [
   "Nov",
   "Dec",
 ] as const;
+
+type ViewMode = FlowKind | "both";
 
 function monthsForYear(year: number): string[] {
   return Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, "0")}`);
@@ -72,6 +88,7 @@ function defaultAccountIds(
 type Drilldown = {
   categoryId: string | null;
   name: string;
+  flow: FlowKind;
 };
 
 export function MonthSpendingBreakdown({
@@ -91,6 +108,7 @@ export function MonthSpendingBreakdown({
   const [viewYear, setViewYear] = useState(() =>
     Number((latest ?? available[0] ?? "2026-01").slice(0, 4)),
   );
+  const [viewMode, setViewMode] = useState<ViewMode>("both");
   const [drilldown, setDrilldown] = useState<Drilldown | null>(null);
 
   const years = useMemo(() => {
@@ -101,22 +119,13 @@ export function MonthSpendingBreakdown({
   const minYear = years[0] ?? viewYear;
   const maxYear = years[years.length - 1] ?? viewYear;
 
-  const breakdown = useMemo(
-    () => deriveCategoryBreakdown(dataset, selectedMonths, accountIds),
+  const spending = useMemo(
+    () => deriveCategoryBreakdown(dataset, selectedMonths, accountIds, "spending"),
     [dataset, selectedMonths, accountIds],
   );
-
-  const chartData = useMemo(
-    () =>
-      breakdown.rows.slice(0, 8).map((row, index) => ({
-        key: row.categoryId ?? `uncat-${index}`,
-        name: row.name,
-        value: row.cents / 100,
-        cents: row.cents,
-        color: CATEGORY_COLORS[index % CATEGORY_COLORS.length]!,
-        categoryId: row.categoryId,
-      })),
-    [breakdown.rows],
+  const income = useMemo(
+    () => deriveCategoryBreakdown(dataset, selectedMonths, accountIds, "income"),
+    [dataset, selectedMonths, accountIds],
   );
 
   function toggleMonth(month: string) {
@@ -160,6 +169,9 @@ export function MonthSpendingBreakdown({
           ? (dataset.accounts.find((a) => a.id === accountIds[0])?.name ??
             "1 account")
           : `${accountIds.length} accounts`;
+
+  const showSpending = viewMode === "spending" || viewMode === "both";
+  const showIncome = viewMode === "income" || viewMode === "both";
 
   return (
     <div className="space-y-4">
@@ -210,7 +222,7 @@ export function MonthSpendingBreakdown({
             ) : null}
           </div>
           <p className="mt-2 text-[11px] font-semibold text-ink-500">
-            Defaults to checking so transfers from other accounts stay out of spending.
+            Defaults to checking so transfers between accounts stay out of the totals.
           </p>
         </div>
       ) : null}
@@ -285,81 +297,70 @@ export function MonthSpendingBreakdown({
         ) : null}
       </div>
 
-      <div className="card-surface rounded-2xl p-4">
-        <div className="mb-3 flex items-baseline justify-between gap-2">
-          <h3 className="font-display text-lg font-bold text-ink-900">
-            Spending by category
-          </h3>
-          <p className="text-sm font-bold text-ink-800">
-            {formatCents(breakdown.totalCents)}
-          </p>
-        </div>
+      <div
+        role="group"
+        aria-label="Show spending, income, or both"
+        className="grid grid-cols-3 gap-2"
+      >
+        {(
+          [
+            ["spending", "Spending"],
+            ["income", "Income"],
+            ["both", "Both"],
+          ] as const
+        ).map(([mode, label]) => {
+          const on = viewMode === mode;
+          return (
+            <button
+              key={mode}
+              type="button"
+              aria-pressed={on}
+              onClick={() => setViewMode(mode)}
+              className={`min-h-11 touch-manipulation rounded-xl px-3 py-2 text-xs font-bold transition ${
+                on
+                  ? "bg-ink-900 text-sand-50"
+                  : "border border-ink-900/10 bg-sand-50 text-ink-700 hover:border-ink-900/20"
+              }`}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
 
-        {!accountIds.length ? (
-          <p className="py-8 text-center text-sm text-ink-600">
-            Select at least one account to see the breakdown.
-          </p>
-        ) : !selectedMonths.length ? (
-          <p className="py-8 text-center text-sm text-ink-600">
-            Select one or more months to see the breakdown.
-          </p>
-        ) : !breakdown.rows.length ? (
-          <p className="py-8 text-center text-sm text-ink-600">
-            No spending in the selected months.
-          </p>
-        ) : (
-          <>
-            <div className="mx-auto h-56 w-full max-w-sm">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={chartData}
-                    dataKey="value"
-                    nameKey="name"
-                    innerRadius="48%"
-                    outerRadius="78%"
-                    paddingAngle={2}
-                    stroke="none"
-                    className="cursor-pointer outline-none"
-                    onClick={(_, index) => {
-                      const entry = chartData[index];
-                      if (!entry) return;
-                      setDrilldown({
-                        categoryId: entry.categoryId,
-                        name: entry.name,
-                      });
-                    }}
-                  >
-                    {chartData.map((entry) => (
-                      <Cell key={entry.key} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    formatter={(value) =>
-                      formatCents(Math.round(Number(value ?? 0) * 100))
-                    }
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-
-            <ul className="mt-2 space-y-1.5">
-              {breakdown.rows.map((row, index) => (
-                <CategoryRow
-                  key={row.categoryId ?? `uncat-${row.name}`}
-                  row={row}
-                  color={CATEGORY_COLORS[index % CATEGORY_COLORS.length]!}
-                  onOpen={() =>
-                    setDrilldown({
-                      categoryId: row.categoryId,
-                      name: row.name,
-                    })
-                  }
-                />
-              ))}
-            </ul>
-          </>
-        )}
+      <div
+        className={
+          viewMode === "both" ? "grid grid-cols-1 gap-4 sm:grid-cols-2" : undefined
+        }
+      >
+        {showSpending ? (
+          <FlowBreakdownCard
+            title="Spending by category"
+            emptyLabel="No spending in the selected months."
+            colors={SPENDING_COLORS}
+            breakdown={spending}
+            accountIds={accountIds}
+            selectedMonths={selectedMonths}
+            compact={viewMode === "both"}
+            onOpen={(categoryId, name) =>
+              setDrilldown({ categoryId, name, flow: "spending" })
+            }
+          />
+        ) : null}
+        {showIncome ? (
+          <FlowBreakdownCard
+            title="Income by category"
+            emptyLabel="No income in the selected months."
+            colors={INCOME_COLORS}
+            breakdown={income}
+            accountIds={accountIds}
+            selectedMonths={selectedMonths}
+            compact={viewMode === "both"}
+            onOpen={(categoryId, name) =>
+              setDrilldown({ categoryId, name, flow: "income" })
+            }
+          />
+        ) : null}
       </div>
 
       {drilldown ? (
@@ -369,9 +370,112 @@ export function MonthSpendingBreakdown({
           accountIds={accountIds}
           categoryId={drilldown.categoryId}
           categoryName={drilldown.name}
+          flow={drilldown.flow}
           onClose={() => setDrilldown(null)}
         />
       ) : null}
+    </div>
+  );
+}
+
+function FlowBreakdownCard({
+  title,
+  emptyLabel,
+  colors,
+  breakdown,
+  accountIds,
+  selectedMonths,
+  compact,
+  onOpen,
+}: {
+  title: string;
+  emptyLabel: string;
+  colors: readonly string[];
+  breakdown: ReturnType<typeof deriveCategoryBreakdown>;
+  accountIds: string[];
+  selectedMonths: string[];
+  compact: boolean;
+  onOpen: (categoryId: string | null, name: string) => void;
+}) {
+  const chartData = useMemo(
+    () =>
+      breakdown.rows.slice(0, 8).map((row, index) => ({
+        key: row.categoryId ?? `uncat-${index}`,
+        name: row.name,
+        value: row.cents / 100,
+        cents: row.cents,
+        color: colors[index % colors.length]!,
+        categoryId: row.categoryId,
+      })),
+    [breakdown.rows, colors],
+  );
+
+  return (
+    <div className="card-surface rounded-2xl p-4">
+      <div className="mb-3 flex items-baseline justify-between gap-2">
+        <h3 className="font-display text-lg font-bold text-ink-900">{title}</h3>
+        <p className="text-sm font-bold text-ink-800">
+          {formatCents(breakdown.totalCents)}
+        </p>
+      </div>
+
+      {!accountIds.length ? (
+        <p className="py-8 text-center text-sm text-ink-600">
+          Select at least one account to see the breakdown.
+        </p>
+      ) : !selectedMonths.length ? (
+        <p className="py-8 text-center text-sm text-ink-600">
+          Select one or more months to see the breakdown.
+        </p>
+      ) : !breakdown.rows.length ? (
+        <p className="py-8 text-center text-sm text-ink-600">{emptyLabel}</p>
+      ) : (
+        <>
+          <div
+            className={`mx-auto w-full max-w-sm ${compact ? "h-44" : "h-56"}`}
+          >
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={chartData}
+                  dataKey="value"
+                  nameKey="name"
+                  innerRadius="48%"
+                  outerRadius="78%"
+                  paddingAngle={2}
+                  stroke="none"
+                  className="cursor-pointer outline-none"
+                  onClick={(_, index) => {
+                    const entry = chartData[index];
+                    if (!entry) return;
+                    onOpen(entry.categoryId, entry.name);
+                  }}
+                >
+                  {chartData.map((entry) => (
+                    <Cell key={entry.key} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  formatter={(value) =>
+                    formatCents(Math.round(Number(value ?? 0) * 100))
+                  }
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+
+          <ul className="mt-2 space-y-1.5">
+            {breakdown.rows.map((row, index) => (
+              <CategoryRow
+                key={row.categoryId ?? `uncat-${row.name}`}
+                row={row}
+                color={colors[index % colors.length]!}
+                onOpen={() => onOpen(row.categoryId, row.name)}
+              />
+            ))}
+          </ul>
+        </>
+      )}
     </div>
   );
 }
@@ -417,6 +521,7 @@ function CategoryTransactionsBanner({
   accountIds,
   categoryId,
   categoryName,
+  flow,
   onClose,
 }: {
   dataset: InsightsDataset;
@@ -424,6 +529,7 @@ function CategoryTransactionsBanner({
   accountIds: string[];
   categoryId: string | null;
   categoryName: string;
+  flow: FlowKind;
   onClose: () => void;
 }) {
   const titleId = useId();
@@ -434,8 +540,9 @@ function CategoryTransactionsBanner({
         selectedMonths,
         categoryId,
         accountIds,
+        flow,
       ),
-    [dataset, selectedMonths, categoryId, accountIds],
+    [dataset, selectedMonths, categoryId, accountIds, flow],
   );
   const total = txns.reduce((sum, t) => sum + Math.abs(t.amountCents), 0);
   const periodLabel =
@@ -444,6 +551,8 @@ function CategoryTransactionsBanner({
       : selectedMonths.length === 0
         ? "no months"
         : `${selectedMonths.length} months`;
+  const amountClass =
+    flow === "income" ? "text-moss-700 dark:text-moss-300" : "text-coral-600";
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -484,7 +593,8 @@ function CategoryTransactionsBanner({
             </h2>
             <p className="mt-1 text-sm text-ink-600">
               {txns.length} {txns.length === 1 ? "transaction" : "transactions"} ·{" "}
-              {formatCents(total)} · {periodLabel}
+              {formatCents(total)} · {periodLabel} ·{" "}
+              {flow === "income" ? "income" : "spending"}
             </p>
           </div>
           <button
@@ -516,7 +626,7 @@ function CategoryTransactionsBanner({
                       {formatBudgetDate(txn.occurredOn)} · {txn.accountName}
                     </p>
                   </div>
-                  <p className="shrink-0 text-sm font-bold text-coral-600">
+                  <p className={`shrink-0 text-sm font-bold ${amountClass}`}>
                     {formatCents(Math.abs(txn.amountCents))}
                   </p>
                 </li>
