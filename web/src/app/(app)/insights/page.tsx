@@ -6,10 +6,10 @@ export default async function InsightsPage() {
   const dataset = await getInsightsDataset();
 
   return (
-    <AppShell title="Insights" subtitle="Trends & tips">
+    <AppShell title="Insights" subtitle="Ins and outs">
       <p className="mb-4 text-sm text-ink-600">
-        Start with month spending, or expand charts, trends, and tips. Filters apply
-        instantly — the data is loaded once.
+        See spending and income by month, or expand charts for a longer view.
+        Chart filters apply instantly — the data is loaded once.
       </p>
       <InsightsExplorer dataset={dataset} />
     </AppShell>

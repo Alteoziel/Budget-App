@@ -29,8 +29,8 @@ export type InsightsDataset = {
   payeeCells: Array<[number, number, number]>;
   payees: string[];
   /**
-   * Outflow transactions for category drill-down:
-   * [monthIndex, accountIndex, categoryIndex (-1 = uncategorized), amountCents (negative), dayOfMonth, payeeIndex]
+   * Transactions for category drill-down (inflows and outflows):
+   * [monthIndex, accountIndex, categoryIndex (-1 = uncategorized), amountCents, dayOfMonth, payeeIndex]
    */
   txnCells: Array<[number, number, number, number, number, number]>;
   /** Payee strings indexed by txnCells payeeIndex. */
@@ -167,25 +167,23 @@ export const getInsightsDataset = cache(async (): Promise<InsightsDataset> => {
     const key = `${mi}|${ai}|${ci}`;
     cellTotals.set(key, (cellTotals.get(key) ?? 0) + amount);
 
-    if (amount < 0) {
-      const day = Number(occurredOn.slice(8, 10)) || 1;
-      const payeeRaw = String(txn.payee ?? "").trim();
-      const payeeKey = payeeRaw.toLowerCase();
-      let pi = txnPayeeIndex.get(payeeKey);
-      if (pi == null) {
-        pi = txnPayeeList.length;
-        txnPayeeIndex.set(payeeKey, pi);
-        txnPayeeList.push(payeeRaw || "Unknown");
-      }
-      txnCells.push([mi, ai, ci, amount, day, pi]);
+    const day = Number(occurredOn.slice(8, 10)) || 1;
+    const payeeRaw = String(txn.payee ?? "").trim();
+    const payeeKey = payeeRaw.toLowerCase();
+    let pi = txnPayeeIndex.get(payeeKey);
+    if (pi == null) {
+      pi = txnPayeeList.length;
+      txnPayeeIndex.set(payeeKey, pi);
+      txnPayeeList.push(payeeRaw || "Unknown");
+    }
+    txnCells.push([mi, ai, ci, amount, day, pi]);
 
-      if (payeeKey) {
-        const pKey = `${payeeKey}|${mi}`;
-        payeeMonthTotals.set(pKey, (payeeMonthTotals.get(pKey) ?? 0) + Math.abs(amount));
-        const seen = payeeCounts.get(payeeKey) ?? new Set<number>();
-        seen.add(mi);
-        payeeCounts.set(payeeKey, seen);
-      }
+    if (amount < 0 && payeeKey) {
+      const pKey = `${payeeKey}|${mi}`;
+      payeeMonthTotals.set(pKey, (payeeMonthTotals.get(pKey) ?? 0) + Math.abs(amount));
+      const seen = payeeCounts.get(payeeKey) ?? new Set<number>();
+      seen.add(mi);
+      payeeCounts.set(payeeKey, seen);
     }
   }
 

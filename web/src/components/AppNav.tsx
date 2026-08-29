@@ -109,16 +109,10 @@ export function MobileBottomNav({
             pendingHref != null
               ? pendingHref === link.href
               : isActivePath(pathname, link.href);
-          const href =
-            "badgeKey" in link &&
-            link.badgeKey === "uncategorized" &&
-            uncategorizedCount > 0
-              ? "/transactions?category=uncategorized"
-              : link.href;
           return (
             <li key={link.href}>
               <Link
-                href={href}
+                href={link.href}
                 prefetch={link.prefetch}
                 className={navClass(active)}
                 onClick={() => beginPending(link.href)}
@@ -166,16 +160,10 @@ export function DesktopSideNav({
             pendingHref != null
               ? pendingHref === link.href
               : isActivePath(pathname, link.href);
-          const href =
-            "badgeKey" in link &&
-            link.badgeKey === "uncategorized" &&
-            uncategorizedCount > 0
-              ? "/transactions?category=uncategorized"
-              : link.href;
           return (
             <li key={link.href}>
               <Link
-                href={href}
+                href={link.href}
                 prefetch={link.prefetch}
                 onClick={() => beginPending(link.href)}
                 className={`touch-manipulation relative flex min-h-11 items-center rounded-xl px-3 text-sm font-bold transition ${
