@@ -132,7 +132,7 @@ jobs:
 
       # ── Layer E: IaC ────────────────────────────────────────────────
       - name: "E · Checkov (Terraform)"
-        uses: bridgecrewio/checkov-action@7b972723c44fb3d256283fac96fae5d7c1894bb7 # v12
+        uses: bridgecrewio/checkov-action@5798bad4f6dd9c1fb67ae3ec10d42d8fb67037c4 # v12
         with:
           directory: infra/terraform
           framework: terraform
