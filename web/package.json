@@ -11,7 +11,7 @@
     "test": "tsx --tsconfig tsconfig.json src/lib/ynab-csv.test.ts && tsx --tsconfig tsconfig.json src/lib/money.test.ts && tsx --tsconfig tsconfig.json src/lib/paths.test.ts && tsx --tsconfig tsconfig.json src/lib/auth/reauth.test.ts && tsx --tsconfig tsconfig.json src/lib/password-reset.test.ts && tsx --tsconfig tsconfig.json src/lib/passkey-gate.test.ts && tsx --tsconfig tsconfig.json src/lib/insights/tips.test.ts && tsx --tsconfig tsconfig.json src/lib/plaid/client.test.ts && tsx --tsconfig tsconfig.json src/lib/plaid/cron-auth.test.ts && tsx --tsconfig tsconfig.json src/lib/plaid/webhook-verify.test.ts && tsx --tsconfig tsconfig.json src/lib/plaid/sync.test.ts && tsx --tsconfig tsconfig.json src/lib/plaid/open-sync.test.ts && tsx --tsconfig tsconfig.json src/lib/crypto/secrets.test.ts && tsx --tsconfig tsconfig.json src/lib/security/csp.test.ts && tsx --tsconfig tsconfig.json src/lib/security/public-paths.test.ts && tsx --tsconfig tsconfig.json src/lib/security/sw-boot.test.ts && tsx --tsconfig tsconfig.json src/lib/auto-assign.test.ts && tsx --tsconfig tsconfig.json src/lib/transaction-matching.test.ts && tsx --tsconfig tsconfig.json src/lib/payee-categorization.test.ts && tsx --tsconfig tsconfig.json src/lib/insights/derive.test.ts && tsx --tsconfig tsconfig.json src/lib/overspend-fix.test.ts && tsx --tsconfig tsconfig.json src/lib/theme-chrome.test.ts"
   },
   "dependencies": {
-    "@supabase/ssr": "^0.12.3",
+    "@supabase/ssr": "^0.12.5",
     "@supabase/supabase-js": "^2.110.8",
     "jose": "^6.2.4",
     "next": "^16.2.11",
