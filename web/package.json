@@ -16,7 +16,7 @@
     "jose": "^6.2.4",
     "next": "^16.2.11",
     "papaparse": "^5.5.4",
-    "plaid": "^44.0.0",
+    "plaid": "^46.0.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-plaid-link": "^4.2.0",
