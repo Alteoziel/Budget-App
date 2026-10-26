@@ -20,7 +20,7 @@
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-plaid-link": "^4.2.0",
-    "recharts": "^3.10.0",
+    "recharts": "^3.10.1",
     "zod": "^3.24.0"
   },
   "devDependencies": {
