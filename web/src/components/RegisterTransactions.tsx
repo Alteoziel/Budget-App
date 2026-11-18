@@ -23,6 +23,8 @@ export function RegisterTransactions({
   showAccountName = false,
   returnTo,
   initialCategoryFilter = "all",
+  totalTransactionCount,
+  registerLimit,
 }: {
   accountId?: string;
   transactions: Transaction[];
@@ -32,6 +34,10 @@ export function RegisterTransactions({
   returnTo?: string;
   /** Prefill category filter (e.g. "uncategorized" from nav badge). */
   initialCategoryFilter?: string;
+  /** Full account/budget count when the register is capped. */
+  totalTransactionCount?: number;
+  /** Max rows loaded into this register view. */
+  registerLimit?: number;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -111,6 +117,14 @@ export function RegisterTransactions({
     Boolean(toDate);
 
   const filteredTotalCents = filtered.reduce((sum, txn) => sum + txn.amount_cents, 0);
+  const registerIsCapped =
+    typeof totalTransactionCount === "number" &&
+    totalTransactionCount > transactions.length;
+  const shownLabel = filtersActive
+    ? `${filtered.length} of ${transactions.length} shown · list net `
+    : registerIsCapped
+      ? `${transactions.length} of ${totalTransactionCount} recent · list net `
+      : `${transactions.length} transactions · list net `;
 
   const allSelected =
     filtered.length > 0 && filtered.every((txn) => selected.has(txn.id));
@@ -163,12 +177,16 @@ export function RegisterTransactions({
             {filtersActive ? " · on" : ""}
           </button>
           <p className="text-xs font-semibold text-ink-600">
-            {filtersActive
-              ? `${filtered.length} of ${transactions.length} · net `
-              : `${transactions.length} transactions · net `}
+            {shownLabel}
             <Money cents={filteredTotalCents} />
           </p>
         </div>
+        {registerIsCapped && !filtersActive && typeof registerLimit === "number" ? (
+          <p className="mt-2 text-xs text-ink-500">
+            Showing the latest {registerLimit} transactions. The balance at the top includes
+            every transaction on this account.
+          </p>
+        ) : null}
 
         {filtersOpen ? (
           <div className="mt-3 space-y-3">

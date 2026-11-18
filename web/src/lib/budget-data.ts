@@ -623,9 +623,10 @@ export const getAccountsWithBalances = cache(async (): Promise<
       .order("name");
   }
 
+  // Aggregate in Postgres so balances stay correct past PostgREST row caps.
   const txnsRes = await supabase
     .from("transactions")
-    .select("account_id,amount_cents")
+    .select("account_id, amount_cents.sum()")
     .eq("budget_id", budget.id);
 
   assertNoError(accountsRes.error, "Failed to load accounts");
@@ -634,12 +635,16 @@ export const getAccountsWithBalances = cache(async (): Promise<
   const accounts = (accountsRes.data ?? []) as Array<
     Account & { include_in_total?: boolean; sort_order?: number }
   >;
-  const txns = txnsRes.data;
 
   const balances = new Map<string, number>();
-  for (const txn of txns ?? []) {
-    const id = txn.account_id as string;
-    balances.set(id, (balances.get(id) ?? 0) + (txn.amount_cents as number));
+  for (const row of txnsRes.data ?? []) {
+    const id = row.account_id as string;
+    const sum = Number(
+      (row as { sum?: number | string | null }).sum ??
+        (row as { amount_cents?: number | string | null }).amount_cents ??
+        0,
+    );
+    balances.set(id, Number.isFinite(sum) ? sum : 0);
   }
 
   const cookieExcluded = usedIncludeColumn
@@ -669,10 +674,14 @@ export const getAccountsWithBalances = cache(async (): Promise<
   return mapped;
 });
 
+const ACCOUNT_REGISTER_LIMIT = 500;
+
 export const getAccountRegister = cache(async (accountId: string): Promise<{
   account: Account | null;
   transactions: Transaction[];
   balanceCents: number;
+  transactionCount: number;
+  registerLimit: number;
   categories: Array<{ id: string; name: string; groupName: string }>;
   accounts: Array<{ id: string; name: string }>;
   matchSuggestions: Array<{
@@ -698,6 +707,7 @@ export const getAccountRegister = cache(async (accountId: string): Promise<{
     accountRes,
     transactionsRes,
     balanceRes,
+    countRes,
     categoriesRes,
     groupsRes,
     suggestionsRes,
@@ -716,10 +726,16 @@ export const getAccountRegister = cache(async (accountId: string): Promise<{
         .eq("account_id", accountId)
         .order("occurred_on", { ascending: false })
         .order("created_at", { ascending: false })
-        .limit(500),
+        .limit(ACCOUNT_REGISTER_LIMIT),
       supabase
         .from("transactions")
-        .select("amount_cents")
+        .select("amount_cents.sum()")
+        .eq("budget_id", budget.id)
+        .eq("account_id", accountId)
+        .maybeSingle(),
+      supabase
+        .from("transactions")
+        .select("id", { count: "exact", head: true })
         .eq("budget_id", budget.id)
         .eq("account_id", accountId),
       supabase
@@ -766,6 +782,7 @@ export const getAccountRegister = cache(async (accountId: string): Promise<{
   }
 
   assertNoError(balanceRes.error, "Failed to load balance");
+  assertNoError(countRes.error, "Failed to load transaction count");
   assertNoError(categoriesRes.error, "Failed to load categories");
   assertNoError(groupsRes.error, "Failed to load category groups");
   assertNoError(accountsRes.error, "Failed to load accounts");
@@ -779,16 +796,17 @@ export const getAccountRegister = cache(async (accountId: string): Promise<{
 
   const account = accountRes.data;
   const transactions = registerTxns;
-  const balanceRows = balanceRes.data;
   const categories = categoriesRes.data;
   const groups = groupsRes.data;
   const allAccounts = accountsRes.data;
 
   const groupMap = new Map((groups ?? []).map((g) => [g.id as string, g.name as string]));
-  const balanceCents = (balanceRows ?? []).reduce(
-    (sum, row) => sum + (row.amount_cents as number),
-    0,
-  );
+  const balanceRow = balanceRes.data as
+    | { sum?: number | string | null; amount_cents?: number | string | null }
+    | null;
+  const balanceRaw = Number(balanceRow?.sum ?? balanceRow?.amount_cents ?? 0);
+  const balanceCents = Number.isFinite(balanceRaw) ? balanceRaw : 0;
+  const transactionCount = countRes.count ?? (transactions as Transaction[] | null)?.length ?? 0;
 
   const txnById = new Map(
     ((transactions as Transaction[] | null) ?? []).map((txn) => [txn.id, txn]),
@@ -843,6 +861,8 @@ export const getAccountRegister = cache(async (accountId: string): Promise<{
     account: (account as Account | null) ?? null,
     transactions: (transactions as Transaction[] | null) ?? [],
     balanceCents,
+    transactionCount,
+    registerLimit: ACCOUNT_REGISTER_LIMIT,
     categories: (categories ?? []).map((c) => ({
       id: c.id as string,
       name: c.name as string,

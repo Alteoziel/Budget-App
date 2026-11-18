@@ -13,6 +13,7 @@ import {
   resolveCategoryFromPayeeMemory,
   type PayeeCategoryMemory,
 } from "@/lib/payee-categorization";
+import { findRelinkDuplicateIds } from "@/lib/plaid/dedupe";
 import { suggestMatchForBankTransaction } from "@/lib/transaction-matching";
 
 export type SyncResult = {
@@ -277,6 +278,16 @@ export async function syncPlaidItem(
       })
       .eq("id", item.id)
       .eq("budget_id", item.budget_id);
+
+    // Reconnects create a new Plaid Item with new transaction_ids. Remove the
+    // older duplicate copies while preserving account totals via the balance
+    // anchor so the ledger stays aligned with the bank.
+    const deduped = await repairRelinkDuplicates(
+      supabase,
+      item.budget_id,
+      item.created_by,
+    );
+    result.removed += deduped;
   } catch (e) {
     const message = plaidErrorMessage(e, "Plaid sync failed");
     result.errors.push(message);
@@ -288,6 +299,96 @@ export async function syncPlaidItem(
   }
 
   return result;
+}
+
+/** Remove older Plaid reconnect duplicates; keep account balances stable. */
+export async function repairRelinkDuplicates(
+  supabase: SupabaseClient,
+  budgetId: string,
+  userId: string,
+): Promise<number> {
+  const rows: Array<{
+    id: string;
+    account_id: string;
+    occurred_on: string;
+    payee: string;
+    amount_cents: number;
+    external_id: string | null;
+    created_at: string;
+  }> = [];
+  const pageSize = 1000;
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await supabase
+      .from("transactions")
+      .select(
+        "id,account_id,occurred_on,payee,amount_cents,external_id,created_at",
+      )
+      .eq("budget_id", budgetId)
+      .like("external_id", "plaid:%")
+      .order("created_at", { ascending: true })
+      .range(offset, offset + pageSize - 1);
+    if (error) throw error;
+    rows.push(...((data as typeof rows) ?? []));
+    if (!data || data.length < pageSize) break;
+  }
+
+  const removeIds = findRelinkDuplicateIds(rows);
+  if (removeIds.length === 0) return 0;
+
+  const removeSet = new Set(removeIds);
+  const removedByAccount = new Map<string, number>();
+  for (const row of rows) {
+    if (!removeSet.has(row.id)) continue;
+    removedByAccount.set(
+      row.account_id,
+      (removedByAccount.get(row.account_id) ?? 0) + row.amount_cents,
+    );
+  }
+
+  // Delete in chunks to stay under URL / payload limits.
+  for (let i = 0; i < removeIds.length; i += 200) {
+    const chunk = removeIds.slice(i, i + 200);
+    const { error } = await supabase
+      .from("transactions")
+      .delete()
+      .eq("budget_id", budgetId)
+      .in("id", chunk);
+    if (error) throw error;
+  }
+
+  const { balanceAnchorExternalId } = await import(
+    "@/lib/transaction-matching"
+  );
+  for (const [accountId, removedSum] of removedByAccount) {
+    if (removedSum === 0) continue;
+    const externalId = balanceAnchorExternalId(accountId);
+    const { data: anchor } = await supabase
+      .from("transactions")
+      .select("id,amount_cents")
+      .eq("budget_id", budgetId)
+      .eq("external_id", externalId)
+      .maybeSingle();
+    if (anchor?.id) {
+      await supabase
+        .from("transactions")
+        .update({ amount_cents: (anchor.amount_cents as number) + removedSum })
+        .eq("id", anchor.id);
+    } else {
+      await supabase.from("transactions").insert({
+        user_id: userId,
+        budget_id: budgetId,
+        account_id: accountId,
+        occurred_on: new Date().toISOString().slice(0, 10),
+        payee: "Balance adjustment",
+        memo: "Kept after removing duplicate bank imports from a reconnect",
+        amount_cents: removedSum,
+        cleared: true,
+        external_id: externalId,
+      });
+    }
+  }
+
+  return removeIds.length;
 }
 
 /** Stable external_id for a Plaid transaction_id. */
@@ -380,6 +481,23 @@ async function upsertPlaidTransaction(
       .eq("external_id", fields.pendingExternalId)
       .maybeSingle();
     existing = existingPending;
+  }
+  // Some institutions post without pending_transaction_id. Fall back to an
+  // uncleared Plaid row with the same account/amount/date so we don't double-count.
+  if (!existing?.id && fields.cleared) {
+    const { data: unclearedMatch } = await supabase
+      .from("transactions")
+      .select("id,amount_cents,occurred_on,payee,cleared,external_id,category_id")
+      .eq("budget_id", args.budgetId)
+      .eq("account_id", accountId)
+      .eq("amount_cents", fields.amountCents)
+      .eq("occurred_on", fields.occurredOn)
+      .eq("cleared", false)
+      .like("external_id", "plaid:%")
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    existing = unclearedMatch;
   }
 
   if (existing?.id) {

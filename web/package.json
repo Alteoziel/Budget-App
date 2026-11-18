@@ -8,20 +8,20 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "test": "tsx --tsconfig tsconfig.json src/lib/ynab-csv.test.ts && tsx --tsconfig tsconfig.json src/lib/money.test.ts && tsx --tsconfig tsconfig.json src/lib/paths.test.ts && tsx --tsconfig tsconfig.json src/lib/auth/reauth.test.ts && tsx --tsconfig tsconfig.json src/lib/password-reset.test.ts && tsx --tsconfig tsconfig.json src/lib/passkey-gate.test.ts && tsx --tsconfig tsconfig.json src/lib/insights/tips.test.ts && tsx --tsconfig tsconfig.json src/lib/plaid/client.test.ts && tsx --tsconfig tsconfig.json src/lib/plaid/cron-auth.test.ts && tsx --tsconfig tsconfig.json src/lib/plaid/webhook-verify.test.ts && tsx --tsconfig tsconfig.json src/lib/plaid/sync.test.ts && tsx --tsconfig tsconfig.json src/lib/plaid/open-sync.test.ts && tsx --tsconfig tsconfig.json src/lib/crypto/secrets.test.ts && tsx --tsconfig tsconfig.json src/lib/security/csp.test.ts && tsx --tsconfig tsconfig.json src/lib/security/public-paths.test.ts && tsx --tsconfig tsconfig.json src/lib/security/sw-boot.test.ts && tsx --tsconfig tsconfig.json src/lib/auto-assign.test.ts && tsx --tsconfig tsconfig.json src/lib/transaction-matching.test.ts && tsx --tsconfig tsconfig.json src/lib/payee-categorization.test.ts && tsx --tsconfig tsconfig.json src/lib/insights/derive.test.ts && tsx --tsconfig tsconfig.json src/lib/overspend-fix.test.ts && tsx --tsconfig tsconfig.json src/lib/theme-chrome.test.ts"
+    "test": "tsx --tsconfig tsconfig.json src/lib/ynab-csv.test.ts && tsx --tsconfig tsconfig.json src/lib/money.test.ts && tsx --tsconfig tsconfig.json src/lib/paths.test.ts && tsx --tsconfig tsconfig.json src/lib/auth/reauth.test.ts && tsx --tsconfig tsconfig.json src/lib/password-reset.test.ts && tsx --tsconfig tsconfig.json src/lib/passkey-gate.test.ts && tsx --tsconfig tsconfig.json src/lib/insights/tips.test.ts && tsx --tsconfig tsconfig.json src/lib/plaid/client.test.ts && tsx --tsconfig tsconfig.json src/lib/plaid/cron-auth.test.ts && tsx --tsconfig tsconfig.json src/lib/plaid/webhook-verify.test.ts && tsx --tsconfig tsconfig.json src/lib/plaid/sync.test.ts && tsx --tsconfig tsconfig.json src/lib/plaid/open-sync.test.ts && tsx --tsconfig tsconfig.json src/lib/plaid/dedupe.test.ts && tsx --tsconfig tsconfig.json src/lib/crypto/secrets.test.ts && tsx --tsconfig tsconfig.json src/lib/security/csp.test.ts && tsx --tsconfig tsconfig.json src/lib/security/public-paths.test.ts && tsx --tsconfig tsconfig.json src/lib/security/sw-boot.test.ts && tsx --tsconfig tsconfig.json src/lib/auto-assign.test.ts && tsx --tsconfig tsconfig.json src/lib/transaction-matching.test.ts && tsx --tsconfig tsconfig.json src/lib/payee-categorization.test.ts && tsx --tsconfig tsconfig.json src/lib/insights/derive.test.ts && tsx --tsconfig tsconfig.json src/lib/overspend-fix.test.ts && tsx --tsconfig tsconfig.json src/lib/theme-chrome.test.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.3",
     "@supabase/supabase-js": "^2.110.8",
     "jose": "^6.2.4",
-    "next": "^16.2.11",
+    "next": "^16.4.6",
     "papaparse": "^5.5.4",
     "plaid": "^44.0.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-plaid-link": "^4.2.0",
     "recharts": "^3.10.0",
-    "zod": "^3.24.0"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.6",
@@ -31,18 +31,19 @@
     "@types/react-dom": "^19.0.0",
     "autoprefixer": "^10.4.20",
     "eslint": "^9.16.0",
-    "eslint-config-next": "^16.2.11",
+    "eslint-config-next": "^16.4.6",
     "postcss": "^8.5.26",
     "tailwindcss": "^3.4.16",
     "tsx": "^4.23.1",
     "typescript": "^5.7.3"
   },
   "overrides": {
-    "sharp": "^0.35.0",
+    "sharp": "^0.35.5",
     "postcss": "^8.5.26",
-    "brace-expansion": "5.0.9",
+    "brace-expansion": "^5.0.13",
     "minimatch": "^10.2.5",
-    "js-yaml": "^4.3.1",
+    "js-yaml": "^4.3.2",
+    "source-map-js": "^1.2.2",
     "nanoid": "^3.3.18"
   }
 }
