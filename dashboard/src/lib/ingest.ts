@@ -57,7 +57,7 @@ const stepResultSchema = z.object({
   name: z.string().max(256),
   passed: z.boolean(),
   findings: z.array(findingSchema).max(MAX_FINDINGS).default([]),
-  metrics: z.record(z.unknown()).optional(),
+  metrics: z.record(z.string(), z.unknown()).optional(),
   skipped: z.boolean().optional(),
   skip_reason: z.string().max(MAX_STRING).nullish(),
 });
@@ -77,7 +77,7 @@ const ingestSchema = z.object({
     )
     .nullish(),
   steps: z.array(stepResultSchema).max(MAX_STEPS).default([]),
-  summary: z.record(z.unknown()).default({}),
+  summary: z.record(z.string(), z.unknown()).default({}),
 });
 
 export type IngestPayload = {
