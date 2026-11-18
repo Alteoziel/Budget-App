@@ -18,8 +18,16 @@ export default async function AccountRegisterPage({
 }) {
   const { id } = await params;
   const query = await searchParams;
-  const { account, transactions, balanceCents, categories, accounts, matchSuggestions } =
-    await getAccountRegister(id);
+  const {
+    account,
+    transactions,
+    balanceCents,
+    transactionCount,
+    registerLimit,
+    categories,
+    accounts,
+    matchSuggestions,
+  } = await getAccountRegister(id);
   if (!account) notFound();
 
   const today = new Date().toISOString().slice(0, 10);
@@ -50,6 +58,9 @@ export default async function AccountRegisterPage({
           <p className="mt-1 font-display text-3xl font-bold">
             <Money cents={balanceCents} className="text-inherit" />
           </p>
+          <p className="mt-1 text-xs opacity-80">
+            From all {transactionCount} transactions on this account
+          </p>
         </section>
 
         <TransactionMatchSuggestions
@@ -63,6 +74,8 @@ export default async function AccountRegisterPage({
             transactions={transactions}
             categories={categories}
             accounts={accounts}
+            totalTransactionCount={transactionCount}
+            registerLimit={registerLimit}
           />
         </section>
 
@@ -75,7 +88,7 @@ export default async function AccountRegisterPage({
             <DeleteAccountButton
               accountId={account.id}
               accountName={account.name}
-              transactionCount={transactions.length}
+              transactionCount={transactionCount}
             />
           </div>
         </section>
